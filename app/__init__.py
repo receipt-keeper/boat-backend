@@ -1,0 +1,1 @@
+"""Boat Backend application package."""
