@@ -35,11 +35,12 @@ boundaries.
 Current initial setup scope:
 
 - `alembic`: database schema migration environment
-- `app/main.py`: FastAPI composition root and lifespan-owned DB lifecycle
+- `app/main.py`: FastAPI entrypoint, composition root, lifespan-owned DB lifecycle, route wiring, and global exception handler registration
 - `app/core/config`: global settings
 - `app/core/db`: SQLAlchemy async base and session factories
 - `app/core/domain`: shared domain primitives currently limited to `Entity`
-- `app/core/http`: exceptions, handlers, and response envelopes
+- `app/core/domain/exceptions.py`: base domain exception state shared by modules
+- `app/core/http`: shared HTTP response models and exception-to-response adapters
 - `app/core/observability`: operational probes
 - `app/modules/examples`: sample bounded-context module
 
@@ -54,6 +55,10 @@ app/modules/<bounded_context>/
   domain/
   infrastructure/
 ```
+
+Modules own their application/domain-specific errors and inherit from
+`app.core.domain.exceptions`. `app/main.py` wires those handlers into the FastAPI
+application.
 
 ## API Envelope
 
@@ -72,15 +77,15 @@ changes by route or error type.
 }
 ```
 
-Failures are normalized by global exception handlers:
+Failures are normalized by globally registered exception handlers:
 
 ```json
 {
   "success": false,
-  "status": 400,
+  "status": 422,
   "data": {
     "timestamp": "2026-06-01T00:00:00",
-    "message": "잘못된 요청입니다.",
+    "message": "입력값이 올바르지 않습니다.",
     "path": "/api/v1/examples",
     "errors": [
       {

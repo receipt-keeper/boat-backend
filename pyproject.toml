@@ -16,9 +16,11 @@ dependencies = [
 [dependency-groups]
 dev = [
     "httpx>=0.28.1",
+    "pre-commit>=4.6.0",
     "pyright>=1.1.410",
     "pytest>=9.0.3",
     "pytest-asyncio>=1.4.0",
+    "pytest-cov>=7.1.0",
     "ruff>=0.15.16",
 ]
 
@@ -27,10 +29,18 @@ line-length = 100
 target-version = "py312"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B"]
+select = ["E", "F", "I", "UP", "B", "SIM", "C4", "RUF", "PT", "ASYNC", "S"]
+
+[tool.ruff.lint.per-file-ignores]
+# S101: 테스트는 assert 사용, S106: 테스트 더미 비밀번호 허용 (위치 무관 — 모듈 내 tests/ 포함)
+"**/tests/**" = ["S101", "S106"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
 
 [tool.pyright]
-include = ["app", "tests"]
+include = ["app", "tests", "conftest.py"]
 pythonVersion = "3.12"
 typeCheckingMode = "standard"
 venvPath = "."
@@ -38,5 +48,17 @@ venv = ".venv"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-testpaths = ["tests"]
+testpaths = ["tests", "app"]
 pythonpath = ["."]
+addopts = "-ra --strict-markers --cov=app --cov-report=term-missing"
+filterwarnings = ["error"]
+
+[tool.coverage.run]
+source = ["app"]
+branch = true
+# 모듈 내 테스트(app/**/tests/)는 커버리지 측정 대상에서 제외한다
+omit = ["*/tests/*"]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 82

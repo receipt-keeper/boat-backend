@@ -1,1 +1,1 @@
-"""HTTP exceptions, handlers, and response models."""
+"""HTTP response models and exception adapters."""

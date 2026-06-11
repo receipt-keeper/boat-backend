@@ -1,3 +1,1 @@
-from app.core.domain.entity import Entity
-
-__all__ = ["Entity"]
+"""Domain base abstractions (entity, value object, exceptions)."""

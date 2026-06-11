@@ -1,7 +1,7 @@
 from typing import ClassVar
-from uuid import UUID, uuid4
+from uuid import UUID
 
-from app.modules.examples.domain.example_user import ExampleUser
+from app.modules.examples.domain.model import ExampleUser
 
 
 class ExampleUserRepository:
@@ -10,11 +10,6 @@ class ExampleUserRepository:
     async def get(self, example_user_id: UUID) -> ExampleUser | None:
         return self._users.get(example_user_id)
 
-    async def create(self, *, nickname: str, email: str) -> ExampleUser:
-        example_user = ExampleUser(
-            id=uuid4(),
-            nickname=nickname,
-            email=email,
-        )
+    async def save(self, example_user: ExampleUser) -> ExampleUser:
         self._users[example_user.id] = example_user
         return example_user
