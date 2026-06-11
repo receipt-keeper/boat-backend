@@ -1,84 +1,103 @@
-from fastapi import FastAPI, Request, status
+import logging
+
+from fastapi import Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.core.http.exceptions import AppError
+from app.core.domain.exceptions import DomainError, NotFoundError, ValidationError
 from app.core.http.responses import ApiErrorData, CommonResponse, FieldError
 
-
-def register_exception_handlers(app: FastAPI) -> None:
-    app.add_exception_handler(AppError, app_error_handler)
-    app.add_exception_handler(RequestValidationError, validation_error_handler)
-    app.add_exception_handler(StarletteHTTPException, http_exception_handler)
+logger = logging.getLogger(__name__)
 
 
-async def app_error_handler(request: Request, exc: Exception) -> JSONResponse:
-    if not isinstance(exc, AppError):
-        raise exc
-
+def _failure_response(
+    *,
+    status_code: int,
+    message: str,
+    path: str,
+    errors: list[FieldError] | None = None,
+) -> JSONResponse:
     response = CommonResponse(
         success=False,
-        status=exc.status_code,
+        status=status_code,
         data=ApiErrorData(
-            message=exc.message,
-            path=request.url.path,
-            errors=[FieldError(field=error.field, message=error.message) for error in exc.errors],
+            message=message,
+            path=path,
+            errors=errors or [],
         ),
     )
-    return JSONResponse(status_code=exc.status_code, content=response.model_dump())
+    return JSONResponse(status_code=status_code, content=response.model_dump())
 
 
-async def validation_error_handler(request: Request, exc: Exception) -> JSONResponse:
-    if not isinstance(exc, RequestValidationError):
-        raise exc
+async def handle_domain_validation_error(request: Request, exception: Exception) -> JSONResponse:
+    if not isinstance(exception, ValidationError):
+        raise exception
 
-    response = CommonResponse(
-        success=False,
-        status=status.HTTP_400_BAD_REQUEST,
-        data=ApiErrorData(
-            message="잘못된 요청입니다.",
-            path=request.url.path,
-            errors=[
-                FieldError(
-                    field=_field_name(error.get("loc", ())),
-                    message=_error_message(error),
-                )
-                for error in exc.errors()
-            ],
-        ),
+    return _failure_response(
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        message=exception.message,
+        path=request.url.path,
+        errors=[
+            FieldError(field=detail.field, message=detail.message) for detail in exception.details
+        ],
     )
-    return JSONResponse(status_code=status.HTTP_400_BAD_REQUEST, content=response.model_dump())
 
 
-async def http_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-    if not isinstance(exc, StarletteHTTPException):
-        raise exc
+async def handle_not_found_error(request: Request, exception: Exception) -> JSONResponse:
+    if not isinstance(exception, NotFoundError):
+        raise exception
 
-    response = CommonResponse(
-        success=False,
-        status=exc.status_code,
-        data=ApiErrorData(
-            message=str(exc.detail),
-            path=request.url.path,
-        ),
+    return _failure_response(
+        status_code=status.HTTP_404_NOT_FOUND,
+        message=exception.message,
+        path=request.url.path,
     )
-    return JSONResponse(status_code=exc.status_code, content=response.model_dump())
 
 
-def _field_name(location: object) -> str:
-    if not isinstance(location, (list, tuple)):
-        return ""
+async def handle_domain_error(request: Request, exception: Exception) -> JSONResponse:
+    """카테고리 없는 DomainError의 안전망 — 도메인 규칙 위반은 클라이언트 책임(400)으로 본다.
 
-    parts = [str(part) for part in location if part not in {"body", "query", "path"}]
-    return ".".join(parts)
+    새 도메인 예외는 의미 카테고리(ValidationError, NotFoundError, ...)를 상속해야 한다.
+    """
+    if not isinstance(exception, DomainError):
+        raise exception
+
+    return _failure_response(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        message=exception.message,
+        path=request.url.path,
+    )
 
 
-def _error_message(error: dict[str, object]) -> str:
-    context = error.get("ctx")
-    if isinstance(context, dict):
-        context_error = context.get("error")
-        if context_error is not None:
-            return str(context_error)
+async def handle_request_validation_error(request: Request, exception: Exception) -> JSONResponse:
+    if not isinstance(exception, RequestValidationError):
+        raise exception
 
-    return str(error.get("msg", ""))
+    return _failure_response(
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        message="요청 값이 올바르지 않습니다.",
+        path=request.url.path,
+        errors=[FieldError.from_pydantic_error(error) for error in exception.errors()],
+    )
+
+
+async def handle_http_exception(request: Request, exception: Exception) -> JSONResponse:
+    if not isinstance(exception, StarletteHTTPException):
+        raise exception
+
+    return _failure_response(
+        status_code=exception.status_code,
+        message=exception.detail if isinstance(exception.detail, str) else str(exception.detail),
+        path=request.url.path,
+    )
+
+
+async def handle_unexpected_error(request: Request, exception: Exception) -> JSONResponse:
+    logger.exception("처리되지 않은 예외 발생", exc_info=exception)
+
+    return _failure_response(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        message="서버 내부 오류가 발생했습니다.",
+        path=request.url.path,
+    )

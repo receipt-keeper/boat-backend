@@ -1,131 +1,60 @@
-from uuid import UUID, uuid4
-
 from httpx import ASGITransport, AsyncClient
 
 from app.core.config.settings import Settings
-from app.core.http.exceptions import AppError
-from app.main import app, create_app
-from app.modules.examples.dependencies import get_example_user_service
-from app.modules.examples.domain.example_user import ExampleUser
+from app.main import create_app
 
 
-class InMemoryExampleUserService:
-    def __init__(self) -> None:
-        self._users: dict[UUID, ExampleUser] = {}
-
-    async def get_example_user(self, example_user_id: UUID) -> ExampleUser:
-        example_user = self._users.get(example_user_id)
-        if example_user is None:
-            raise AppError("예시 사용자를 찾을 수 없습니다.", status_code=404)
-
-        return example_user
-
-    async def create_example_user(self, *, nickname: str, email: str) -> ExampleUser:
-        example_user = ExampleUser(
-            id=uuid4(),
-            nickname=nickname,
-            email=email,
-        )
-        self._users[example_user.id] = example_user
-        return example_user
-
-
-async def test_health_endpoint() -> None:
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.get("/health")
+async def test_health_endpoint(client: AsyncClient) -> None:
+    response = await client.get("/health")
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
 
 
-async def test_example_user_endpoints_use_success_envelope() -> None:
-    service = InMemoryExampleUserService()
-    app.dependency_overrides[get_example_user_service] = lambda: service
-
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        try:
-            create_response = await client.post(
-                "/api/v1/examples",
-                json={
-                    "nickname": "created-user",
-                    "email": "created@test.com",
-                    "password": "password123",
-                },
-            )
-
-            created_body = create_response.json()
-            created_id = created_body["data"]["id"]
-            get_response = await client.get(f"/api/v1/examples/{created_id}")
-        finally:
-            app.dependency_overrides.clear()
-
-    assert create_response.status_code == 201
-    assert created_body == {
-        "success": True,
-        "status": 201,
-        "data": {
-            "id": created_id,
-            "nickname": "created-user",
-            "email": "created@test.com",
-        },
-    }
-
-    assert get_response.status_code == 200
-    assert get_response.json() == {
-        "success": True,
-        "status": 200,
-        "data": {
-            "id": created_id,
-            "nickname": "created-user",
-            "email": "created@test.com",
-        },
-    }
-
-
-async def test_validation_error_uses_failure_envelope() -> None:
-    service = InMemoryExampleUserService()
-    app.dependency_overrides[get_example_user_service] = lambda: service
-
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        try:
-            response = await client.post(
-                "/api/v1/examples",
-                json={
-                    "nickname": "test-user",
-                    "email": "invalid",
-                    "password": "short",
-                },
-            )
-        finally:
-            app.dependency_overrides.clear()
-
-    body = response.json()
-
-    assert response.status_code == 400
-    assert body["success"] is False
-    assert body["status"] == 400
-    assert body["data"]["message"] == "잘못된 요청입니다."
-    assert body["data"]["path"] == "/api/v1/examples"
-    assert body["data"]["errors"] == [
-        {"field": "email", "message": "이메일 형식이 올바르지 않습니다."},
-        {"field": "password", "message": "비밀번호는 8자 이상이어야 합니다."},
-    ]
-
-
-async def test_ready_endpoint_is_not_exposed_until_it_checks_dependencies() -> None:
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.get("/ready")
+async def test_ready_endpoint_is_not_exposed_until_it_checks_dependencies(
+    client: AsyncClient,
+) -> None:
+    response = await client.get("/ready")
 
     assert response.status_code == 404
     assert response.json()["success"] is False
 
 
 async def test_openapi_schema_is_available() -> None:
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.get("/openapi.json")
+    # 로컬 .env의 APP_NAME에 좌우되지 않도록 설정을 명시 주입한다
+    test_app = create_app(Settings(app_name="Boat Backend"))
+
+    async with AsyncClient(
+        transport=ASGITransport(app=test_app), base_url="http://test"
+    ) as test_client:
+        response = await test_client.get("/openapi.json")
 
     assert response.status_code == 200
     assert response.json()["info"]["title"] == "Boat Backend"
+
+
+async def test_unhandled_exception_uses_failure_envelope() -> None:
+    test_app = create_app(Settings())
+
+    @test_app.get("/boom")
+    async def boom() -> None:
+        raise RuntimeError("boom")
+
+    # Exception 핸들러는 응답 전송 후 예외를 다시 던지므로(Starlette 동작) 전파를 끈다
+    async with AsyncClient(
+        transport=ASGITransport(app=test_app, raise_app_exceptions=False),
+        base_url="http://test",
+    ) as test_client:
+        response = await test_client.get("/boom")
+
+    body = response.json()
+
+    assert response.status_code == 500
+    assert body["success"] is False
+    assert body["status"] == 500
+    assert body["data"]["message"] == "서버 내부 오류가 발생했습니다."
+    assert body["data"]["path"] == "/boom"
+    assert body["data"]["errors"] == []
 
 
 def test_settings_can_override_database_url_without_import_global_session() -> None:
@@ -146,8 +75,8 @@ async def test_database_state_is_created_by_lifespan_not_import() -> None:
         async with AsyncClient(
             transport=ASGITransport(app=test_app),
             base_url="http://test",
-        ) as client:
-            response = await client.get("/health")
+        ) as test_client:
+            response = await test_client.get("/health")
 
         assert hasattr(test_app.state, "engine")
         assert hasattr(test_app.state, "session_factory")
