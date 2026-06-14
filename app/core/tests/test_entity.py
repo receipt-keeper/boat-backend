@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 
 from app.core.domain.entity import Entity
+from app.core.domain.events import DomainEvent
 
 
 @dataclass(eq=False)
@@ -29,3 +30,13 @@ def test_entity_is_usable_in_sets() -> None:
     entity = StubEntity(id=1, name="a")
 
     assert entity in {entity}
+
+
+def test_entity_records_and_pulls_domain_events() -> None:
+    entity = StubEntity(id=1, name="a")
+    event = DomainEvent()
+
+    entity.record_event(event)
+
+    assert entity.pull_events() == [event]
+    assert entity.pull_events() == []

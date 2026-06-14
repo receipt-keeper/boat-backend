@@ -3,6 +3,7 @@ from uuid import UUID, uuid4
 
 from app.core.domain.entity import Entity
 from app.core.domain.validation import Notification
+from app.modules.examples.domain.events import ExampleUserCreated
 from app.modules.examples.domain.value_objects import Email, Nickname, Password
 
 
@@ -20,8 +21,15 @@ class ExampleUser(Entity[UUID]):
         notification.collect(lambda: Password(password))
         notification.raise_if_any()
 
-        return cls(
+        example_user = cls(
             id=uuid4(),
             nickname=new_nickname,
             email=new_email,
         )
+        example_user.record_event(
+            ExampleUserCreated(
+                example_user_id=example_user.id,
+                email=example_user.email.value,
+            )
+        )
+        return example_user

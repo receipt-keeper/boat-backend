@@ -3,6 +3,7 @@ from uuid import UUID, uuid4
 
 from httpx import AsyncClient
 
+from app.core.application.event_dispatcher import EventDispatcher
 from app.modules.examples.application.service import ExampleUserService
 from app.modules.examples.domain.exceptions import ExampleUserNotFoundError
 from app.modules.examples.domain.model import ExampleUser
@@ -71,7 +72,7 @@ async def test_domain_validation_errors_carry_case_specific_messages(
     client: AsyncClient,
     override_example_user_service: Callable[[object], None],
 ) -> None:
-    override_example_user_service(ExampleUserService(ExampleUserRepository()))
+    override_example_user_service(ExampleUserService(ExampleUserRepository(), EventDispatcher()))
 
     invalid_email_response = await client.post(
         "/api/v1/examples",
@@ -112,7 +113,7 @@ async def test_domain_validation_collects_all_failed_fields(
     client: AsyncClient,
     override_example_user_service: Callable[[object], None],
 ) -> None:
-    override_example_user_service(ExampleUserService(ExampleUserRepository()))
+    override_example_user_service(ExampleUserService(ExampleUserRepository(), EventDispatcher()))
 
     response = await client.post(
         "/api/v1/examples",
