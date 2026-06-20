@@ -222,6 +222,56 @@ async def test_use_cases_reject_malformed_input(
     assert [detail.field for detail in empty_token.value.details] == ["fcmToken"]
 
 
+async def test_update_settings_refreshes_marketing_consent_timestamp_only_on_change(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    # Given: 가입 시 마케팅 미동의 사용자(동의 시각 없음).
+    repository = SqlAlchemyUserRepository(postgres_session_factory)
+    use_case = UpdateSettingsCommandUseCase(user_repository=repository)
+    user = await ResolveUserForLoginCommandUseCase(user_repository=repository).execute(
+        ResolveUserForLoginCommand(
+            name="동의 시각",
+            email="consent-ts@example.com",
+            profile_image_url=None,
+            terms_accepted=True,
+            privacy_accepted=True,
+        )
+    )
+    signup_state = await repository.find_account_state(user_id=user.user_id)
+    assert signup_state is not None
+    assert signup_state.settings.marketing_consent is False
+    assert signup_state.settings.marketing_consent_updated_at is None
+
+    # When: 마케팅 동의로 변경 -> Then: 동의 시각이 기록된다.
+    await use_case.execute(UpdateSettingsCommand(user_id=user.user_id, marketing_consent=True))
+    optin_state = await repository.find_account_state(user_id=user.user_id)
+    assert optin_state is not None
+    assert optin_state.settings.marketing_consent is True
+    optin_ts = optin_state.settings.marketing_consent_updated_at
+    assert optin_ts is not None
+
+    # When: 동일 값으로 다시 PATCH(변화 없음) -> Then: 동의 시각은 그대로 유지된다.
+    await use_case.execute(UpdateSettingsCommand(user_id=user.user_id, marketing_consent=True))
+    noop_state = await repository.find_account_state(user_id=user.user_id)
+    assert noop_state is not None
+    assert noop_state.settings.marketing_consent_updated_at == optin_ts
+
+    # When: 마케팅은 미전달하고 알림만 변경 -> Then: 마케팅 동의 시각은 그대로 유지된다.
+    await use_case.execute(UpdateSettingsCommand(user_id=user.user_id, notification_enabled=False))
+    other_state = await repository.find_account_state(user_id=user.user_id)
+    assert other_state is not None
+    assert other_state.settings.marketing_consent_updated_at == optin_ts
+
+    # When: 마케팅 동의 철회(True -> False) -> Then: 동의 시각이 새로 갱신된다.
+    await use_case.execute(UpdateSettingsCommand(user_id=user.user_id, marketing_consent=False))
+    optout_state = await repository.find_account_state(user_id=user.user_id)
+    assert optout_state is not None
+    assert optout_state.settings.marketing_consent is False
+    optout_ts = optout_state.settings.marketing_consent_updated_at
+    assert optout_ts is not None
+    assert optout_ts > optin_ts
+
+
 async def _count(session: AsyncSession, table: CountableUsersTable) -> int:
     count = await session.scalar(select(func.count()).select_from(table))
     if count is None:
