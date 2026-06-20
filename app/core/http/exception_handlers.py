@@ -5,7 +5,11 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.core.domain.exceptions import DomainError, NotFoundError, ValidationError
+from app.core.domain.exceptions import (
+    DomainError,
+    NotFoundError,
+    ValidationError,
+)
 from app.core.http.responses import ApiErrorData, CommonResponse, FieldError
 
 logger = logging.getLogger(__name__)
