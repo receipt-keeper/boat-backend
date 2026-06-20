@@ -9,7 +9,7 @@ from app.core.domain.value_object import ValueObject
 @dataclass(frozen=True)
 class ItemName(ValueObject[str]):
     def validate(self) -> None:
-        if not self.value:
+        if not self.value or not self.value.strip():
             raise ValidationError([ErrorDetail(field="item_name", message="제품명은 필수입니다.")])
 
 

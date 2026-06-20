@@ -1,9 +1,15 @@
+import calendar
 from collections.abc import Callable
 from datetime import date
 
+import pytest
 from httpx import AsyncClient
 
+from app.core.config.settings import Settings
+from app.core.domain.exceptions import ValidationError
+from app.modules.ocr.dependencies import get_receipt_ocr_client
 from app.modules.ocr.domain.exceptions import ReceiptOcrProviderUnavailableError
+from app.modules.ocr.domain.value_objects import ItemName
 from app.modules.ocr.infrastructure.receipt_ocr_client import ExtractedReceiptOcrFields
 
 
@@ -24,7 +30,23 @@ class ProviderUnavailableReceiptOcrClient:
         raise ReceiptOcrProviderUnavailableError()
 
 
+def test_item_name_rejects_whitespace_only_value() -> None:
+    with pytest.raises(ValidationError):
+        ItemName("   ")
+
+
+async def test_receipt_ocr_dependency_rejects_missing_provider_in_non_local_env() -> None:
+    settings = Settings(app_env="dev", openrouter_api_key=None, gemini_api_key=None)
+
+    with pytest.raises(ReceiptOcrProviderUnavailableError):
+        await get_receipt_ocr_client(settings)
+
+
 async def test_receipt_ocr_endpoint_returns_contract_response(client: AsyncClient) -> None:
+    today = date.today()
+    last_day = calendar.monthrange(today.year + 1, today.month)[1]
+    expected_expires_on = date(today.year + 1, today.month, min(today.day, last_day))
+
     response = await client.post(
         "/api/v1/ocr/receipt",
         json={"image_uri": "local://sample-receipt.jpg"},
@@ -39,10 +61,10 @@ async def test_receipt_ocr_endpoint_returns_contract_response(client: AsyncClien
         "item_name": "테스트 전자제품",
         "brand_name": "BOAT",
         "payment_location": "테스트 구매처",
-        "payment_date": date.today().isoformat(),
+        "payment_date": today.isoformat(),
         "total_amount": 129000,
         "period_months": 12,
-        "expires_on": date(date.today().year + 1, date.today().month, date.today().day).isoformat(),
+        "expires_on": expected_expires_on.isoformat(),
         "needs_review": True,
         "warnings": ["무상 AS 기간을 찾지 못해 12개월 기본값을 적용했습니다."],
     }
