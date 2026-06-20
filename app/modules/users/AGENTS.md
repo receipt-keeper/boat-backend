@@ -2,7 +2,7 @@
 
 ## OVERVIEW
 
-Users is a provision-only module today. It has no public `api/` surface; auth consumes its provisioning contract during login/signup.
+Users owns account state and the PRD public mypage API scope. Auth still consumes users application contracts during login/signup and withdrawal orchestration.
 
 ## WHERE TO LOOK
 
@@ -15,11 +15,17 @@ Users is a provision-only module today. It has no public `api/` surface; auth co
 | Domain entity | `domain/model.py` | Minimal `User` entity and factory. |
 | Persistence | `infrastructure/persistence/` | SQLAlchemy ORM, mapper, repository. |
 | Runtime wiring | `dependencies.py` | Command use case builders for shared-session auth wiring. |
+| Future public API | `api/` | Approved PRD surface belongs here when the product behavior todo is implemented. |
 | Tests | `tests/test_architecture.py` | Current guardrail is architecture-only. |
 
 ## CONVENTIONS
 
-- Keep users as provisioning-only until a public users API is explicitly requested.
+- Users public API scope is reopened for this PRD and planned in the users BC.
+- Users owns the PRD public mypage API scope:
+  `GET /api/v1/users/me`, `PATCH /api/v1/users/me/settings`,
+  `POST /api/v1/users/me/push-tokens`, and
+  `DELETE /api/v1/users/me/push-tokens/{deviceId}`.
+- This guidance reserves scope only; product behavior must be implemented in the later PRD todo with focused tests.
 - User command flows live under `application/commands/<business_task>/{command.py,result.py?,use_case.py}`.
 - Internal side-effect-free read flows, if later needed, live under `application/queries/<read_task>/{query.py,result.py?,use_case.py}`.
 - `read_models` is reserved for public optimized read API/read model surfaces and is not required for internal queries.
@@ -34,6 +40,6 @@ Users is a provision-only module today. It has no public `api/` surface; auth co
 
 ## ANTI-PATTERNS
 
-- Do not add a users API just to expose auth profile data without explicit scope.
+- Do not expose users profile/settings/push behavior from auth routes or auth application code.
 - Do not let auth import `users.infrastructure`.
 - Do not put users-specific coupling rules in the root file unless they become repo-wide policy.

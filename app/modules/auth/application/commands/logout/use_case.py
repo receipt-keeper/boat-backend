@@ -14,6 +14,6 @@ class LogoutCommandUseCase:
         self._refresh_token_hasher = refresh_token_hasher
 
     async def execute(self, command: LogoutCommand) -> None:
-        await self._credential_repository.revoke_refresh_token(
+        await self._credential_repository.revoke_session_by_refresh_token(
             token_hash=self._refresh_token_hasher.hash(command.refresh_token),
         )

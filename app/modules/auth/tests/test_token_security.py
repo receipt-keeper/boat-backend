@@ -3,7 +3,9 @@ from typing import Final
 from uuid import UUID
 
 import jwt
+import pytest
 from httpx import ASGITransport, AsyncClient, Response
+from pydantic import ValidationError as PydanticValidationError
 
 from app.core.config.settings import Settings
 from app.main import create_app
@@ -78,6 +80,28 @@ def _assert_authentication_failed_envelope(response: Response) -> None:
     assert response.status_code == 401
     assert body["success"] is False
     assert body["data"]["message"] == AUTHENTICATION_FAILED_MESSAGE
+
+
+def test_prod_settings_reject_default_runtime_token_secrets() -> None:
+    with pytest.raises(PydanticValidationError):
+        Settings(app_env="prod")
+
+
+def test_staging_settings_reject_default_refresh_token_pepper() -> None:
+    with pytest.raises(PydanticValidationError):
+        Settings(app_env="staging", jwt_secret_key=TEST_SIGNING_KEY)
+
+
+def test_auth_runtime_settings_expose_provider_and_user_defaults() -> None:
+    settings = Settings(jwt_secret_key=TEST_SIGNING_KEY)
+
+    assert settings.firebase_provider_normalization_map == {
+        "google.com": "google",
+        "apple.com": "apple",
+    }
+    assert settings.firebase_email_verified_claim == "email_verified"
+    assert settings.initial_free_analysis_tokens == 0
+    assert settings.default_profile_image_url is None
 
 
 async def test_current_principal_dependency_rejects_invalid_signature_with_401_envelope() -> None:

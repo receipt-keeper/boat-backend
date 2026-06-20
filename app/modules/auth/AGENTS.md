@@ -58,11 +58,14 @@ auth/
 
 ## ANTI-PATTERNS
 
-- Do not add `logout-all`, users profile API, Firebase custom-token issuance, or Apple OIDC verification unless the scope is explicitly reopened.
+- Do not add `logout-all`.
+- Do not add Firebase custom-token issuance or direct Apple OIDC verification unless the scope is explicitly reopened.
+- users public API belongs to the users BC. Do not mount users endpoints in the auth router.
 - Do not import `app.modules.users.infrastructure` from auth.
 - Do not create `app/composition` for auth/users wiring.
 - Do not reintroduce old file names blocked by `tests/test_architecture.py`.
 - Do not move business decisions into Firebase, JWT, or SQLAlchemy adapters.
+- NoOpPushCleanup cannot satisfy PRD-complete withdrawal; it must not be used to claim PRD-complete withdrawal cleanup, and missing BC cleanup must remain unclaimed until the real owning BC and cleanup contract exist.
 - Do not introduce event sourcing, durable event stores, outbox, retry, replay,
   external message bus, Kafka/RabbitMQ/Celery, cross-process delivery, or
   durability semantics in auth.

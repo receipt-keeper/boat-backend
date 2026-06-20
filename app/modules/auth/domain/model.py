@@ -4,7 +4,14 @@ from uuid import UUID, uuid4
 
 from app.core.domain.entity import Entity
 from app.core.domain.validation import Notification
-from app.modules.auth.domain.value_objects import Issuer, Provider, Role, Subject, TokenHash
+from app.modules.auth.domain.value_objects import (
+    Issuer,
+    NormalizedEmail,
+    Provider,
+    Role,
+    Subject,
+    TokenHash,
+)
 
 
 @dataclass(eq=False)
@@ -41,6 +48,8 @@ class ExternalIdentity(Entity[UUID]):
     subject: Subject
     provider: Provider
     email: str | None
+    normalized_email: NormalizedEmail | None
+    email_verified: bool
     name: str | None
     credentials_id: UUID | None = None
 
@@ -53,6 +62,8 @@ class ExternalIdentity(Entity[UUID]):
         provider: str,
         email: str | None,
         name: str | None,
+        normalized_email: str | None = None,
+        email_verified: bool = False,
         identity_id: UUID | None = None,
         credentials_id: UUID | None = None,
     ) -> "ExternalIdentity":
@@ -60,6 +71,11 @@ class ExternalIdentity(Entity[UUID]):
         new_issuer = notification.collect(lambda: Issuer(issuer))
         new_subject = notification.collect(lambda: Subject(subject))
         new_provider = notification.collect(lambda: Provider(provider))
+        new_normalized_email = (
+            None
+            if normalized_email is None
+            else notification.collect(lambda: NormalizedEmail(normalized_email))
+        )
         notification.raise_if_any()
 
         return cls(
@@ -69,8 +85,34 @@ class ExternalIdentity(Entity[UUID]):
             subject=new_subject,
             provider=new_provider,
             email=email,
+            normalized_email=new_normalized_email,
+            email_verified=email_verified,
             name=name,
         )
+
+
+@dataclass(eq=False)
+class AuthSession(Entity[UUID]):
+    credentials_id: UUID
+    revoked_at: datetime | None = None
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        credentials_id: UUID,
+        session_id: UUID | None = None,
+        revoked_at: datetime | None = None,
+    ) -> "AuthSession":
+        return cls(
+            id=session_id or uuid4(),
+            credentials_id=credentials_id,
+            revoked_at=revoked_at,
+        )
+
+    @property
+    def session_id(self) -> UUID:
+        return self.id
 
 
 @dataclass(eq=False)
@@ -78,6 +120,7 @@ class RefreshToken(Entity[UUID]):
     credentials_id: UUID
     token_hash: TokenHash
     expires_at: datetime
+    session_id: UUID | None = None
 
     @classmethod
     def create(
@@ -86,6 +129,7 @@ class RefreshToken(Entity[UUID]):
         credentials_id: UUID,
         token_hash: str,
         expires_at: datetime,
+        session_id: UUID | None = None,
         refresh_token_id: UUID | None = None,
     ) -> "RefreshToken":
         return cls(
@@ -93,4 +137,5 @@ class RefreshToken(Entity[UUID]):
             credentials_id=credentials_id,
             token_hash=TokenHash(token_hash),
             expires_at=expires_at,
+            session_id=session_id,
         )

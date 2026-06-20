@@ -30,6 +30,8 @@ _ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
     },
 }
 
+# auth BC의 인증 API. 외부 신원 검증(Firebase) 뒤 백엔드 발급 토큰을 다루며,
+# 도메인 예외는 전역 핸들러가 401/403/422 봉투로 변환한다.
 router = APIRouter(
     prefix="/auth",
     tags=["auth"],
@@ -54,7 +56,21 @@ async def login(
     request: LoginRequest,
     command_use_case: LoginCommandUseCaseDep,
 ) -> CommonResponse[AuthTokenResponse]:
-    tokens = await command_use_case.execute(LoginCommand(provider_token=request.id_token))
+    """소셜 로그인. Google/Apple만 허용한다.
+
+    신규 가입 시 약관·개인정보 동의가 없으면 422로 거부하고, 검증된 동일 이메일의 다른
+    제공자는 기존 계정에 연결한다. 성공 시 access/refresh 토큰 쌍을 발급한다.
+    """
+    tokens = await command_use_case.execute(
+        LoginCommand(
+            provider_token=request.id_token,
+            terms_version=request.terms_version,
+            privacy_version=request.privacy_version,
+            terms_accepted=request.terms_accepted,
+            privacy_accepted=request.privacy_accepted,
+            marketing_consent=request.marketing_consent,
+        )
+    )
     return CommonResponse(
         success=True,
         status=status.HTTP_200_OK,
@@ -70,6 +86,10 @@ async def refresh(
     request: RefreshTokenRequest,
     command_use_case: RefreshTokenCommandUseCaseDep,
 ) -> CommonResponse[AuthTokenResponse]:
+    """access token 재발급. refresh token을 1회용으로 회전(rotate)해 새 토큰 쌍을 발급한다.
+
+    이미 사용된(회전된) refresh token의 재사용은 401로 거부한다.
+    """
     tokens = await command_use_case.execute(
         RefreshTokenCommand(refresh_token=request.refresh_token)
     )
@@ -88,6 +108,10 @@ async def logout(
     request: RefreshTokenRequest,
     command_use_case: LogoutCommandUseCaseDep,
 ) -> Response:
+    """로그아웃. 제시된 refresh token의 세션을 revoke한다.
+
+    같은 세션의 access token은 즉시 무효화되며, 성공 시 204 No Content(빈 본문)를 반환한다.
+    """
     await command_use_case.execute(LogoutCommand(refresh_token=request.refresh_token))
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -100,6 +124,11 @@ async def withdraw_account(
     principal: CurrentPrincipalDep,
     command_use_case: WithdrawAccountCommandUseCaseDep,
 ) -> Response:
+    """회원 탈퇴.
+
+    인증 측(credential/session/refresh/external identity)과 users 측(설정/엔타이틀먼트/
+    푸시 토큰/user row)을 한 트랜잭션에서 삭제한다. 성공 시 204, 실패 시 전체 롤백한다.
+    """
     await command_use_case.execute(
         WithdrawAccountCommand(
             user_id=principal.user_id,

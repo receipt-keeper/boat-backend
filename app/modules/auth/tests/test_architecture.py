@@ -15,6 +15,8 @@ from app.modules.auth.domain.model import ExternalIdentity, RefreshToken, UserCr
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
 AUTH_ROOT = PROJECT_ROOT / "app" / "modules" / "auth"
 APPLICATION_ROOT = AUTH_ROOT / "application"
+AUTH_GUIDANCE = AUTH_ROOT / "AGENTS.md"
+AUTH_ROUTER = AUTH_ROOT / "api" / "router.py"
 
 EXPECTED_AUTH_FILES = {
     "application/commands/login/command.py",
@@ -65,6 +67,14 @@ FORBIDDEN_APPLICATION_IMPORT_PREFIXES = (
     "firebase_admin",
     "jwt",
     "sqlalchemy",
+)
+
+FORBIDDEN_AUTH_ROUTE_FRAGMENTS = (
+    "/logout-all",
+    "logout_all",
+    "/users",
+    "users/me",
+    "push-tokens",
 )
 
 
@@ -144,6 +154,23 @@ def test_auth_application_does_not_import_infrastructure() -> None:
     assert offending_files == []
 
 
+def test_auth_guidance_delegates_public_users_api_to_users_bc() -> None:
+    guidance = AUTH_GUIDANCE.read_text()
+
+    assert "users profile API" not in guidance
+    assert "users public API belongs to the users BC" in guidance
+    assert "Do not mount users endpoints in the auth router" in guidance
+
+
+def test_auth_router_does_not_expose_logout_all_or_users_api() -> None:
+    router_source = AUTH_ROUTER.read_text()
+    forbidden_fragments = [
+        fragment for fragment in FORBIDDEN_AUTH_ROUTE_FRAGMENTS if fragment in router_source
+    ]
+
+    assert forbidden_fragments == []
+
+
 def test_auth_module_does_not_import_users_infrastructure() -> None:
     forbidden_prefix = ".".join(("app", "modules", "users", "infrastructure"))
     offending_files = [
@@ -154,6 +181,13 @@ def test_auth_module_does_not_import_users_infrastructure() -> None:
     ]
 
     assert offending_files == []
+
+
+def test_auth_guidance_forbids_noop_cleanup_completion_claim() -> None:
+    guidance = AUTH_GUIDANCE.read_text()
+
+    assert "NoOpPushCleanup" in guidance
+    assert "must not be used to claim PRD-complete withdrawal cleanup" in guidance
 
 
 def test_runtime_wiring_uses_module_dependencies_not_app_composition() -> None:

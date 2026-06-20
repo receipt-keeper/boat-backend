@@ -18,14 +18,17 @@ from app.modules.auth.application.ports.external_identity_login_synchronizer imp
     ExternalIdentityLoginSynchronizer,
 )
 from app.modules.auth.application.ports.external_identity_verifier import ExternalIdentityVerifier
-from app.modules.auth.application.ports.push_cleanup import PushCleanup
 from app.modules.auth.application.ports.token_issuer import (
     AccessTokenIssuer,
     AccessTokenVerifier,
     RefreshTokenHasher,
     RefreshTokenIssuer,
 )
-from app.modules.auth.application.ports.user_provisioner import ProvisionedUser, UserProvisioner
+from app.modules.auth.application.ports.user_provisioner import (
+    ProvisionedUser,
+    UserProvisioner,
+    UserProvisioningRequest,
+)
 from app.modules.auth.application.queries.current_principal.use_case import (
     CurrentPrincipalQueryUseCase,
 )
@@ -38,25 +41,50 @@ from app.modules.auth.infrastructure.persistence.credential_repository import (
 from app.modules.auth.infrastructure.persistence.external_identity_login_synchronizer import (
     SqlAlchemyExternalIdentityLoginSynchronizer,
 )
-from app.modules.auth.infrastructure.push_cleanup import NoOpPushCleanup
 from app.modules.auth.infrastructure.tokens.jwt import JwtAccessTokenService
 from app.modules.auth.infrastructure.tokens.opaque_refresh_token import OpaqueRefreshTokenIssuer
-from app.modules.users.application.commands.delete.use_case import DeleteUserCommandUseCase
-from app.modules.users.application.commands.provision.command import ProvisionUserCommand
-from app.modules.users.application.commands.provision.use_case import ProvisionUserCommandUseCase
+from app.modules.users.application.commands.resolve_user_for_login.command import (
+    ResolveUserForLoginCommand,
+)
+from app.modules.users.application.commands.resolve_user_for_login.use_case import (
+    ResolveUserForLoginCommandUseCase,
+)
+from app.modules.users.application.commands.withdrawal_cleanup.use_case import (
+    WithdrawalCleanupCommandUseCase,
+)
 from app.modules.users.dependencies import (
-    build_delete_user_command_use_case,
-    build_provision_user_command_use_case,
+    build_resolve_user_for_login_command_use_case,
+    build_withdrawal_cleanup_command_use_case,
 )
 
 
 class _ProvisionUserPortAdapter(UserProvisioner):
-    def __init__(self, command_use_case: ProvisionUserCommandUseCase) -> None:
+    def __init__(
+        self,
+        command_use_case: ResolveUserForLoginCommandUseCase,
+        *,
+        initial_free_analysis_tokens: int = 0,
+        default_profile_image_url: str | None = None,
+    ) -> None:
         self._command_use_case = command_use_case
+        self._initial_free_analysis_tokens = initial_free_analysis_tokens
+        self._default_profile_image_url = default_profile_image_url
 
-    async def provision(self, *, name: str | None, email: str | None) -> ProvisionedUser:
-        user = await self._command_use_case.execute(ProvisionUserCommand(name=name, email=email))
-        return ProvisionedUser(user_id=user.user_id)
+    async def provision(self, *, request: UserProvisioningRequest) -> ProvisionedUser:
+        result = await self._command_use_case.execute(
+            ResolveUserForLoginCommand(
+                name=request.name,
+                email=request.normalized_email,
+                profile_image_url=request.profile_image_url or self._default_profile_image_url,
+                initial_free_analysis_tokens=self._initial_free_analysis_tokens,
+                terms_version=request.terms_version,
+                privacy_version=request.privacy_version,
+                terms_accepted=request.terms_accepted,
+                privacy_accepted=request.privacy_accepted,
+                marketing_consent=request.marketing_consent,
+            )
+        )
+        return ProvisionedUser(user_id=result.user_id)
 
 
 class RequestCredentialRepositoryProvider(CredentialRepositoryProvider):
@@ -98,19 +126,22 @@ async def get_external_identity_login_synchronizer(
     return SqlAlchemyExternalIdentityLoginSynchronizer(session)
 
 
-async def get_user_provisioner(session: AuthTransactionSessionDep) -> UserProvisioner:
-    command_use_case = build_provision_user_command_use_case(session)
-    return _ProvisionUserPortAdapter(command_use_case)
-
-
-async def get_delete_user_command_use_case(
+async def get_user_provisioner(
     session: AuthTransactionSessionDep,
-) -> DeleteUserCommandUseCase:
-    return build_delete_user_command_use_case(session)
+    settings: Annotated[Settings, Depends(get_request_settings)],
+) -> UserProvisioner:
+    command_use_case = build_resolve_user_for_login_command_use_case(session)
+    return _ProvisionUserPortAdapter(
+        command_use_case,
+        initial_free_analysis_tokens=settings.initial_free_analysis_tokens,
+        default_profile_image_url=settings.default_profile_image_url,
+    )
 
 
-async def get_push_cleanup() -> PushCleanup:
-    return NoOpPushCleanup()
+async def get_withdrawal_cleanup_command_use_case(
+    session: AuthTransactionSessionDep,
+) -> WithdrawalCleanupCommandUseCase:
+    return build_withdrawal_cleanup_command_use_case(session)
 
 
 async def get_external_identity_verifier(
@@ -224,16 +255,14 @@ async def get_current_principal_query_use_case(
 
 async def get_withdraw_account_command_use_case(
     credential_repository: Annotated[CredentialRepository, Depends(get_credential_repository)],
-    delete_user_command_use_case: Annotated[
-        DeleteUserCommandUseCase,
-        Depends(get_delete_user_command_use_case),
+    withdrawal_cleanup_command_use_case: Annotated[
+        WithdrawalCleanupCommandUseCase,
+        Depends(get_withdrawal_cleanup_command_use_case),
     ],
-    push_cleanup: Annotated[PushCleanup, Depends(get_push_cleanup)],
 ) -> WithdrawAccountCommandUseCase:
     return WithdrawAccountCommandUseCase(
         credential_repository=credential_repository,
-        delete_user_command_use_case=delete_user_command_use_case,
-        push_cleanup=push_cleanup,
+        withdrawal_cleanup_command_use_case=withdrawal_cleanup_command_use_case,
     )
 
 

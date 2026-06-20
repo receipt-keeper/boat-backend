@@ -1,5 +1,8 @@
+import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from uuid import UUID
 
 import anyio
@@ -26,8 +29,11 @@ from app.modules.auth.infrastructure.persistence.credential_repository import (
 from app.modules.auth.infrastructure.persistence.external_identity_login_synchronizer import (
     SqlAlchemyExternalIdentityLoginSynchronizer,
 )
-from app.modules.users.dependencies import build_provision_user_command_use_case
+from app.modules.users.dependencies import build_resolve_user_for_login_command_use_case
 from tests.support.users_persistence import count_persisted_users
+
+TASK_11_EVIDENCE_DIR = Path(".omo/evidence/auth-users-bc-prd-completion")
+type ManualQaValue = int | str
 
 
 @dataclass(frozen=True)
@@ -60,6 +66,19 @@ class PersistedLoginRows:
     refresh_tokens: int
 
 
+def _write_manual_qa_evidence(
+    name: str,
+    payload: Mapping[str, ManualQaValue],
+) -> Path:
+    TASK_11_EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
+    path = TASK_11_EVIDENCE_DIR / name
+    path.write_text(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return path
+
+
 class ConcurrentLoginBarrier:
     def __init__(self, *, parties: int) -> None:
         self._parties = parties
@@ -85,19 +104,33 @@ class BarrierExternalIdentityVerifier(ExternalIdentityVerifier):
     async def verify(self, provider_token: str) -> ExternalIdentity:
         assert provider_token
         await self._barrier.wait()
+        normalized_email = (
+            None
+            if self._identity.normalized_email is None
+            else self._identity.normalized_email.value
+        )
         return ExternalIdentity.create(
             issuer=self._identity.issuer.value,
             subject=self._identity.subject.value,
             provider=self._identity.provider.value,
             email=self._identity.email,
             name=self._identity.name,
+            normalized_email=normalized_email,
+            email_verified=self._identity.email_verified,
         )
 
 
 class DeterministicAccessTokenIssuer(AccessTokenIssuer):
-    def issue(self, *, user_id: UUID, credentials_id: UUID, role: str) -> IssuedAccessToken:
+    def issue(
+        self,
+        *,
+        user_id: UUID,
+        credentials_id: UUID,
+        session_id: UUID,
+        role: str,
+    ) -> IssuedAccessToken:
         return IssuedAccessToken(
-            token=f"access:{user_id}:{credentials_id}:{role}",
+            token=f"access:{user_id}:{credentials_id}:{session_id}:{role}",
             expires_at=datetime(2030, 1, 1, tzinfo=UTC),
             expires_in=1800,
         )
@@ -129,7 +162,9 @@ def _build_login_command_use_case(
         ),
         login_synchronizer=SqlAlchemyExternalIdentityLoginSynchronizer(session),
         credential_repository=SqlAlchemyCredentialRepository(session),
-        user_provisioner=_ProvisionUserPortAdapter(build_provision_user_command_use_case(session)),
+        user_provisioner=_ProvisionUserPortAdapter(
+            build_resolve_user_for_login_command_use_case(session)
+        ),
         access_token_issuer=DeterministicAccessTokenIssuer(),
         refresh_token_issuer=DeterministicRefreshTokenIssuer(
             token=attempt.refresh_token,
@@ -152,7 +187,11 @@ async def _run_login_attempt(
         )
         try:
             result = await command_use_case.execute(
-                LoginCommand(provider_token=attempt.provider_token)
+                LoginCommand(
+                    provider_token=attempt.provider_token,
+                    terms_accepted=True,
+                    privacy_accepted=True,
+                )
             )
             await transaction.commit()
         except SQLAlchemyError as exc:
@@ -198,11 +237,13 @@ async def test_concurrent_first_login_for_same_external_identity_is_idempotent(
     context = ConcurrentLoginContext(
         session_factory=postgres_session_factory,
         identity=ExternalIdentity.create(
-            issuer="firebase",
+            issuer="google",
             subject="shared-firebase-uid",
-            provider="google.com",
+            provider="google",
             email="shared-user@example.com",
             name="동시 로그인 사용자",
+            normalized_email="shared-user@example.com",
+            email_verified=True,
         ),
         barrier=ConcurrentLoginBarrier(parties=2),
     )
@@ -250,8 +291,16 @@ async def test_concurrent_first_login_for_same_external_identity_is_idempotent(
         external_identities=1,
         refresh_tokens=2,
     )
-    print(
-        "manual_qa concurrent_first_login "
-        f"token_pairs={sorted(token_pairs)} "
-        "rows users=1 credentials=1 external_identities=1 refresh_tokens=2"
+    manual_qa = {
+        "scenario": "concurrent_first_login",
+        "token_pairs": repr(sorted(token_pairs)),
+        "users": rows.users,
+        "credentials": rows.credentials,
+        "external_identities": rows.external_identities,
+        "refresh_tokens": rows.refresh_tokens,
+    }
+    evidence_path = _write_manual_qa_evidence(
+        "task-11-concurrent-first-login-manual-qa.json",
+        manual_qa,
     )
+    assert evidence_path.is_file()

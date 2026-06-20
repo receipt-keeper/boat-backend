@@ -1,5 +1,8 @@
+from pathlib import Path
+
 from httpx import AsyncClient
 
+from app.core.domain.exceptions import ErrorDetail, ValidationError
 from app.main import app
 from app.modules.auth.application.commands.login.command import LoginCommand
 from app.modules.auth.application.commands.login.result import LoginResult
@@ -13,6 +16,16 @@ from app.modules.auth.dependencies import (
     get_refresh_token_command_use_case,
 )
 from app.modules.auth.domain.exceptions import AuthenticationError
+
+EVIDENCE_DIR = Path(".omo/evidence/auth-users-bc-prd-completion")
+
+
+def _write_evidence(name: str, content: str) -> Path:
+    EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
+    path = EVIDENCE_DIR / name
+    path.write_text(content + "\n", encoding="utf-8")
+    return path
+
 
 LOGIN_SAMPLE = "firebase-sample"
 REFRESH_SAMPLE = "refresh-sample"
@@ -36,6 +49,31 @@ class FakeLoginCommandUseCase:
 class RejectingLoginCommandUseCase(FakeLoginCommandUseCase):
     async def execute(self, command: LoginCommand) -> LoginResult:
         raise AuthenticationError(AUTHENTICATION_FAILED_MESSAGE)
+
+
+class ConsentEnforcingLoginCommandUseCase:
+    def __init__(self) -> None:
+        self.command: LoginCommand | None = None
+
+    async def execute(self, command: LoginCommand) -> LoginResult:
+        self.command = command
+        details: list[ErrorDetail] = []
+        if not command.terms_accepted:
+            details.append(
+                ErrorDetail(field="termsAccepted", message="이용약관에 동의해야 합니다.")
+            )
+        if not command.privacy_accepted:
+            details.append(
+                ErrorDetail(field="privacyAccepted", message="개인정보 처리방침에 동의해야 합니다.")
+            )
+        if details:
+            raise ValidationError(details)
+        return LoginResult(
+            access_token="access-token",
+            refresh_token="refresh-token",
+            token_type=AUTH_SCHEME_BEARER,
+            expires_in=1800,
+        )
 
 
 class FakeRefreshTokenCommandUseCase:
@@ -78,6 +116,63 @@ async def test_login_endpoint_returns_token_envelope(client: AsyncClient) -> Non
             "expiresIn": 1800,
         },
     }
+
+
+async def test_login_with_consent_succeeds(client: AsyncClient) -> None:
+    command_use_case = ConsentEnforcingLoginCommandUseCase()
+    app.dependency_overrides[get_login_command_use_case] = lambda: command_use_case
+
+    response = await client.post(
+        "/api/v1/auth/login",
+        json={
+            "idToken": LOGIN_SAMPLE,
+            "termsVersion": "v1",
+            "privacyVersion": "v1",
+            "termsAccepted": True,
+            "privacyAccepted": True,
+            "marketingConsent": True,
+        },
+    )
+
+    body = response.json()
+    assert response.status_code == 200
+    assert command_use_case.command is not None
+    assert command_use_case.command.terms_accepted is True
+    assert command_use_case.command.privacy_accepted is True
+    assert command_use_case.command.marketing_consent is True
+    assert command_use_case.command.terms_version == "v1"
+    assert body["success"] is True
+    assert body["data"]["accessToken"] == "access-token"
+    evidence_path = _write_evidence(
+        "task-4-login-consent-green.log",
+        f"status={response.status_code} body={body}",
+    )
+    assert evidence_path.is_file()
+
+
+async def test_login_missing_terms_consent_uses_422_envelope(client: AsyncClient) -> None:
+    app.dependency_overrides[get_login_command_use_case] = lambda: (
+        ConsentEnforcingLoginCommandUseCase()
+    )
+
+    response = await client.post(
+        "/api/v1/auth/login",
+        json={"idToken": LOGIN_SAMPLE, "privacyAccepted": True},
+    )
+
+    body = response.json()
+    assert response.status_code == 422
+    assert body["success"] is False
+    assert body["status"] == 422
+    assert body["data"]["path"] == "/api/v1/auth/login"
+    assert body["data"]["errors"] == [
+        {"field": "termsAccepted", "message": "이용약관에 동의해야 합니다."}
+    ]
+    evidence_path = _write_evidence(
+        "task-4-login-consent-failures.log",
+        f"status={response.status_code} body={body}",
+    )
+    assert evidence_path.is_file()
 
 
 async def test_invalid_firebase_token_uses_401_envelope(client: AsyncClient) -> None:

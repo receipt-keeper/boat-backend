@@ -6,13 +6,19 @@ from app.modules.auth.application.commands.login.use_case import LoginCommandUse
 from app.modules.auth.application.commands.logout.use_case import LogoutCommandUseCase
 from app.modules.auth.application.commands.refresh.use_case import RefreshTokenCommandUseCase
 from app.modules.auth.application.constants import AUTHENTICATION_FAILED_MESSAGE
-from app.modules.auth.application.ports.credential_repository import CredentialRepository
+from app.modules.auth.application.ports.credential_repository import (
+    CredentialRepository,
+    SessionCredential,
+)
 from app.modules.auth.application.ports.external_identity_login_synchronizer import (
     ExternalIdentityLoginSynchronizer,
 )
 from app.modules.auth.application.ports.external_identity_verifier import ExternalIdentityVerifier
-from app.modules.auth.application.ports.token_issuer import AccessTokenIssuer
-from app.modules.auth.application.ports.user_provisioner import ProvisionedUser, UserProvisioner
+from app.modules.auth.application.ports.user_provisioner import (
+    ProvisionedUser,
+    UserProvisioner,
+    UserProvisioningRequest,
+)
 from app.modules.auth.domain.exceptions import AuthenticationError
 from app.modules.auth.domain.model import ExternalIdentity, UserCredential
 from app.modules.auth.infrastructure.tokens.jwt import JwtAccessTokenService
@@ -35,12 +41,13 @@ class FakeExternalIdentityVerifier(ExternalIdentityVerifier):
 
 
 class FakeUserProvisioner(UserProvisioner):
-    def __init__(self) -> None:
-        self.provisioned: list[tuple[str | None, str | None]] = []
+    def __init__(self, *, user_id: UUID | None = None) -> None:
+        self.provisioned: list[UserProvisioningRequest] = []
+        self._user_id = user_id
 
-    async def provision(self, *, name: str | None, email: str | None) -> ProvisionedUser:
-        self.provisioned.append((name, email))
-        return ProvisionedUser(user_id=uuid4())
+    async def provision(self, *, request: UserProvisioningRequest) -> ProvisionedUser:
+        self.provisioned.append(request)
+        return ProvisionedUser(user_id=self._user_id or uuid4())
 
 
 class NoOpExternalIdentityLoginSynchronizer(ExternalIdentityLoginSynchronizer):
@@ -52,10 +59,12 @@ class NoOpExternalIdentityLoginSynchronizer(ExternalIdentityLoginSynchronizer):
 class FakeCredentialRepository(CredentialRepository):
     def __init__(self) -> None:
         self.credentials_by_identity: dict[tuple[str, str], UserCredential] = {}
-        self.refresh_token_hashes: dict[str, UserCredential] = {}
+        self.credentials_by_user_id: dict[UUID, UserCredential] = {}
+        self.refresh_token_hashes: dict[str, SessionCredential] = {}
         self.saved_identities: list[tuple[str, str, str, str | None, str | None]] = []
         self.login_records: list[UUID] = []
         self.revoked_hashes: list[str] = []
+        self.revoked_session_ids: set[UUID] = set()
 
     async def find_by_external_identity(
         self,
@@ -80,6 +89,7 @@ class FakeCredentialRepository(CredentialRepository):
         )
         identity_key = (identity.issuer.value, identity.subject.value)
         self.credentials_by_identity[identity_key] = credentials
+        self.credentials_by_user_id[credentials.user_id] = credentials
         self.saved_identities.append(
             (
                 identity.issuer.value,
@@ -105,17 +115,56 @@ class FakeCredentialRepository(CredentialRepository):
                 return credentials
         raise AuthenticationError(AUTHENTICATION_FAILED_MESSAGE)
 
+    async def find_credential_by_user_id(self, *, user_id: UUID) -> UserCredential | None:
+        return self.credentials_by_user_id.get(user_id)
+
+    async def attach_external_identity(
+        self,
+        *,
+        credentials_id: UUID,
+        identity: ExternalIdentity,
+    ) -> None:
+        credentials = next(
+            (
+                stored
+                for stored in self.credentials_by_identity.values()
+                if stored.credentials_id == credentials_id
+            ),
+            None,
+        )
+        if credentials is None:
+            raise AuthenticationError(AUTHENTICATION_FAILED_MESSAGE)
+        identity_key = (identity.issuer.value, identity.subject.value)
+        self.credentials_by_identity[identity_key] = credentials
+        self.saved_identities.append(
+            (
+                identity.issuer.value,
+                identity.subject.value,
+                identity.provider.value,
+                identity.email,
+                identity.name,
+            )
+        )
+
+    async def create_session(self, *, credentials_id: UUID) -> UUID:
+        assert credentials_id
+        return uuid4()
+
     async def save_refresh_token(
         self,
         *,
         credentials_id: UUID,
+        session_id: UUID,
         token_hash: str,
         expires_at: datetime,
     ) -> None:
         assert expires_at.tzinfo is not None
         for credentials in self.credentials_by_identity.values():
             if credentials.credentials_id == credentials_id:
-                self.refresh_token_hashes[token_hash] = credentials
+                self.refresh_token_hashes[token_hash] = SessionCredential(
+                    credentials=credentials,
+                    session_id=session_id,
+                )
                 return
         raise AuthenticationError(AUTHENTICATION_FAILED_MESSAGE)
 
@@ -125,17 +174,26 @@ class FakeCredentialRepository(CredentialRepository):
         token_hash: str,
         new_token_hash: str,
         expires_at: datetime,
-    ) -> UserCredential:
+    ) -> SessionCredential:
         assert expires_at.tzinfo is not None
         try:
-            credentials = self.refresh_token_hashes.pop(token_hash)
+            session_credential = self.refresh_token_hashes.pop(token_hash)
         except KeyError as exc:
             raise AuthenticationError(AUTHENTICATION_FAILED_MESSAGE) from exc
-        self.refresh_token_hashes[new_token_hash] = credentials
-        return credentials
+        if session_credential.session_id in self.revoked_session_ids:
+            raise AuthenticationError(AUTHENTICATION_FAILED_MESSAGE)
+        self.refresh_token_hashes[new_token_hash] = session_credential
+        return session_credential
 
-    async def revoke_refresh_token(self, *, token_hash: str) -> None:
-        self.refresh_token_hashes.pop(token_hash, None)
+    async def revoke_session_by_refresh_token(self, *, token_hash: str) -> None:
+        session_credential = self.refresh_token_hashes.get(token_hash)
+        if session_credential is not None:
+            self.revoked_session_ids.add(session_credential.session_id)
+            self.refresh_token_hashes = {
+                stored_hash: stored_session_credential
+                for stored_hash, stored_session_credential in self.refresh_token_hashes.items()
+                if stored_session_credential.session_id != session_credential.session_id
+            }
         self.revoked_hashes.append(token_hash)
 
     async def exists_active_credential(
@@ -144,6 +202,20 @@ class FakeCredentialRepository(CredentialRepository):
         user_id: UUID,
         credentials_id: UUID,
     ) -> bool:
+        return any(
+            credentials.user_id == user_id and credentials.credentials_id == credentials_id
+            for credentials in self.credentials_by_identity.values()
+        )
+
+    async def exists_active_session(
+        self,
+        *,
+        user_id: UUID,
+        credentials_id: UUID,
+        session_id: UUID,
+    ) -> bool:
+        if session_id in self.revoked_session_ids:
+            return False
         return any(
             credentials.user_id == user_id and credentials.credentials_id == credentials_id
             for credentials in self.credentials_by_identity.values()
@@ -160,14 +232,20 @@ class FakeCredentialRepository(CredentialRepository):
             for identity_key, credentials in self.credentials_by_identity.items()
             if credentials.user_id != user_id or credentials.credentials_id != credentials_id
         }
-        self.refresh_token_hashes = {
-            token_hash: credentials
-            for token_hash, credentials in self.refresh_token_hashes.items()
+        self.credentials_by_user_id = {
+            stored_user_id: credentials
+            for stored_user_id, credentials in self.credentials_by_user_id.items()
             if credentials.user_id != user_id or credentials.credentials_id != credentials_id
+        }
+        self.refresh_token_hashes = {
+            token_hash: session_credential
+            for token_hash, session_credential in self.refresh_token_hashes.items()
+            if session_credential.credentials.user_id != user_id
+            or session_credential.credentials.credentials_id != credentials_id
         }
 
 
-def build_access_token_issuer() -> AccessTokenIssuer:
+def build_access_token_issuer() -> JwtAccessTokenService:
     return JwtAccessTokenService(
         secret_key=TEST_SIGNING_KEY,
         issuer="boat-backend-test",
@@ -187,7 +265,7 @@ def build_login_command_use_case(
     *,
     verifier: FakeExternalIdentityVerifier,
     repository: FakeCredentialRepository,
-    user_provisioner: FakeUserProvisioner,
+    user_provisioner: UserProvisioner,
 ) -> LoginCommandUseCase:
     refresh_token_service = build_refresh_token_service()
     return LoginCommandUseCase(

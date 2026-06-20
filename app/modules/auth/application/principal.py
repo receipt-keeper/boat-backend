@@ -6,4 +6,5 @@ from uuid import UUID
 class AuthenticatedPrincipal:
     user_id: UUID
     credentials_id: UUID
+    session_id: UUID
     role: str

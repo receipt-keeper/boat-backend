@@ -7,6 +7,7 @@ from app.modules.users.domain.model import User
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
 USERS_ROOT = PROJECT_ROOT / "app" / "modules" / "users"
 APPLICATION_ROOT = USERS_ROOT / "application"
+USERS_GUIDANCE = USERS_ROOT / "AGENTS.md"
 
 EXPECTED_USERS_FILES = {
     "application/commands/provision/command.py",
@@ -23,6 +24,13 @@ FORBIDDEN_USERS_FILES = {
     "application/delete/schemas.py",
     "application/delete/use_case.py",
 }
+
+PRD_USERS_PUBLIC_ENDPOINTS = (
+    "GET /api/v1/users/me",
+    "PATCH /api/v1/users/me/settings",
+    "POST /api/v1/users/me/push-tokens",
+    "DELETE /api/v1/users/me/push-tokens/{deviceId}",
+)
 
 
 def _imports(path: Path) -> set[str]:
@@ -54,6 +62,15 @@ def test_users_file_structure_exposes_command_flows() -> None:
 
     assert missing_files == []
     assert forbidden_files == []
+
+
+def test_users_guidance_reserves_prd_public_api_scope() -> None:
+    guidance = USERS_GUIDANCE.read_text()
+
+    assert "provision-only" not in guidance
+    assert "no public `api/` surface" not in guidance
+    assert "Users owns the PRD public mypage API scope" in guidance
+    assert all(endpoint in guidance for endpoint in PRD_USERS_PUBLIC_ENDPOINTS)
 
 
 def test_users_application_flow_classes_use_command_use_case_names() -> None:

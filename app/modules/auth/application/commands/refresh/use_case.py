@@ -25,15 +25,16 @@ class RefreshTokenCommandUseCase:
 
     async def execute(self, command: RefreshTokenCommand) -> RefreshTokenResult:
         rotated_refresh_token = self._refresh_token_issuer.issue()
-        credentials = await self._credential_repository.rotate_refresh_token(
+        session_credential = await self._credential_repository.rotate_refresh_token(
             token_hash=self._refresh_token_hasher.hash(command.refresh_token),
             new_token_hash=rotated_refresh_token.token_hash,
             expires_at=rotated_refresh_token.expires_at,
         )
         access_token = self._access_token_issuer.issue(
-            user_id=credentials.user_id,
-            credentials_id=credentials.credentials_id,
-            role=credentials.role.value,
+            user_id=session_credential.credentials.user_id,
+            credentials_id=session_credential.credentials.credentials_id,
+            session_id=session_credential.session_id,
+            role=session_credential.credentials.role.value,
         )
 
         return RefreshTokenResult(

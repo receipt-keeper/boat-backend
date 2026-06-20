@@ -18,6 +18,7 @@ JWT_CLAIM_ISSUER = "iss"
 JWT_CLAIM_AUDIENCE = "aud"
 JWT_CLAIM_SUBJECT = "sub"
 JWT_CLAIM_CREDENTIALS_ID = "credentials_id"
+JWT_CLAIM_SESSION_ID = "sid"
 JWT_CLAIM_ROLE = "role"
 JWT_CLAIM_ISSUED_AT = "iat"
 JWT_CLAIM_EXPIRES_AT = "exp"
@@ -27,6 +28,7 @@ REQUIRED_ACCESS_TOKEN_CLAIMS = (
     JWT_CLAIM_AUDIENCE,
     JWT_CLAIM_SUBJECT,
     JWT_CLAIM_CREDENTIALS_ID,
+    JWT_CLAIM_SESSION_ID,
     JWT_CLAIM_ROLE,
     JWT_CLAIM_ISSUED_AT,
     JWT_CLAIM_EXPIRES_AT,
@@ -60,7 +62,14 @@ class JwtAccessTokenService(AccessTokenIssuer, AccessTokenVerifier):
             algorithm=settings.jwt_algorithm,
         )
 
-    def issue(self, *, user_id: UUID, credentials_id: UUID, role: str) -> IssuedAccessToken:
+    def issue(
+        self,
+        *,
+        user_id: UUID,
+        credentials_id: UUID,
+        session_id: UUID,
+        role: str,
+    ) -> IssuedAccessToken:
         issued_at = datetime.now(UTC)
         expires_at = issued_at + timedelta(minutes=self._expires_minutes)
         expires_in = int((expires_at - issued_at).total_seconds())
@@ -69,6 +78,7 @@ class JwtAccessTokenService(AccessTokenIssuer, AccessTokenVerifier):
             JWT_CLAIM_AUDIENCE: self._audience,
             JWT_CLAIM_SUBJECT: str(user_id),
             JWT_CLAIM_CREDENTIALS_ID: str(credentials_id),
+            JWT_CLAIM_SESSION_ID: str(session_id),
             JWT_CLAIM_ROLE: role,
             JWT_CLAIM_ISSUED_AT: issued_at,
             JWT_CLAIM_EXPIRES_AT: expires_at,
@@ -93,6 +103,7 @@ class JwtAccessTokenService(AccessTokenIssuer, AccessTokenVerifier):
             return AuthenticatedPrincipal(
                 user_id=UUID(str(claims[JWT_CLAIM_SUBJECT])),
                 credentials_id=UUID(str(claims[JWT_CLAIM_CREDENTIALS_ID])),
+                session_id=UUID(str(claims[JWT_CLAIM_SESSION_ID])),
                 role=str(claims[JWT_CLAIM_ROLE]),
             )
         except (jwt.PyJWTError, ValueError, TypeError, KeyError) as exc:

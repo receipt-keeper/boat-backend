@@ -22,11 +22,12 @@ class CurrentPrincipalQueryUseCase:
     async def execute(self, query: CurrentPrincipalQuery) -> AuthenticatedPrincipal:
         principal = self._access_token_verifier.verify(query.token)
         credential_repository = self._credential_repository_provider.get()
-        credential_exists = await credential_repository.exists_active_credential(
+        session_exists = await credential_repository.exists_active_session(
             user_id=principal.user_id,
             credentials_id=principal.credentials_id,
+            session_id=principal.session_id,
         )
-        if not credential_exists:
+        if not session_exists:
             raise AuthenticationError(AUTHENTICATION_FAILED_MESSAGE)
         return principal
 

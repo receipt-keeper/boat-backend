@@ -7,6 +7,7 @@ USERS_ROOT = PROJECT_ROOT / "app" / "modules" / "users"
 APPLICATION_ROOT = AUTH_ROOT / "application"
 AUTH_ROUTER = AUTH_ROOT / "api" / "router.py"
 AUTH_GUIDANCE = AUTH_ROOT / "AGENTS.md"
+USERS_GUIDANCE = USERS_ROOT / "AGENTS.md"
 ROOT_ARCHITECTURE = PROJECT_ROOT / "ARCHITECTURE.md"
 
 EXPECTED_AUTH_COMMAND_QUERY_FILES = {
@@ -123,3 +124,19 @@ def test_auth_source_does_not_use_external_event_or_read_infrastructure() -> Non
     ]
 
     assert offending_files == []
+
+
+def test_prd_guidance_reopens_users_public_api_scope_in_users_bc() -> None:
+    users_guidance = USERS_GUIDANCE.read_text()
+    auth_guidance = AUTH_GUIDANCE.read_text()
+
+    assert "Users public API scope is reopened for this PRD" in users_guidance
+    assert "users public API belongs to the users BC" in auth_guidance
+    assert "Do not mount users endpoints in the auth router" in auth_guidance
+
+
+def test_prd_guidance_forbids_noop_withdrawal_completion_claim() -> None:
+    auth_guidance = AUTH_GUIDANCE.read_text()
+
+    assert "NoOpPushCleanup cannot satisfy PRD-complete withdrawal" in auth_guidance
+    assert "missing BC cleanup must remain unclaimed" in auth_guidance

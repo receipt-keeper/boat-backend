@@ -22,7 +22,14 @@ class IssuedRefreshToken:
 
 class AccessTokenIssuer(ABC):
     @abstractmethod
-    def issue(self, *, user_id: UUID, credentials_id: UUID, role: str) -> IssuedAccessToken:
+    def issue(
+        self,
+        *,
+        user_id: UUID,
+        credentials_id: UUID,
+        session_id: UUID,
+        role: str,
+    ) -> IssuedAccessToken:
         raise NotImplementedError
 
 

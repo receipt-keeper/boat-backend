@@ -19,28 +19,30 @@ from app.modules.auth.domain.model import ExternalIdentity
 class FirebaseIdentityMapping:
     app_name: str
     project_id_option: str
-    issuer: str
-    default_provider: str
     uid_claim: str
     subject_claim: str
     email_claim: str
+    email_verified_claim: str
     name_claim: str
     namespace_claim: str
     sign_in_provider_claim: str
+    # Maps raw Firebase sign_in_provider ("google.com") -> clean name ("google").
+    # Keys are the allowlist; any raw value absent from the map is rejected.
+    provider_normalization_map: dict[str, str]
 
     @classmethod
     def from_settings(cls, settings: Settings) -> "FirebaseIdentityMapping":
         return cls(
             app_name=settings.firebase_app_name,
             project_id_option=settings.firebase_project_id_option,
-            issuer=settings.firebase_issuer,
-            default_provider=settings.firebase_default_provider,
             uid_claim=settings.firebase_uid_claim,
             subject_claim=settings.firebase_subject_claim,
             email_claim=settings.firebase_email_claim,
+            email_verified_claim=settings.firebase_email_verified_claim,
             name_claim=settings.firebase_name_claim,
             namespace_claim=settings.firebase_namespace_claim,
             sign_in_provider_claim=settings.firebase_sign_in_provider_claim,
+            provider_normalization_map=settings.firebase_provider_normalization_map,
         )
 
     def subject_from(self, claims: Mapping[str, Any]) -> str | None:
@@ -52,16 +54,24 @@ class FirebaseIdentityMapping:
     def email_from(self, claims: Mapping[str, Any]) -> str | None:
         return self._string_claim(claims, self.email_claim)
 
+    def email_verified_from(self, claims: Mapping[str, Any]) -> bool:
+        return claims.get(self.email_verified_claim) is True
+
     def name_from(self, claims: Mapping[str, Any]) -> str | None:
         return self._string_claim(claims, self.name_claim)
 
-    def provider_from(self, claims: Mapping[str, Any]) -> str:
+    def raw_provider_from(self, claims: Mapping[str, Any]) -> str | None:
+        """Return the raw Firebase sign_in_provider claim value (e.g. 'google.com')."""
         namespace_claim = claims.get(self.namespace_claim)
         if isinstance(namespace_claim, Mapping):
             provider = self._string_claim(namespace_claim, self.sign_in_provider_claim)
             if provider is not None:
                 return provider
-        return self.default_provider
+        return None
+
+    def normalize_provider(self, raw_provider: str) -> str | None:
+        """Map raw provider to clean name; return None if not in allowlist."""
+        return self.provider_normalization_map.get(raw_provider)
 
     def _string_claim(self, claims: Mapping[str, Any], key: str) -> str | None:
         value = claims.get(key)
@@ -124,14 +134,24 @@ class FirebaseExternalIdentityVerifier(ExternalIdentityVerifier):
         subject = self._identity_mapping.subject_from(claims)
         if subject is None:
             raise AuthenticationError(AUTHENTICATION_FAILED_MESSAGE)
+        raw_provider = self._identity_mapping.raw_provider_from(claims)
+        if raw_provider is None:
+            raise AuthenticationError(AUTHENTICATION_FAILED_MESSAGE)
+        clean_provider = self._identity_mapping.normalize_provider(raw_provider)
+        if clean_provider is None:
+            raise AuthenticationError(AUTHENTICATION_FAILED_MESSAGE)
 
+        email = self._identity_mapping.email_from(claims)
+        normalized_email = None if email is None else email.strip().lower()
         try:
             return ExternalIdentity.create(
-                issuer=self._identity_mapping.issuer,
+                issuer=clean_provider,
                 subject=subject,
-                email=self._identity_mapping.email_from(claims),
+                email=email,
                 name=self._identity_mapping.name_from(claims),
-                provider=self._identity_mapping.provider_from(claims),
+                provider=clean_provider,
+                normalized_email=normalized_email,
+                email_verified=self._identity_mapping.email_verified_from(claims),
             )
         except ValidationError as exc:
             raise AuthenticationError(AUTHENTICATION_FAILED_MESSAGE) from exc
