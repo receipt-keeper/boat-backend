@@ -33,3 +33,7 @@ class ValidationError(DomainError):
 
 class NotFoundError(DomainError):
     """대상 부재 — 모듈 예외가 이를 상속하고 발생 맥락(식별자 등)을 보유한다."""
+
+
+class ExternalServiceError(DomainError):
+    """외부 의존 서비스 장애 — 사용자가 수정할 수 없는 일시적 실패를 표현한다."""

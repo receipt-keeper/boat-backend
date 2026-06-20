@@ -9,7 +9,9 @@ dependencies = [
     "asyncpg>=0.31.0",
     "fastapi[standard]>=0.138.0",
     "firebase-admin>=7.4.0",
+    "google-genai>=2.9.0",
     "greenlet>=3.5.2",
+    "httpx>=0.28.1",
     "pydantic-settings>=2.14.1",
     "pyjwt>=2.13.0",
     "sqlalchemy>=2.0.51",
@@ -17,7 +19,6 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "httpx>=0.28.1",
     "pre-commit>=4.6.0",
     "pyright>=1.1.410",
     "pytest>=9.1.0",
