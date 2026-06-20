@@ -30,7 +30,7 @@ app/
 │   └── observability/
 │       └── health.py            # GET /health
 └── modules/
-    └── examples/                # 도메인 모듈 (참조 구현)
+    └── examples/                # 데모/참조 모듈 (production package pattern source 아님)
         ├── api/
         │   ├── router.py        # APIRouter, 엔드포인트
         │   └── schemas.py       # 요청/응답 Pydantic 스키마 (전송 형태만 — 검증 규칙 없음)
@@ -56,21 +56,32 @@ app/modules/examples/tests/      # 모듈 소유 테스트 + 모듈 전용 overr
 
 ```
 api ──────────► application ──────────► domain ◄────────── infrastructure
-(HTTP, 스키마)   (서비스, 유스케이스)      (엔티티, 도메인 예외)   (repository)
+(HTTP, 스키마)   (유스케이스, ports)      (엔티티, 도메인 예외)   (ports 구현)
+                         ▲
+                         └────────── dependencies.py가 concrete adapter wiring
 ```
 
 | 계층 | 역할 | 의존 가능 대상 |
 |---|---|---|
 | `api` | 라우터, 요청/응답 스키마, HTTP 상태 코드 매핑 | application, core/http |
-| `application` | 유스케이스 조합 — 도메인 로직(팩토리·값 객체)을 조립하고 repository를 호출만 한다 | domain, infrastructure |
+| `application` | command/query use case 조합 — 도메인 로직(팩토리·값 객체)을 조립하고 application port contract를 호출한다 | domain, application ports, core/application primitives |
 | `domain` | 엔티티(생성 팩토리), 값 객체, 도메인 예외 — 검증·생성 규칙의 유일한 소유자 | **없음** (core/domain의 베이스만 상속) |
-| `infrastructure` | 영속성 구현 (repository) | domain |
+| `infrastructure` | 영속성·provider adapter — application ports contract를 구현한다 | domain, application ports contract, core/db |
 
 규칙:
 
 - **domain은 무엇에도 의존하지 않는다.** 프레임워크(FastAPI, SQLAlchemy) import 금지. `core/domain`의 베이스(`Entity`, `ValueObject`, 예외 카테고리)만 상속한다. HTTP 상태 코드 등 표현 방식도 모른다.
 - **api는 application까지만 의존한다.** 라우터가 repository를 직접 호출하지 않는다.
+- **application은 concrete infrastructure에 의존하지 않는다.** command/query use case는 domain과 application port contract, `app.core.application`의 공용 primitive까지만 안다.
 - 모듈 루트의 `dependencies.py`가 계층 간 wiring(FastAPI `Depends` 체인)을 담당한다. 테스트는 모듈 conftest(`app/modules/examples/tests/conftest.py`)의 `override_example_user_service` fixture로 서비스 전체를 대체한다 (teardown에서 자동 clear).
+- 모듈 간 런타임 연결이 필요하면 각 모듈의 `dependencies.py`에서만 조립한다. application/domain에는 다른 BC의 infrastructure, provider SDK, DB session, concrete adapter import가 들어가면 안 된다.
+- Cross-BC consistency가 필요한 같은 DB workflow는 `dependencies.py`에서 request-scoped session/transaction을 만들고 관련 repository/use case가 같은 session을 공유하게 한다. 별도 `app/composition` 패키지는 두지 않는다.
+- Production 모듈의 application command flow는 `application/commands/<business_task>/{command.py,result.py?,use_case.py}`로 노출한다. UseCase 클래스 이름은 migrated flow에서 `*CommandUseCase`를 사용하고, application DTO 파일은 `schemas.py`가 아니라 `command.py`와 `result.py`처럼 역할명으로 둔다.
+- Production 모듈의 내부 side-effect-free read flow는 `application/queries/<read_task>/{query.py,result.py?,use_case.py}`로 노출한다. UseCase 클래스 이름은 migrated flow에서 `*QueryUseCase`를 사용하고, application DTO 파일은 `query.py`와 `result.py`처럼 역할명으로 둔다.
+- `read_models`는 public optimized read API/read model surface가 필요하고 그 최적화/보안 요구가 문서화된 경우에만 사용한다. 내부 조회 흐름에 `read_models`를 요구하지 않는다.
+- API 전송 스키마 파일은 `api/schemas.py`에 둘 수 있다. 이 규칙은 application DTO 파일명에 대한 정책이다.
+- command bus/query bus는 이후 명시 승인 없이는 두지 않는다. event sourcing, outbox, external message bus, Kafka/RabbitMQ/Celery, separate read DB, read-store, projection worker, materialized view도 현재 아키텍처 범위 밖이다.
+- 도메인 이벤트는 `DomainEvent`와 `EventDispatcher`를 통한 same-process side effect까지만 의미한다. retry/replay, broker, cross-process delivery, durability contract는 이 아키텍처의 기본 이벤트 의미가 아니다.
 
 ## 요청 흐름
 

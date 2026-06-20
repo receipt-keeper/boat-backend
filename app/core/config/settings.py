@@ -1,8 +1,12 @@
 from functools import lru_cache
-from typing import Literal
+from typing import Final, Literal, Self
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+DEFAULT_JWT_SECRET_KEY: Final = "local-development-secret-change-me-32bytes"  # noqa: S105
+DEFAULT_REFRESH_TOKEN_PEPPER: Final = "local-refresh-token-pepper-change-me"  # noqa: S105
+SECURE_DEPLOYMENT_ENVS: Final = {"staging", "prod"}
 
 
 class Settings(BaseSettings):
@@ -24,6 +28,53 @@ class Settings(BaseSettings):
         default="postgresql+asyncpg://boat:boat@localhost:5432/boat",
         description="Async SQLAlchemy database URL.",
     )
+
+    firebase_project_id: str | None = None
+    firebase_credentials_path: str | None = None
+    firebase_check_revoked: bool = False
+    firebase_app_name: str = "boat-backend-auth"
+    firebase_project_id_option: str = "projectId"
+    firebase_uid_claim: str = "uid"
+    firebase_subject_claim: str = "sub"
+    firebase_email_claim: str = "email"
+    firebase_email_verified_claim: str = "email_verified"
+    firebase_name_claim: str = "name"
+    firebase_namespace_claim: str = "firebase"
+    firebase_sign_in_provider_claim: str = "sign_in_provider"
+    # Raw Firebase sign_in_provider values -> clean issuer/provider names.
+    # This map IS the allowlist: any raw value not present is rejected with 401.
+    firebase_provider_normalization_map: dict[str, str] = {
+        "google.com": "google",
+        "apple.com": "apple",
+    }
+
+    jwt_secret_key: str = Field(
+        default=DEFAULT_JWT_SECRET_KEY,
+        description="Symmetric key for service access JWT signing.",
+    )
+    jwt_algorithm: str = "HS256"
+    jwt_issuer: str = "boat-backend"
+    jwt_audience: str = "boat-api"
+    access_token_expires_minutes: int = 30
+
+    refresh_token_expires_days: int = 14
+    refresh_token_pepper: str = Field(
+        default=DEFAULT_REFRESH_TOKEN_PEPPER,
+        description="Server-side pepper used when hashing opaque refresh tokens.",
+    )
+
+    initial_free_analysis_tokens: int = 0
+    default_profile_image_url: str | None = None
+
+    @model_validator(mode="after")
+    def reject_default_token_secrets_for_secure_envs(self) -> Self:
+        if self.app_env not in SECURE_DEPLOYMENT_ENVS:
+            return self
+        if self.jwt_secret_key == DEFAULT_JWT_SECRET_KEY:
+            raise ValueError("prod/staging requires a non-default jwt_secret_key")
+        if self.refresh_token_pepper == DEFAULT_REFRESH_TOKEN_PEPPER:
+            raise ValueError("prod/staging requires a non-default refresh_token_pepper")
+        return self
 
 
 @lru_cache(maxsize=1)
