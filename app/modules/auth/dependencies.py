@@ -6,9 +6,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config.dependencies import get_request_settings
 from app.core.config.settings import Settings
-from app.modules.auth.application.authorize.use_case import AuthorizeUseCase
-from app.modules.auth.application.login.use_case import LoginUseCase
-from app.modules.auth.application.logout.use_case import LogoutUseCase
+from app.modules.auth.application.commands.login.use_case import LoginCommandUseCase
+from app.modules.auth.application.commands.logout.use_case import LogoutCommandUseCase
+from app.modules.auth.application.commands.refresh.use_case import RefreshTokenCommandUseCase
+from app.modules.auth.application.commands.withdraw.use_case import WithdrawAccountCommandUseCase
 from app.modules.auth.application.ports.credential_repository import (
     CredentialRepository,
     CredentialRepositoryProvider,
@@ -25,8 +26,9 @@ from app.modules.auth.application.ports.token_issuer import (
     RefreshTokenIssuer,
 )
 from app.modules.auth.application.ports.user_provisioner import ProvisionedUser, UserProvisioner
-from app.modules.auth.application.refresh.use_case import RefreshTokenUseCase
-from app.modules.auth.application.withdraw.use_case import WithdrawAccountUseCase
+from app.modules.auth.application.queries.current_principal.use_case import (
+    CurrentPrincipalQueryUseCase,
+)
 from app.modules.auth.infrastructure.identity_providers.firebase import (
     FirebaseExternalIdentityVerifier,
 )
@@ -39,18 +41,21 @@ from app.modules.auth.infrastructure.persistence.external_identity_login_synchro
 from app.modules.auth.infrastructure.push_cleanup import NoOpPushCleanup
 from app.modules.auth.infrastructure.tokens.jwt import JwtAccessTokenService
 from app.modules.auth.infrastructure.tokens.opaque_refresh_token import OpaqueRefreshTokenIssuer
-from app.modules.users.application.delete.use_case import DeleteUserUseCase
-from app.modules.users.application.provision.schemas import ProvisionUserCommand
-from app.modules.users.application.provision.use_case import ProvisionUserUseCase
-from app.modules.users.dependencies import build_delete_user_use_case, build_provision_user_use_case
+from app.modules.users.application.commands.delete.use_case import DeleteUserCommandUseCase
+from app.modules.users.application.commands.provision.command import ProvisionUserCommand
+from app.modules.users.application.commands.provision.use_case import ProvisionUserCommandUseCase
+from app.modules.users.dependencies import (
+    build_delete_user_command_use_case,
+    build_provision_user_command_use_case,
+)
 
 
-class UsersModuleUserProvisioner(UserProvisioner):
-    def __init__(self, use_case: ProvisionUserUseCase) -> None:
-        self._use_case = use_case
+class _ProvisionUserPortAdapter(UserProvisioner):
+    def __init__(self, command_use_case: ProvisionUserCommandUseCase) -> None:
+        self._command_use_case = command_use_case
 
     async def provision(self, *, name: str | None, email: str | None) -> ProvisionedUser:
-        user = await self._use_case.execute(ProvisionUserCommand(name=name, email=email))
+        user = await self._command_use_case.execute(ProvisionUserCommand(name=name, email=email))
         return ProvisionedUser(user_id=user.user_id)
 
 
@@ -81,7 +86,7 @@ async def get_credential_repository(
     return SqlAlchemyCredentialRepository(session)
 
 
-async def get_authorize_credential_repository_provider(
+async def get_current_principal_credential_repository_provider(
     request: Request,
 ) -> CredentialRepositoryProvider:
     return RequestCredentialRepositoryProvider(request)
@@ -94,12 +99,14 @@ async def get_external_identity_login_synchronizer(
 
 
 async def get_user_provisioner(session: AuthTransactionSessionDep) -> UserProvisioner:
-    use_case = build_provision_user_use_case(session)
-    return UsersModuleUserProvisioner(use_case)
+    command_use_case = build_provision_user_command_use_case(session)
+    return _ProvisionUserPortAdapter(command_use_case)
 
 
-async def get_delete_user_use_case(session: AuthTransactionSessionDep) -> DeleteUserUseCase:
-    return build_delete_user_use_case(session)
+async def get_delete_user_command_use_case(
+    session: AuthTransactionSessionDep,
+) -> DeleteUserCommandUseCase:
+    return build_delete_user_command_use_case(session)
 
 
 async def get_push_cleanup() -> PushCleanup:
@@ -142,7 +149,7 @@ async def get_refresh_token_hasher(
     )
 
 
-async def get_login_use_case(
+async def get_login_command_use_case(
     credential_repository: Annotated[CredentialRepository, Depends(get_credential_repository)],
     login_synchronizer: Annotated[
         ExternalIdentityLoginSynchronizer,
@@ -158,8 +165,8 @@ async def get_login_use_case(
         RefreshTokenIssuer,
         Depends(get_refresh_token_issuer),
     ],
-) -> LoginUseCase:
-    return LoginUseCase(
+) -> LoginCommandUseCase:
+    return LoginCommandUseCase(
         identity_verifier=identity_verifier,
         login_synchronizer=login_synchronizer,
         credential_repository=credential_repository,
@@ -169,7 +176,7 @@ async def get_login_use_case(
     )
 
 
-async def get_refresh_token_use_case(
+async def get_refresh_token_command_use_case(
     credential_repository: Annotated[CredentialRepository, Depends(get_credential_repository)],
     access_token_issuer: Annotated[AccessTokenIssuer, Depends(get_access_token_issuer)],
     refresh_token_issuer: Annotated[
@@ -180,8 +187,8 @@ async def get_refresh_token_use_case(
         RefreshTokenHasher,
         Depends(get_refresh_token_hasher),
     ],
-) -> RefreshTokenUseCase:
-    return RefreshTokenUseCase(
+) -> RefreshTokenCommandUseCase:
+    return RefreshTokenCommandUseCase(
         credential_repository=credential_repository,
         access_token_issuer=access_token_issuer,
         refresh_token_issuer=refresh_token_issuer,
@@ -189,49 +196,58 @@ async def get_refresh_token_use_case(
     )
 
 
-async def get_logout_use_case(
+async def get_logout_command_use_case(
     credential_repository: Annotated[CredentialRepository, Depends(get_credential_repository)],
     refresh_token_hasher: Annotated[
         RefreshTokenHasher,
         Depends(get_refresh_token_hasher),
     ],
-) -> LogoutUseCase:
-    return LogoutUseCase(
+) -> LogoutCommandUseCase:
+    return LogoutCommandUseCase(
         credential_repository=credential_repository,
         refresh_token_hasher=refresh_token_hasher,
     )
 
 
-async def get_authorize_use_case(
+async def get_current_principal_query_use_case(
     access_token_verifier: Annotated[AccessTokenVerifier, Depends(get_access_token_verifier)],
     credential_repository_provider: Annotated[
         CredentialRepositoryProvider,
-        Depends(get_authorize_credential_repository_provider),
+        Depends(get_current_principal_credential_repository_provider),
     ],
-) -> AuthorizeUseCase:
-    return AuthorizeUseCase(
+) -> CurrentPrincipalQueryUseCase:
+    return CurrentPrincipalQueryUseCase(
         access_token_verifier=access_token_verifier,
         credential_repository_provider=credential_repository_provider,
     )
 
 
-async def get_withdraw_account_use_case(
+async def get_withdraw_account_command_use_case(
     credential_repository: Annotated[CredentialRepository, Depends(get_credential_repository)],
-    delete_user_use_case: Annotated[DeleteUserUseCase, Depends(get_delete_user_use_case)],
+    delete_user_command_use_case: Annotated[
+        DeleteUserCommandUseCase,
+        Depends(get_delete_user_command_use_case),
+    ],
     push_cleanup: Annotated[PushCleanup, Depends(get_push_cleanup)],
-) -> WithdrawAccountUseCase:
-    return WithdrawAccountUseCase(
+) -> WithdrawAccountCommandUseCase:
+    return WithdrawAccountCommandUseCase(
         credential_repository=credential_repository,
-        delete_user_use_case=delete_user_use_case,
+        delete_user_command_use_case=delete_user_command_use_case,
         push_cleanup=push_cleanup,
     )
 
 
-LoginUseCaseDep = Annotated[LoginUseCase, Depends(get_login_use_case)]
-RefreshTokenUseCaseDep = Annotated[RefreshTokenUseCase, Depends(get_refresh_token_use_case)]
-LogoutUseCaseDep = Annotated[LogoutUseCase, Depends(get_logout_use_case)]
-AuthorizeUseCaseDep = Annotated[AuthorizeUseCase, Depends(get_authorize_use_case)]
-WithdrawAccountUseCaseDep = Annotated[
-    WithdrawAccountUseCase,
-    Depends(get_withdraw_account_use_case),
+LoginCommandUseCaseDep = Annotated[LoginCommandUseCase, Depends(get_login_command_use_case)]
+RefreshTokenCommandUseCaseDep = Annotated[
+    RefreshTokenCommandUseCase,
+    Depends(get_refresh_token_command_use_case),
+]
+LogoutCommandUseCaseDep = Annotated[LogoutCommandUseCase, Depends(get_logout_command_use_case)]
+CurrentPrincipalQueryUseCaseDep = Annotated[
+    CurrentPrincipalQueryUseCase,
+    Depends(get_current_principal_query_use_case),
+]
+WithdrawAccountCommandUseCaseDep = Annotated[
+    WithdrawAccountCommandUseCase,
+    Depends(get_withdraw_account_command_use_case),
 ]

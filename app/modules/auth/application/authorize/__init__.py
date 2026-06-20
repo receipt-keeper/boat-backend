@@ -1,1 +1,0 @@
-"""Authorization use case."""

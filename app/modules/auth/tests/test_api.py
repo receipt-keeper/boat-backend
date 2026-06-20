@@ -1,14 +1,16 @@
 from httpx import AsyncClient
 
 from app.main import app
+from app.modules.auth.application.commands.login.command import LoginCommand
+from app.modules.auth.application.commands.login.result import LoginResult
+from app.modules.auth.application.commands.logout.command import LogoutCommand
+from app.modules.auth.application.commands.refresh.command import RefreshTokenCommand
+from app.modules.auth.application.commands.refresh.result import RefreshTokenResult
 from app.modules.auth.application.constants import AUTH_SCHEME_BEARER, AUTHENTICATION_FAILED_MESSAGE
-from app.modules.auth.application.login.schemas import LoginCommand, LoginResult
-from app.modules.auth.application.logout.schemas import LogoutCommand
-from app.modules.auth.application.refresh.schemas import RefreshTokenCommand, RefreshTokenResult
 from app.modules.auth.dependencies import (
-    get_login_use_case,
-    get_logout_use_case,
-    get_refresh_token_use_case,
+    get_login_command_use_case,
+    get_logout_command_use_case,
+    get_refresh_token_command_use_case,
 )
 from app.modules.auth.domain.exceptions import AuthenticationError
 
@@ -17,7 +19,7 @@ REFRESH_SAMPLE = "refresh-sample"
 OLD_REFRESH_SAMPLE = "old-refresh-sample"
 
 
-class FakeLoginUseCase:
+class FakeLoginCommandUseCase:
     def __init__(self) -> None:
         self.login_id_token: str | None = None
 
@@ -31,12 +33,12 @@ class FakeLoginUseCase:
         )
 
 
-class RejectingLoginUseCase(FakeLoginUseCase):
+class RejectingLoginCommandUseCase(FakeLoginCommandUseCase):
     async def execute(self, command: LoginCommand) -> LoginResult:
         raise AuthenticationError(AUTHENTICATION_FAILED_MESSAGE)
 
 
-class FakeRefreshTokenUseCase:
+class FakeRefreshTokenCommandUseCase:
     def __init__(self) -> None:
         self.refreshed_token: str | None = None
 
@@ -50,7 +52,7 @@ class FakeRefreshTokenUseCase:
         )
 
 
-class FakeLogoutUseCase:
+class FakeLogoutCommandUseCase:
     def __init__(self) -> None:
         self.logged_out_token: str | None = None
 
@@ -59,13 +61,13 @@ class FakeLogoutUseCase:
 
 
 async def test_login_endpoint_returns_token_envelope(client: AsyncClient) -> None:
-    use_case = FakeLoginUseCase()
-    app.dependency_overrides[get_login_use_case] = lambda: use_case
+    command_use_case = FakeLoginCommandUseCase()
+    app.dependency_overrides[get_login_command_use_case] = lambda: command_use_case
 
     response = await client.post("/api/v1/auth/login", json={"idToken": LOGIN_SAMPLE})
 
     assert response.status_code == 200
-    assert use_case.login_id_token == LOGIN_SAMPLE
+    assert command_use_case.login_id_token == LOGIN_SAMPLE
     assert response.json() == {
         "success": True,
         "status": 200,
@@ -79,7 +81,7 @@ async def test_login_endpoint_returns_token_envelope(client: AsyncClient) -> Non
 
 
 async def test_invalid_firebase_token_uses_401_envelope(client: AsyncClient) -> None:
-    app.dependency_overrides[get_login_use_case] = lambda: RejectingLoginUseCase()
+    app.dependency_overrides[get_login_command_use_case] = lambda: RejectingLoginCommandUseCase()
 
     response = await client.post("/api/v1/auth/login", json={"idToken": "bad-token"})
 
@@ -92,7 +94,7 @@ async def test_invalid_firebase_token_uses_401_envelope(client: AsyncClient) -> 
 
 
 async def test_malformed_login_request_uses_422_envelope(client: AsyncClient) -> None:
-    app.dependency_overrides[get_login_use_case] = lambda: FakeLoginUseCase()
+    app.dependency_overrides[get_login_command_use_case] = lambda: FakeLoginCommandUseCase()
 
     response = await client.post("/api/v1/auth/login", json={})
 
@@ -106,8 +108,8 @@ async def test_malformed_login_request_uses_422_envelope(client: AsyncClient) ->
 
 
 async def test_refresh_endpoint_rotates_token(client: AsyncClient) -> None:
-    use_case = FakeRefreshTokenUseCase()
-    app.dependency_overrides[get_refresh_token_use_case] = lambda: use_case
+    command_use_case = FakeRefreshTokenCommandUseCase()
+    app.dependency_overrides[get_refresh_token_command_use_case] = lambda: command_use_case
 
     response = await client.post(
         "/api/v1/auth/refresh",
@@ -115,7 +117,7 @@ async def test_refresh_endpoint_rotates_token(client: AsyncClient) -> None:
     )
 
     assert response.status_code == 200
-    assert use_case.refreshed_token == OLD_REFRESH_SAMPLE
+    assert command_use_case.refreshed_token == OLD_REFRESH_SAMPLE
     assert response.json()["data"] == {
         "accessToken": "new-access-token",
         "refreshToken": "new-refresh-token",
@@ -125,8 +127,8 @@ async def test_refresh_endpoint_rotates_token(client: AsyncClient) -> None:
 
 
 async def test_logout_endpoint_revokes_presented_refresh_token(client: AsyncClient) -> None:
-    use_case = FakeLogoutUseCase()
-    app.dependency_overrides[get_logout_use_case] = lambda: use_case
+    command_use_case = FakeLogoutCommandUseCase()
+    app.dependency_overrides[get_logout_command_use_case] = lambda: command_use_case
 
     response = await client.post(
         "/api/v1/auth/logout",
@@ -134,7 +136,7 @@ async def test_logout_endpoint_revokes_presented_refresh_token(client: AsyncClie
     )
 
     assert response.status_code == 204
-    assert use_case.logged_out_token == REFRESH_SAMPLE
+    assert command_use_case.logged_out_token == REFRESH_SAMPLE
     assert response.content == b""
 
 

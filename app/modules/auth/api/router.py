@@ -5,16 +5,18 @@ from fastapi import APIRouter, Response, status
 from app.core.http.responses import ApiErrorData, CommonResponse
 from app.modules.auth.api.schemas import AuthTokenResponse, LoginRequest, RefreshTokenRequest
 from app.modules.auth.api.security import CurrentPrincipalDep
+from app.modules.auth.application.commands.login.command import LoginCommand
+from app.modules.auth.application.commands.login.result import LoginResult
+from app.modules.auth.application.commands.logout.command import LogoutCommand
+from app.modules.auth.application.commands.refresh.command import RefreshTokenCommand
+from app.modules.auth.application.commands.refresh.result import RefreshTokenResult
+from app.modules.auth.application.commands.withdraw.command import WithdrawAccountCommand
 from app.modules.auth.application.constants import AUTH_SCHEME_BEARER
-from app.modules.auth.application.login.schemas import LoginCommand, LoginResult
-from app.modules.auth.application.logout.schemas import LogoutCommand
-from app.modules.auth.application.refresh.schemas import RefreshTokenCommand, RefreshTokenResult
-from app.modules.auth.application.withdraw.schemas import WithdrawAccountCommand
 from app.modules.auth.dependencies import (
-    LoginUseCaseDep,
-    LogoutUseCaseDep,
-    RefreshTokenUseCaseDep,
-    WithdrawAccountUseCaseDep,
+    LoginCommandUseCaseDep,
+    LogoutCommandUseCaseDep,
+    RefreshTokenCommandUseCaseDep,
+    WithdrawAccountCommandUseCaseDep,
 )
 
 _ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
@@ -50,9 +52,9 @@ def _token_response(tokens: LoginResult | RefreshTokenResult) -> AuthTokenRespon
 )
 async def login(
     request: LoginRequest,
-    use_case: LoginUseCaseDep,
+    command_use_case: LoginCommandUseCaseDep,
 ) -> CommonResponse[AuthTokenResponse]:
-    tokens = await use_case.execute(LoginCommand(provider_token=request.id_token))
+    tokens = await command_use_case.execute(LoginCommand(provider_token=request.id_token))
     return CommonResponse(
         success=True,
         status=status.HTTP_200_OK,
@@ -66,9 +68,11 @@ async def login(
 )
 async def refresh(
     request: RefreshTokenRequest,
-    use_case: RefreshTokenUseCaseDep,
+    command_use_case: RefreshTokenCommandUseCaseDep,
 ) -> CommonResponse[AuthTokenResponse]:
-    tokens = await use_case.execute(RefreshTokenCommand(refresh_token=request.refresh_token))
+    tokens = await command_use_case.execute(
+        RefreshTokenCommand(refresh_token=request.refresh_token)
+    )
     return CommonResponse(
         success=True,
         status=status.HTTP_200_OK,
@@ -82,9 +86,9 @@ async def refresh(
 )
 async def logout(
     request: RefreshTokenRequest,
-    use_case: LogoutUseCaseDep,
+    command_use_case: LogoutCommandUseCaseDep,
 ) -> Response:
-    await use_case.execute(LogoutCommand(refresh_token=request.refresh_token))
+    await command_use_case.execute(LogoutCommand(refresh_token=request.refresh_token))
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -94,9 +98,9 @@ async def logout(
 )
 async def withdraw_account(
     principal: CurrentPrincipalDep,
-    use_case: WithdrawAccountUseCaseDep,
+    command_use_case: WithdrawAccountCommandUseCaseDep,
 ) -> Response:
-    await use_case.execute(
+    await command_use_case.execute(
         WithdrawAccountCommand(
             user_id=principal.user_id,
             credentials_id=principal.credentials_id,

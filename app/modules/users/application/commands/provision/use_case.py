@@ -1,11 +1,9 @@
+from app.modules.users.application.commands.provision.command import ProvisionUserCommand
+from app.modules.users.application.commands.provision.result import ProvisionUserResult
 from app.modules.users.application.ports.user_repository import UserRepository
-from app.modules.users.application.provision.schemas import (
-    ProvisionUserCommand,
-    ProvisionUserResult,
-)
 
 
-class ProvisionUserUseCase:
+class ProvisionUserCommandUseCase:
     def __init__(self, *, user_repository: UserRepository) -> None:
         self._user_repository = user_repository
 

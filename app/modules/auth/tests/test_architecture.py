@@ -17,14 +17,18 @@ AUTH_ROOT = PROJECT_ROOT / "app" / "modules" / "auth"
 APPLICATION_ROOT = AUTH_ROOT / "application"
 
 EXPECTED_AUTH_FILES = {
-    "application/principal.py",
-    "application/login/schemas.py",
-    "application/login/use_case.py",
-    "application/refresh/schemas.py",
-    "application/refresh/use_case.py",
-    "application/logout/schemas.py",
-    "application/logout/use_case.py",
-    "application/authorize/use_case.py",
+    "application/commands/login/command.py",
+    "application/commands/login/result.py",
+    "application/commands/login/use_case.py",
+    "application/commands/refresh/command.py",
+    "application/commands/refresh/result.py",
+    "application/commands/refresh/use_case.py",
+    "application/commands/logout/command.py",
+    "application/commands/logout/use_case.py",
+    "application/commands/withdraw/command.py",
+    "application/commands/withdraw/use_case.py",
+    "application/queries/current_principal/query.py",
+    "application/queries/current_principal/use_case.py",
     "application/ports/credential_repository.py",
     "application/ports/external_identity_login_synchronizer.py",
     "application/ports/external_identity_verifier.py",
@@ -40,7 +44,15 @@ EXPECTED_AUTH_FILES = {
 }
 
 FORBIDDEN_AUTH_FILES = {
-    "application/authorize/schemas.py",
+    "application/authorize/use_case.py",
+    "application/login/schemas.py",
+    "application/login/use_case.py",
+    "application/refresh/schemas.py",
+    "application/refresh/use_case.py",
+    "application/logout/schemas.py",
+    "application/logout/use_case.py",
+    "application/withdraw/schemas.py",
+    "application/withdraw/use_case.py",
     "application/ports/access_token.py",
     "application/ports/refresh_token_generator.py",
     "infrastructure/persistence/repository.py",
@@ -81,6 +93,25 @@ def test_auth_file_structure_matches_hexagonal_completion_goal() -> None:
 
     assert missing_files == []
     assert forbidden_files == []
+
+
+def test_auth_application_flow_classes_use_command_query_use_case_names() -> None:
+    forbidden_class_names = {
+        "Authorize" + "UseCase",
+        "Login" + "UseCase",
+        "Logout" + "UseCase",
+        "RefreshToken" + "UseCase",
+        "WithdrawAccount" + "UseCase",
+    }
+    discovered_forbidden_classes = [
+        f"{path.relative_to(PROJECT_ROOT).as_posix()}::{node.name}"
+        for path in APPLICATION_ROOT.rglob("*.py")
+        if "tests" not in path.parts
+        for node in ast.walk(ast.parse(path.read_text()))
+        if isinstance(node, ast.ClassDef) and node.name in forbidden_class_names
+    ]
+
+    assert discovered_forbidden_classes == []
 
 
 def test_auth_domain_models_use_core_entity_base() -> None:

@@ -2,9 +2,10 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID, uuid4
 
+from app.modules.auth.application.commands.login.use_case import LoginCommandUseCase
+from app.modules.auth.application.commands.logout.use_case import LogoutCommandUseCase
+from app.modules.auth.application.commands.refresh.use_case import RefreshTokenCommandUseCase
 from app.modules.auth.application.constants import AUTHENTICATION_FAILED_MESSAGE
-from app.modules.auth.application.login.use_case import LoginUseCase
-from app.modules.auth.application.logout.use_case import LogoutUseCase
 from app.modules.auth.application.ports.credential_repository import CredentialRepository
 from app.modules.auth.application.ports.external_identity_login_synchronizer import (
     ExternalIdentityLoginSynchronizer,
@@ -12,7 +13,6 @@ from app.modules.auth.application.ports.external_identity_login_synchronizer imp
 from app.modules.auth.application.ports.external_identity_verifier import ExternalIdentityVerifier
 from app.modules.auth.application.ports.token_issuer import AccessTokenIssuer
 from app.modules.auth.application.ports.user_provisioner import ProvisionedUser, UserProvisioner
-from app.modules.auth.application.refresh.use_case import RefreshTokenUseCase
 from app.modules.auth.domain.exceptions import AuthenticationError
 from app.modules.auth.domain.model import ExternalIdentity, UserCredential
 from app.modules.auth.infrastructure.tokens.jwt import JwtAccessTokenService
@@ -183,14 +183,14 @@ def build_refresh_token_service() -> OpaqueRefreshTokenIssuer:
     )
 
 
-def build_login_use_case(
+def build_login_command_use_case(
     *,
     verifier: FakeExternalIdentityVerifier,
     repository: FakeCredentialRepository,
     user_provisioner: FakeUserProvisioner,
-) -> LoginUseCase:
+) -> LoginCommandUseCase:
     refresh_token_service = build_refresh_token_service()
-    return LoginUseCase(
+    return LoginCommandUseCase(
         identity_verifier=verifier,
         login_synchronizer=NoOpExternalIdentityLoginSynchronizer(),
         credential_repository=repository,
@@ -200,9 +200,12 @@ def build_login_use_case(
     )
 
 
-def build_refresh_use_case(*, repository: FakeCredentialRepository) -> RefreshTokenUseCase:
+def build_refresh_command_use_case(
+    *,
+    repository: FakeCredentialRepository,
+) -> RefreshTokenCommandUseCase:
     refresh_token_service = build_refresh_token_service()
-    return RefreshTokenUseCase(
+    return RefreshTokenCommandUseCase(
         credential_repository=repository,
         access_token_issuer=build_access_token_issuer(),
         refresh_token_issuer=refresh_token_service,
@@ -210,9 +213,9 @@ def build_refresh_use_case(*, repository: FakeCredentialRepository) -> RefreshTo
     )
 
 
-def build_logout_use_case(*, repository: FakeCredentialRepository) -> LogoutUseCase:
+def build_logout_command_use_case(*, repository: FakeCredentialRepository) -> LogoutCommandUseCase:
     refresh_token_service = build_refresh_token_service()
-    return LogoutUseCase(
+    return LogoutCommandUseCase(
         credential_repository=repository,
         refresh_token_hasher=refresh_token_service,
     )

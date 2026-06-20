@@ -1,7 +1,8 @@
 from datetime import UTC, datetime
 
+from app.modules.auth.application.commands.login.command import LoginCommand
+from app.modules.auth.application.commands.login.result import LoginResult
 from app.modules.auth.application.constants import AUTH_SCHEME_BEARER
-from app.modules.auth.application.login.schemas import LoginCommand, LoginResult
 from app.modules.auth.application.ports.credential_repository import CredentialRepository
 from app.modules.auth.application.ports.external_identity_login_synchronizer import (
     ExternalIdentityLoginSynchronizer,
@@ -11,7 +12,7 @@ from app.modules.auth.application.ports.token_issuer import AccessTokenIssuer, R
 from app.modules.auth.application.ports.user_provisioner import UserProvisioner
 
 
-class LoginUseCase:
+class LoginCommandUseCase:
     def __init__(
         self,
         *,

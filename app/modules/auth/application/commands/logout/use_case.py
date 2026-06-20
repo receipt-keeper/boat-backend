@@ -1,9 +1,9 @@
-from app.modules.auth.application.logout.schemas import LogoutCommand
+from app.modules.auth.application.commands.logout.command import LogoutCommand
 from app.modules.auth.application.ports.credential_repository import CredentialRepository
 from app.modules.auth.application.ports.token_issuer import RefreshTokenHasher
 
 
-class LogoutUseCase:
+class LogoutCommandUseCase:
     def __init__(
         self,
         *,

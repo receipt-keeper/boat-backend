@@ -1,3 +1,5 @@
+from app.modules.auth.application.commands.refresh.command import RefreshTokenCommand
+from app.modules.auth.application.commands.refresh.result import RefreshTokenResult
 from app.modules.auth.application.constants import AUTH_SCHEME_BEARER
 from app.modules.auth.application.ports.credential_repository import CredentialRepository
 from app.modules.auth.application.ports.token_issuer import (
@@ -5,10 +7,9 @@ from app.modules.auth.application.ports.token_issuer import (
     RefreshTokenHasher,
     RefreshTokenIssuer,
 )
-from app.modules.auth.application.refresh.schemas import RefreshTokenCommand, RefreshTokenResult
 
 
-class RefreshTokenUseCase:
+class RefreshTokenCommandUseCase:
     def __init__(
         self,
         *,

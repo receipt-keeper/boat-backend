@@ -4,10 +4,10 @@ from uuid import UUID, uuid4
 import jwt
 import pytest
 
+from app.modules.auth.application.commands.login.command import LoginCommand
+from app.modules.auth.application.commands.logout.command import LogoutCommand
+from app.modules.auth.application.commands.refresh.command import RefreshTokenCommand
 from app.modules.auth.application.constants import AUTH_SCHEME_BEARER, AUTHENTICATION_FAILED_MESSAGE
-from app.modules.auth.application.login.schemas import LoginCommand
-from app.modules.auth.application.logout.schemas import LogoutCommand
-from app.modules.auth.application.refresh.schemas import RefreshTokenCommand
 from app.modules.auth.domain.exceptions import AuthenticationError
 from app.modules.auth.domain.model import ExternalIdentity, UserCredential
 from app.modules.auth.infrastructure.tokens.jwt import (
@@ -21,16 +21,16 @@ from app.modules.auth.tests.service_fakes import (
     FakeCredentialRepository,
     FakeExternalIdentityVerifier,
     FakeUserProvisioner,
-    build_login_use_case,
-    build_logout_use_case,
-    build_refresh_use_case,
+    build_login_command_use_case,
+    build_logout_command_use_case,
+    build_refresh_command_use_case,
 )
 
 
 async def test_login_creates_credentials_and_returns_service_tokens() -> None:
     repository = FakeCredentialRepository()
     user_provisioner = FakeUserProvisioner()
-    use_case = build_login_use_case(
+    command_use_case = build_login_command_use_case(
         verifier=FakeExternalIdentityVerifier(
             ExternalIdentity.create(
                 issuer="firebase",
@@ -44,7 +44,7 @@ async def test_login_creates_credentials_and_returns_service_tokens() -> None:
         user_provisioner=user_provisioner,
     )
 
-    tokens = await use_case.execute(LoginCommand(provider_token="firebase-id-token"))
+    tokens = await command_use_case.execute(LoginCommand(provider_token="firebase-id-token"))
 
     assert tokens.token_type == AUTH_SCHEME_BEARER
     assert tokens.access_token
@@ -68,7 +68,7 @@ async def test_login_uses_existing_external_identity_without_duplicate_credentia
         role="user",
     )
     repository.credentials_by_identity[("firebase", "firebase-uid")] = existing_credentials
-    use_case = build_login_use_case(
+    command_use_case = build_login_command_use_case(
         verifier=FakeExternalIdentityVerifier(
             ExternalIdentity.create(
                 issuer="firebase",
@@ -82,7 +82,7 @@ async def test_login_uses_existing_external_identity_without_duplicate_credentia
         user_provisioner=user_provisioner,
     )
 
-    await use_case.execute(LoginCommand(provider_token="firebase-id-token"))
+    await command_use_case.execute(LoginCommand(provider_token="firebase-id-token"))
 
     assert repository.credentials_by_identity[("firebase", "firebase-uid")] == existing_credentials
     assert len(repository.credentials_by_identity) == 1
@@ -93,7 +93,7 @@ async def test_login_uses_existing_external_identity_without_duplicate_credentia
 
 async def test_login_does_not_store_refresh_token_when_identity_verification_fails() -> None:
     repository = FakeCredentialRepository()
-    use_case = build_login_use_case(
+    command_use_case = build_login_command_use_case(
         verifier=FakeExternalIdentityVerifier(
             error=AuthenticationError(AUTHENTICATION_FAILED_MESSAGE)
         ),
@@ -102,7 +102,7 @@ async def test_login_does_not_store_refresh_token_when_identity_verification_fai
     )
 
     with pytest.raises(AuthenticationError):
-        await use_case.execute(LoginCommand(provider_token="bad-token"))
+        await command_use_case.execute(LoginCommand(provider_token="bad-token"))
 
     assert repository.credentials_by_identity == {}
     assert repository.refresh_token_hashes == {}
@@ -110,7 +110,7 @@ async def test_login_does_not_store_refresh_token_when_identity_verification_fai
 
 async def test_refresh_rotates_refresh_token_and_rejects_old_token() -> None:
     repository = FakeCredentialRepository()
-    login_use_case = build_login_use_case(
+    login_command_use_case = build_login_command_use_case(
         verifier=FakeExternalIdentityVerifier(
             ExternalIdentity.create(
                 issuer="firebase",
@@ -123,23 +123,27 @@ async def test_refresh_rotates_refresh_token_and_rejects_old_token() -> None:
         repository=repository,
         user_provisioner=FakeUserProvisioner(),
     )
-    refresh_use_case = build_refresh_use_case(repository=repository)
-    first_pair = await login_use_case.execute(LoginCommand(provider_token="firebase-id-token"))
+    refresh_command_use_case = build_refresh_command_use_case(repository=repository)
+    first_pair = await login_command_use_case.execute(
+        LoginCommand(provider_token="firebase-id-token")
+    )
     old_hashes = set(repository.refresh_token_hashes)
 
-    second_pair = await refresh_use_case.execute(
+    second_pair = await refresh_command_use_case.execute(
         RefreshTokenCommand(refresh_token=first_pair.refresh_token)
     )
 
     assert second_pair.refresh_token != first_pair.refresh_token
     assert old_hashes.isdisjoint(repository.refresh_token_hashes)
     with pytest.raises(AuthenticationError):
-        await refresh_use_case.execute(RefreshTokenCommand(refresh_token=first_pair.refresh_token))
+        await refresh_command_use_case.execute(
+            RefreshTokenCommand(refresh_token=first_pair.refresh_token)
+        )
 
 
 async def test_logout_revokes_only_presented_refresh_token() -> None:
     repository = FakeCredentialRepository()
-    login_use_case = build_login_use_case(
+    login_command_use_case = build_login_command_use_case(
         verifier=FakeExternalIdentityVerifier(
             ExternalIdentity.create(
                 issuer="firebase",
@@ -152,11 +156,11 @@ async def test_logout_revokes_only_presented_refresh_token() -> None:
         repository=repository,
         user_provisioner=FakeUserProvisioner(),
     )
-    logout_use_case = build_logout_use_case(repository=repository)
-    tokens = await login_use_case.execute(LoginCommand(provider_token="firebase-id-token"))
+    logout_command_use_case = build_logout_command_use_case(repository=repository)
+    tokens = await login_command_use_case.execute(LoginCommand(provider_token="firebase-id-token"))
     token_hash = next(iter(repository.refresh_token_hashes))
 
-    await logout_use_case.execute(LogoutCommand(refresh_token=tokens.refresh_token))
+    await logout_command_use_case.execute(LogoutCommand(refresh_token=tokens.refresh_token))
 
     assert token_hash not in repository.refresh_token_hashes
     assert repository.revoked_hashes == [token_hash]

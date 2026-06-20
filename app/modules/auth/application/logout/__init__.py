@@ -1,1 +1,0 @@
-"""Logout use case."""

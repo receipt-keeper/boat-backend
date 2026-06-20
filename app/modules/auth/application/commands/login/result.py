@@ -2,12 +2,7 @@ from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
-class RefreshTokenCommand:
-    refresh_token: str
-
-
-@dataclass(frozen=True)
-class RefreshTokenResult:
+class LoginResult:
     access_token: str
     refresh_token: str
     token_type: str

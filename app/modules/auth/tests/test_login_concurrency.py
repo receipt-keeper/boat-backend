@@ -7,8 +7,9 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.modules.auth.application.login.schemas import LoginCommand, LoginResult
-from app.modules.auth.application.login.use_case import LoginUseCase
+from app.modules.auth.application.commands.login.command import LoginCommand
+from app.modules.auth.application.commands.login.result import LoginResult
+from app.modules.auth.application.commands.login.use_case import LoginCommandUseCase
 from app.modules.auth.application.ports.external_identity_verifier import ExternalIdentityVerifier
 from app.modules.auth.application.ports.token_issuer import (
     AccessTokenIssuer,
@@ -16,7 +17,7 @@ from app.modules.auth.application.ports.token_issuer import (
     IssuedRefreshToken,
     RefreshTokenIssuer,
 )
-from app.modules.auth.dependencies import UsersModuleUserProvisioner
+from app.modules.auth.dependencies import _ProvisionUserPortAdapter
 from app.modules.auth.domain.model import ExternalIdentity
 from app.modules.auth.infrastructure.persistence import orm as auth_orm
 from app.modules.auth.infrastructure.persistence.credential_repository import (
@@ -25,7 +26,7 @@ from app.modules.auth.infrastructure.persistence.credential_repository import (
 from app.modules.auth.infrastructure.persistence.external_identity_login_synchronizer import (
     SqlAlchemyExternalIdentityLoginSynchronizer,
 )
-from app.modules.users.dependencies import build_provision_user_use_case
+from app.modules.users.dependencies import build_provision_user_command_use_case
 from tests.support.users_persistence import count_persisted_users
 
 
@@ -115,20 +116,20 @@ class DeterministicRefreshTokenIssuer(RefreshTokenIssuer):
         )
 
 
-def _build_login_use_case(
+def _build_login_command_use_case(
     *,
     session: AsyncSession,
     context: ConcurrentLoginContext,
     attempt: LoginAttempt,
-) -> LoginUseCase:
-    return LoginUseCase(
+) -> LoginCommandUseCase:
+    return LoginCommandUseCase(
         identity_verifier=BarrierExternalIdentityVerifier(
             identity=context.identity,
             barrier=context.barrier,
         ),
         login_synchronizer=SqlAlchemyExternalIdentityLoginSynchronizer(session),
         credential_repository=SqlAlchemyCredentialRepository(session),
-        user_provisioner=UsersModuleUserProvisioner(build_provision_user_use_case(session)),
+        user_provisioner=_ProvisionUserPortAdapter(build_provision_user_command_use_case(session)),
         access_token_issuer=DeterministicAccessTokenIssuer(),
         refresh_token_issuer=DeterministicRefreshTokenIssuer(
             token=attempt.refresh_token,
@@ -144,9 +145,15 @@ async def _run_login_attempt(
 ) -> None:
     async with context.session_factory() as session:
         transaction = await session.begin()
-        use_case = _build_login_use_case(session=session, context=context, attempt=attempt)
+        command_use_case = _build_login_command_use_case(
+            session=session,
+            context=context,
+            attempt=attempt,
+        )
         try:
-            result = await use_case.execute(LoginCommand(provider_token=attempt.provider_token))
+            result = await command_use_case.execute(
+                LoginCommand(provider_token=attempt.provider_token)
+            )
             await transaction.commit()
         except SQLAlchemyError as exc:
             await session.rollback()

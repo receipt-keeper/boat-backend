@@ -1,8 +1,8 @@
-from app.modules.users.application.delete.schemas import DeleteUserCommand
+from app.modules.users.application.commands.delete.command import DeleteUserCommand
 from app.modules.users.application.ports.user_repository import UserRepository
 
 
-class DeleteUserUseCase:
+class DeleteUserCommandUseCase:
     def __init__(self, *, user_repository: UserRepository) -> None:
         self._user_repository = user_repository
 

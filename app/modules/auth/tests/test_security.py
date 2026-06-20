@@ -13,7 +13,7 @@ from app.modules.auth.application.ports.credential_repository import (
     CredentialRepository,
     CredentialRepositoryProvider,
 )
-from app.modules.auth.dependencies import get_authorize_credential_repository_provider
+from app.modules.auth.dependencies import get_current_principal_credential_repository_provider
 from app.modules.auth.domain.model import ExternalIdentity, UserCredential
 from app.modules.auth.infrastructure.tokens.jwt import (
     JwtAccessTokenService,
@@ -131,7 +131,7 @@ class StaticCredentialRepositoryProvider(CredentialRepositoryProvider):
 
 
 def _override_credential_state(test_app, *, active: bool) -> None:
-    test_app.dependency_overrides[get_authorize_credential_repository_provider] = lambda: (
+    test_app.dependency_overrides[get_current_principal_credential_repository_provider] = lambda: (
         StaticCredentialRepositoryProvider(CredentialStateRepository(active=active))
     )
 
