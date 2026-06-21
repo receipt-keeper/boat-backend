@@ -51,7 +51,6 @@ CountableUsersTable = (
 
 async def test_resolve_user_for_login_normalizes_email_and_is_idempotent(
     postgres_session_factory: async_sessionmaker[AsyncSession],
-    capsys: pytest.CaptureFixture[str],
 ) -> None:
     # Given: a users repository and two login attempts sharing one email with different casing.
     repository = SqlAlchemyUserRepository(postgres_session_factory)
@@ -90,18 +89,9 @@ async def test_resolve_user_for_login_normalizes_email_and_is_idempotent(
     assert settings_count == 1
     assert entitlement_count == 1
 
-    with capsys.disabled():
-        print(
-            "email-normalization surface: "
-            "input=Person@Example.COM, input=person@example.com, "
-            f"normalized={first.normalized_email}, unique_user_count={users_count}, "
-            f"settings_count={settings_count}, entitlement_count={entitlement_count}"
-        )
-
 
 async def test_profile_settings_push_and_withdrawal_surface(
     postgres_session_factory: async_sessionmaker[AsyncSession],
-    capsys: pytest.CaptureFixture[str],
 ) -> None:
     # Given: a resolved user account with default settings and entitlement.
     repository = SqlAlchemyUserRepository(postgres_session_factory)
@@ -168,17 +158,6 @@ async def test_profile_settings_push_and_withdrawal_surface(
     assert settings_count == 0
     assert entitlement_count == 0
     assert push_count == 0
-
-    with capsys.disabled():
-        print(
-            "users-usecase surface: "
-            f"user_id={user.user_id}, settings_patch=notification:false marketing:true, "
-            f"entitlement_default={profile.free_analysis_tokens_remaining}, "
-            f"push_upsert_same_id={updated.push_token_id == registered.push_token_id}, "
-            "push_count_after_delete=0, withdrawal_counts="
-            f"users:{users_count} settings:{settings_count} "
-            f"entitlements:{entitlement_count} push_tokens:{push_count}"
-        )
 
 
 async def test_use_cases_reject_malformed_input(

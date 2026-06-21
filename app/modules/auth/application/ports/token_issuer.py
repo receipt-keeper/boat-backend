@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
-from app.modules.auth.application.principal import AuthenticatedPrincipal
+from app.core.security.principal import AuthenticatedPrincipal
 
 
 @dataclass(frozen=True)

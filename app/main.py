@@ -1,7 +1,7 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -17,6 +17,7 @@ from app.core.http import exception_handlers
 from app.core.observability.health import router as observability_router
 from app.modules.auth.api import exception_handlers as auth_exception_handlers
 from app.modules.auth.api.router import router as auth_router
+from app.modules.auth.api.security import authenticate_current_principal
 from app.modules.auth.domain.exceptions import AuthenticationError, AuthorizationError
 from app.modules.examples.api.router import router as examples_router
 from app.modules.ocr.api.router import router as ocr_router
@@ -73,7 +74,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.settings = resolved_settings
     app.include_router(auth_router, prefix=resolved_settings.api_prefix)
-    app.include_router(users_router, prefix=resolved_settings.api_prefix)
+    app.include_router(
+        users_router,
+        prefix=resolved_settings.api_prefix,
+        dependencies=[Depends(authenticate_current_principal)],
+    )
     app.include_router(examples_router, prefix=resolved_settings.api_prefix)
     app.include_router(ocr_router, prefix=resolved_settings.api_prefix)
     app.include_router(observability_router)

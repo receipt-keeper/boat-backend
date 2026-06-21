@@ -6,7 +6,6 @@ from uuid import UUID
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.modules.auth.application.constants import AUTHENTICATION_FAILED_MESSAGE
 from app.modules.auth.application.ports.credential_repository import (
     CredentialRepository,
     SessionCredential,
@@ -77,7 +76,7 @@ class SqlAlchemyCredentialRepository(CredentialRepository):
         async with self._session(transactional=True) as session:
             credentials = await session.get(orm.UserCredential, credentials_id)
             if credentials is None:
-                raise AuthenticationError(AUTHENTICATION_FAILED_MESSAGE)
+                raise AuthenticationError()
             credentials.last_login_at = logged_in_at
             return mapper.user_credential_to_domain(credentials)
 
@@ -150,23 +149,23 @@ class SqlAlchemyCredentialRepository(CredentialRepository):
             )
             row = result.first()
             if row is None:
-                raise AuthenticationError(AUTHENTICATION_FAILED_MESSAGE)
+                raise AuthenticationError()
 
             _rt_id, rt_credentials_id, rt_session_id, rt_expires_at = row
             if rt_session_id is None:
-                raise AuthenticationError(AUTHENTICATION_FAILED_MESSAGE)
+                raise AuthenticationError()
 
             # Validate expiry after deletion so we hold the row exclusively.
             if rt_expires_at <= datetime.now(UTC):
-                raise AuthenticationError(AUTHENTICATION_FAILED_MESSAGE)
+                raise AuthenticationError()
 
             auth_session = await session.get(orm.AuthSession, rt_session_id)
             if auth_session is None or auth_session.revoked_at is not None:
-                raise AuthenticationError(AUTHENTICATION_FAILED_MESSAGE)
+                raise AuthenticationError()
 
             credentials = await session.get(orm.UserCredential, rt_credentials_id)
             if credentials is None or credentials.id != auth_session.credentials_id:
-                raise AuthenticationError(AUTHENTICATION_FAILED_MESSAGE)
+                raise AuthenticationError()
 
             # INSERT new token; if this fails the whole tx rolls back, restoring the old token.
             session.add(

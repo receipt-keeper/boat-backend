@@ -1,9 +1,7 @@
-import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 from uuid import UUID
 
 from httpx import ASGITransport, AsyncClient
@@ -39,7 +37,6 @@ TEST_SETTINGS = Settings(
     jwt_issuer="boat-backend-test",
     jwt_audience="boat-api-test",
 )
-EVIDENCE_DIR = Path(".omo/evidence/auth-users-bc-prd-completion")
 
 
 @dataclass(frozen=True)
@@ -231,16 +228,6 @@ async def _client_with_failing_cleanup(
         yield client
 
 
-def _write_evidence(name: str, payload: dict[str, object]) -> Path:
-    EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
-    path = EVIDENCE_DIR / name
-    path.write_text(
-        json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
-    return path
-
-
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
@@ -367,15 +354,6 @@ async def test_delete_me_withdraws_full_account(
         "user_push_tokens": 1,
     }
 
-    evidence = {
-        "scenario": "account_withdrawal",
-        "http_status_delete": response.status_code,
-        "http_status_stale": stale_response.status_code,
-        **{f"remaining_{k}": v for k, v in counts.items()},
-    }
-    path = _write_evidence("task-10-withdraw-green.log", evidence)
-    assert path.is_file()
-
 
 async def test_delete_me_rolls_back_when_users_cleanup_fails(
     postgres_session_factory: async_sessionmaker[AsyncSession],
@@ -413,11 +391,3 @@ async def test_delete_me_rolls_back_when_users_cleanup_fails(
         "user_entitlements": 1,
         "user_push_tokens": 1,
     }, f"Expected all rows intact after rollback but got: {counts}"
-
-    evidence = {
-        "scenario": "account_withdrawal_cleanup_failure",
-        "http_status": response.status_code,
-        **{f"rollback_{k}": v for k, v in counts.items()},
-    }
-    path = _write_evidence("task-10-withdraw-rollback.log", evidence)
-    assert path.is_file()

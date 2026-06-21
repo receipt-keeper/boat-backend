@@ -90,6 +90,8 @@ class Settings(BaseSettings):
             raise ValueError("prod/staging requires a non-default jwt_secret_key")
         if self.refresh_token_pepper == DEFAULT_REFRESH_TOKEN_PEPPER:
             raise ValueError("prod/staging requires a non-default refresh_token_pepper")
+        if not self.firebase_check_revoked:
+            raise ValueError("prod/staging requires firebase_check_revoked=true")
         return self
 
 

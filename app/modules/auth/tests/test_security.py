@@ -9,7 +9,6 @@ from httpx import ASGITransport, AsyncClient, Response
 from app.core.config.settings import Settings
 from app.main import create_app
 from app.modules.auth.api.security import CurrentPrincipalDep, require_roles
-from app.modules.auth.application.constants import AUTHENTICATION_FAILED_MESSAGE
 from app.modules.auth.application.ports.credential_repository import (
     CredentialRepository,
     CredentialRepositoryProvider,
@@ -44,7 +43,7 @@ def _assert_authentication_failed_envelope(response: Response) -> None:
     body = response.json()
     assert response.status_code == 401
     assert body["success"] is False
-    assert body["data"]["message"] == AUTHENTICATION_FAILED_MESSAGE
+    assert body["data"]["message"] == "인증 정보가 올바르지 않습니다."
 
 
 def _firebase_verifier(mapping: FirebaseIdentityMapping) -> FirebaseExternalIdentityVerifier:
@@ -93,7 +92,7 @@ def test_firebase_identity_mapping_rejects_missing_provider_claim() -> None:
             }
         )
 
-    assert error.value.message == AUTHENTICATION_FAILED_MESSAGE
+    assert error.value.message == "인증 정보가 올바르지 않습니다."
 
 
 def test_firebase_identity_mapping_rejects_provider_outside_allowlist() -> None:
@@ -111,7 +110,7 @@ def test_firebase_identity_mapping_rejects_provider_outside_allowlist() -> None:
                 }
             )
 
-        assert error.value.message == AUTHENTICATION_FAILED_MESSAGE
+        assert error.value.message == "인증 정보가 올바르지 않습니다."
 
 
 def test_firebase_identity_mapping_sets_normalized_email_from_email() -> None:

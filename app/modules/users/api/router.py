@@ -2,8 +2,8 @@ from typing import Any
 
 from fastapi import APIRouter, status
 
+from app.core.http.auth import CurrentPrincipalDep
 from app.core.http.responses import ApiErrorData, CommonResponse
-from app.modules.auth.api.security import CurrentPrincipalDep
 from app.modules.users.api.schemas import (
     UpdateSettingsRequest,
     UpdateSettingsResponse,
@@ -33,8 +33,6 @@ _ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
     },
 }
 
-# users BC의 마이페이지 공개 API.
-# 모든 엔드포인트는 auth 모듈의 bearer principal 의존성을 재사용한다.
 router = APIRouter(
     prefix="/users",
     tags=["users"],

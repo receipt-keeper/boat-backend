@@ -8,7 +8,6 @@ from app.core.domain.exceptions import ErrorDetail, ValidationError
 from app.modules.auth.application.commands.login.command import LoginCommand
 from app.modules.auth.application.commands.logout.command import LogoutCommand
 from app.modules.auth.application.commands.refresh.command import RefreshTokenCommand
-from app.modules.auth.application.constants import AUTH_SCHEME_BEARER, AUTHENTICATION_FAILED_MESSAGE
 from app.modules.auth.application.ports.credential_repository import CredentialRepositoryProvider
 from app.modules.auth.application.ports.user_provisioner import (
     ProvisionedUser,
@@ -91,7 +90,6 @@ async def test_login_creates_credentials_and_returns_service_tokens() -> None:
         )
     )
 
-    assert tokens.token_type == AUTH_SCHEME_BEARER
     assert tokens.access_token
     assert tokens.refresh_token
     assert tokens.expires_in == 1800
@@ -209,9 +207,7 @@ async def test_login_uses_existing_external_identity_without_duplicate_credentia
 async def test_login_does_not_store_refresh_token_when_identity_verification_fails() -> None:
     repository = FakeCredentialRepository()
     command_use_case = build_login_command_use_case(
-        verifier=FakeExternalIdentityVerifier(
-            error=AuthenticationError(AUTHENTICATION_FAILED_MESSAGE)
-        ),
+        verifier=FakeExternalIdentityVerifier(error=AuthenticationError()),
         repository=repository,
         user_provisioner=FakeUserProvisioner(),
     )
@@ -383,7 +379,7 @@ def test_access_token_verify_rejects_malformed_subject_with_authentication_error
     with pytest.raises(AuthenticationError) as error:
         manager.verify(malformed_token)
 
-    assert error.value.message == AUTHENTICATION_FAILED_MESSAGE
+    assert error.value.message == "인증 정보가 올바르지 않습니다."
 
 
 def test_access_token_verify_rejects_malformed_credentials_id_with_authentication_error() -> None:
@@ -406,7 +402,7 @@ def test_access_token_verify_rejects_malformed_credentials_id_with_authenticatio
     with pytest.raises(AuthenticationError) as error:
         manager.verify(malformed_token)
 
-    assert error.value.message == AUTHENTICATION_FAILED_MESSAGE
+    assert error.value.message == "인증 정보가 올바르지 않습니다."
 
 
 def test_access_token_verify_rejects_missing_required_claims_with_authentication_error() -> None:
@@ -429,7 +425,7 @@ def test_access_token_verify_rejects_missing_required_claims_with_authentication
     with pytest.raises(AuthenticationError) as error:
         manager.verify(malformed_token)
 
-    assert error.value.message == AUTHENTICATION_FAILED_MESSAGE
+    assert error.value.message == "인증 정보가 올바르지 않습니다."
 
 
 def test_access_token_verify_rejects_malformed_session_id_with_authentication_error() -> None:
@@ -452,7 +448,7 @@ def test_access_token_verify_rejects_malformed_session_id_with_authentication_er
     with pytest.raises(AuthenticationError) as error:
         manager.verify(malformed_token)
 
-    assert error.value.message == AUTHENTICATION_FAILED_MESSAGE
+    assert error.value.message == "인증 정보가 올바르지 않습니다."
 
 
 def test_access_token_verify_rejects_missing_session_id_with_authentication_error() -> None:
@@ -475,4 +471,4 @@ def test_access_token_verify_rejects_missing_session_id_with_authentication_erro
     with pytest.raises(AuthenticationError) as error:
         manager.verify(malformed_token)
 
-    assert error.value.message == AUTHENTICATION_FAILED_MESSAGE
+    assert error.value.message == "인증 정보가 올바르지 않습니다."

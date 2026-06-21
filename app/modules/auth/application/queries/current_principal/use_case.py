@@ -1,10 +1,6 @@
-from app.modules.auth.application.constants import (
-    AUTHENTICATION_FAILED_MESSAGE,
-    AUTHORIZATION_FORBIDDEN_MESSAGE,
-)
+from app.core.security.principal import AuthenticatedPrincipal
 from app.modules.auth.application.ports.credential_repository import CredentialRepositoryProvider
 from app.modules.auth.application.ports.token_issuer import AccessTokenVerifier
-from app.modules.auth.application.principal import AuthenticatedPrincipal
 from app.modules.auth.application.queries.current_principal.query import CurrentPrincipalQuery
 from app.modules.auth.domain.exceptions import AuthenticationError, AuthorizationError
 
@@ -28,7 +24,7 @@ class CurrentPrincipalQueryUseCase:
             session_id=principal.session_id,
         )
         if not session_exists:
-            raise AuthenticationError(AUTHENTICATION_FAILED_MESSAGE)
+            raise AuthenticationError()
         return principal
 
 
@@ -39,4 +35,4 @@ class RoleAuthorizationPolicy:
         allowed_roles: set[str],
     ) -> None:
         if principal.role not in allowed_roles:
-            raise AuthorizationError(AUTHORIZATION_FORBIDDEN_MESSAGE)
+            raise AuthorizationError()

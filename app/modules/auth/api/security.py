@@ -1,33 +1,33 @@
 from collections.abc import Callable
 from typing import Annotated
 
-from fastapi import Depends
+from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from app.modules.auth.application.constants import (
-    AUTH_SCHEME_BEARER_LOWER,
-    AUTHENTICATION_REQUIRED_MESSAGE,
-)
-from app.modules.auth.application.principal import AuthenticatedPrincipal
+from app.core.http.auth import set_current_principal
+from app.core.security.principal import AuthenticatedPrincipal
 from app.modules.auth.application.queries.current_principal.query import CurrentPrincipalQuery
 from app.modules.auth.application.queries.current_principal.use_case import RoleAuthorizationPolicy
 from app.modules.auth.dependencies import CurrentPrincipalQueryUseCaseDep
-from app.modules.auth.domain.exceptions import AuthenticationError
+from app.modules.auth.domain.exceptions import AuthenticationRequiredError
 
 _bearer_scheme = HTTPBearer(auto_error=False)
 
 
-async def get_current_principal(
+async def authenticate_current_principal(
+    request: Request,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer_scheme)],
     query_use_case: CurrentPrincipalQueryUseCaseDep,
 ) -> AuthenticatedPrincipal:
-    if credentials is None or credentials.scheme.lower() != AUTH_SCHEME_BEARER_LOWER:
-        raise AuthenticationError(AUTHENTICATION_REQUIRED_MESSAGE)
+    if credentials is None or credentials.scheme.casefold() != "bearer":
+        raise AuthenticationRequiredError()
 
-    return await query_use_case.execute(CurrentPrincipalQuery(token=credentials.credentials))
+    principal = await query_use_case.execute(CurrentPrincipalQuery(token=credentials.credentials))
+    set_current_principal(request, principal)
+    return principal
 
 
-CurrentPrincipalDep = Annotated[AuthenticatedPrincipal, Depends(get_current_principal)]
+CurrentPrincipalDep = Annotated[AuthenticatedPrincipal, Depends(authenticate_current_principal)]
 
 
 def require_roles(*roles: str) -> Callable[..., AuthenticatedPrincipal]:

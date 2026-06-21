@@ -10,7 +10,6 @@ from pydantic import ValidationError as PydanticValidationError
 from app.core.config.settings import Settings
 from app.main import create_app
 from app.modules.auth.api.security import CurrentPrincipalDep
-from app.modules.auth.application.constants import AUTHENTICATION_FAILED_MESSAGE
 from app.modules.auth.infrastructure.tokens.jwt import (
     JWT_CLAIM_AUDIENCE,
     JWT_CLAIM_CREDENTIALS_ID,
@@ -24,6 +23,7 @@ from app.modules.auth.infrastructure.tokens.jwt import (
 
 TEST_SIGNING_KEY: Final = "x" * 48
 OTHER_SIGNING_KEY: Final = "y" * 48
+TEST_REFRESH_TOKEN_PEPPER: Final = "p" * 48
 TEST_USER_ID: Final = UUID("00000000-0000-0000-0000-000000000001")
 TEST_CREDENTIALS_ID: Final = UUID("00000000-0000-0000-0000-000000000002")
 
@@ -79,7 +79,7 @@ def _assert_authentication_failed_envelope(response: Response) -> None:
     body = response.json()
     assert response.status_code == 401
     assert body["success"] is False
-    assert body["data"]["message"] == AUTHENTICATION_FAILED_MESSAGE
+    assert body["data"]["message"] == "인증 정보가 올바르지 않습니다."
 
 
 def test_prod_settings_reject_default_runtime_token_secrets() -> None:
@@ -90,6 +90,27 @@ def test_prod_settings_reject_default_runtime_token_secrets() -> None:
 def test_staging_settings_reject_default_refresh_token_pepper() -> None:
     with pytest.raises(PydanticValidationError):
         Settings(app_env="staging", jwt_secret_key=TEST_SIGNING_KEY)
+
+
+def test_prod_settings_reject_disabled_firebase_revocation_check() -> None:
+    with pytest.raises(PydanticValidationError):
+        Settings(
+            app_env="prod",
+            jwt_secret_key=TEST_SIGNING_KEY,
+            refresh_token_pepper=TEST_REFRESH_TOKEN_PEPPER,
+            firebase_check_revoked=False,
+        )
+
+
+def test_prod_settings_accept_strong_secrets_and_firebase_revocation_check() -> None:
+    settings = Settings(
+        app_env="prod",
+        jwt_secret_key=TEST_SIGNING_KEY,
+        refresh_token_pepper=TEST_REFRESH_TOKEN_PEPPER,
+        firebase_check_revoked=True,
+    )
+
+    assert settings.firebase_check_revoked is True
 
 
 def test_auth_runtime_settings_expose_provider_and_user_defaults() -> None:

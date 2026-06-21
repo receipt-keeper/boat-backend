@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from pathlib import Path
 
 import pytest
 from sqlalchemy import func, select
@@ -24,8 +23,6 @@ from app.modules.auth.tests.service_fakes import (
 )
 from app.modules.users.dependencies import build_resolve_user_for_login_command_use_case
 from tests.support.users_persistence import count_persisted_users
-
-EVIDENCE_DIR = Path(".omo/evidence/auth-users-bc-prd-completion")
 
 
 @dataclass(frozen=True)
@@ -118,16 +115,8 @@ def _require_count(value: int | None) -> int:
     return value
 
 
-def _write_evidence(name: str, content: str) -> Path:
-    EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
-    path = EVIDENCE_DIR / name
-    path.write_text(content + "\n", encoding="utf-8")
-    return path
-
-
 async def test_verified_same_email_links_into_single_user(
     postgres_session_factory: async_sessionmaker[AsyncSession],
-    capsys: pytest.CaptureFixture[str],
 ) -> None:
     verifier = ScriptedExternalIdentityVerifier(
         specs={
@@ -157,16 +146,6 @@ async def test_verified_same_email_links_into_single_user(
 
     rows = await _count_rows(postgres_session_factory)
     assert rows == PersistedRows(users=1, credentials=1, external_identities=2)
-
-    summary = (
-        f"unique_user_count={rows.users} "
-        f"credential_count={rows.credentials} "
-        f"external_identity_count={rows.external_identities}"
-    )
-    evidence_path = _write_evidence("task-5-same-email-green.log", summary)
-    assert evidence_path.is_file()
-    with capsys.disabled():
-        print(summary)
 
 
 async def test_different_emails_create_separate_users(
@@ -204,7 +183,6 @@ async def test_different_emails_create_separate_users(
 
 async def test_unverified_second_email_does_not_merge(
     postgres_session_factory: async_sessionmaker[AsyncSession],
-    capsys: pytest.CaptureFixture[str],
 ) -> None:
     verifier = ScriptedExternalIdentityVerifier(
         specs={
@@ -239,13 +217,3 @@ async def test_unverified_second_email_does_not_merge(
     rows_after = await _count_rows(postgres_session_factory)
     assert rows_after == rows_before
     assert rows_after == PersistedRows(users=1, credentials=1, external_identities=1)
-
-    summary = (
-        f"unverified_email_rejected users={rows_after.users} "
-        f"credentials={rows_after.credentials} "
-        f"external_identities={rows_after.external_identities}"
-    )
-    evidence_path = _write_evidence("task-5-unverified-email-rejected.log", summary)
-    assert evidence_path.is_file()
-    with capsys.disabled():
-        print(summary)

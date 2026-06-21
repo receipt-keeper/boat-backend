@@ -2,7 +2,6 @@ from datetime import UTC, datetime
 
 from app.modules.auth.application.commands.login.command import LoginCommand
 from app.modules.auth.application.commands.login.result import LoginResult
-from app.modules.auth.application.constants import AUTH_SCHEME_BEARER, AUTHENTICATION_FAILED_MESSAGE
 from app.modules.auth.application.ports.credential_repository import CredentialRepository
 from app.modules.auth.application.ports.external_identity_login_synchronizer import (
     ExternalIdentityLoginSynchronizer,
@@ -48,7 +47,7 @@ class LoginCommandUseCase:
             )
         else:
             if not identity.email_verified or identity.normalized_email is None:
-                raise AuthenticationError(AUTHENTICATION_FAILED_MESSAGE)
+                raise AuthenticationError()
             provisioned = await self._user_provisioner.provision(
                 request=UserProvisioningRequest(
                     name=identity.name,
@@ -101,6 +100,5 @@ class LoginCommandUseCase:
         return LoginResult(
             access_token=access_token.token,
             refresh_token=refresh_token.token,
-            token_type=AUTH_SCHEME_BEARER,
             expires_in=access_token.expires_in,
         )

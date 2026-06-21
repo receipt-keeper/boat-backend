@@ -1,5 +1,3 @@
-from pathlib import Path
-
 from httpx import AsyncClient
 
 from app.core.domain.exceptions import ErrorDetail, ValidationError
@@ -9,23 +7,12 @@ from app.modules.auth.application.commands.login.result import LoginResult
 from app.modules.auth.application.commands.logout.command import LogoutCommand
 from app.modules.auth.application.commands.refresh.command import RefreshTokenCommand
 from app.modules.auth.application.commands.refresh.result import RefreshTokenResult
-from app.modules.auth.application.constants import AUTH_SCHEME_BEARER, AUTHENTICATION_FAILED_MESSAGE
 from app.modules.auth.dependencies import (
     get_login_command_use_case,
     get_logout_command_use_case,
     get_refresh_token_command_use_case,
 )
 from app.modules.auth.domain.exceptions import AuthenticationError
-
-EVIDENCE_DIR = Path(".omo/evidence/auth-users-bc-prd-completion")
-
-
-def _write_evidence(name: str, content: str) -> Path:
-    EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
-    path = EVIDENCE_DIR / name
-    path.write_text(content + "\n", encoding="utf-8")
-    return path
-
 
 LOGIN_SAMPLE = "firebase-sample"
 REFRESH_SAMPLE = "refresh-sample"
@@ -41,14 +28,13 @@ class FakeLoginCommandUseCase:
         return LoginResult(
             access_token="access-token",
             refresh_token="refresh-token",
-            token_type=AUTH_SCHEME_BEARER,
             expires_in=1800,
         )
 
 
 class RejectingLoginCommandUseCase(FakeLoginCommandUseCase):
     async def execute(self, command: LoginCommand) -> LoginResult:
-        raise AuthenticationError(AUTHENTICATION_FAILED_MESSAGE)
+        raise AuthenticationError()
 
 
 class ConsentEnforcingLoginCommandUseCase:
@@ -71,7 +57,6 @@ class ConsentEnforcingLoginCommandUseCase:
         return LoginResult(
             access_token="access-token",
             refresh_token="refresh-token",
-            token_type=AUTH_SCHEME_BEARER,
             expires_in=1800,
         )
 
@@ -85,7 +70,6 @@ class FakeRefreshTokenCommandUseCase:
         return RefreshTokenResult(
             access_token="new-access-token",
             refresh_token="new-refresh-token",
-            token_type=AUTH_SCHEME_BEARER,
             expires_in=1800,
         )
 
@@ -112,7 +96,7 @@ async def test_login_endpoint_returns_token_envelope(client: AsyncClient) -> Non
         "data": {
             "accessToken": "access-token",
             "refreshToken": "refresh-token",
-            "tokenType": AUTH_SCHEME_BEARER,
+            "tokenType": "Bearer",
             "expiresIn": 1800,
         },
     }
@@ -143,11 +127,6 @@ async def test_login_with_consent_succeeds(client: AsyncClient) -> None:
     assert command_use_case.command.terms_version == "v1"
     assert body["success"] is True
     assert body["data"]["accessToken"] == "access-token"
-    evidence_path = _write_evidence(
-        "task-4-login-consent-green.log",
-        f"status={response.status_code} body={body}",
-    )
-    assert evidence_path.is_file()
 
 
 async def test_login_missing_terms_consent_uses_422_envelope(client: AsyncClient) -> None:
@@ -168,11 +147,6 @@ async def test_login_missing_terms_consent_uses_422_envelope(client: AsyncClient
     assert body["data"]["errors"] == [
         {"field": "termsAccepted", "message": "이용약관에 동의해야 합니다."}
     ]
-    evidence_path = _write_evidence(
-        "task-4-login-consent-failures.log",
-        f"status={response.status_code} body={body}",
-    )
-    assert evidence_path.is_file()
 
 
 async def test_invalid_firebase_token_uses_401_envelope(client: AsyncClient) -> None:
@@ -184,7 +158,7 @@ async def test_invalid_firebase_token_uses_401_envelope(client: AsyncClient) -> 
     assert response.status_code == 401
     assert body["success"] is False
     assert body["status"] == 401
-    assert body["data"]["message"] == AUTHENTICATION_FAILED_MESSAGE
+    assert body["data"]["message"] == "인증 정보가 올바르지 않습니다."
     assert body["data"]["path"] == "/api/v1/auth/login"
 
 
@@ -202,6 +176,23 @@ async def test_malformed_login_request_uses_422_envelope(client: AsyncClient) ->
     assert body["data"]["errors"] == [{"field": "idToken", "message": "Field required"}]
 
 
+async def test_login_rejects_empty_id_token_at_request_boundary(client: AsyncClient) -> None:
+    command_use_case = FakeLoginCommandUseCase()
+    app.dependency_overrides[get_login_command_use_case] = lambda: command_use_case
+
+    response = await client.post("/api/v1/auth/login", json={"idToken": ""})
+
+    body = response.json()
+    assert response.status_code == 422
+    assert command_use_case.login_id_token is None
+    assert body["success"] is False
+    assert body["status"] == 422
+    assert body["data"]["path"] == "/api/v1/auth/login"
+    assert body["data"]["errors"] == [
+        {"field": "idToken", "message": "String should have at least 1 character"}
+    ]
+
+
 async def test_refresh_endpoint_rotates_token(client: AsyncClient) -> None:
     command_use_case = FakeRefreshTokenCommandUseCase()
     app.dependency_overrides[get_refresh_token_command_use_case] = lambda: command_use_case
@@ -216,7 +207,7 @@ async def test_refresh_endpoint_rotates_token(client: AsyncClient) -> None:
     assert response.json()["data"] == {
         "accessToken": "new-access-token",
         "refreshToken": "new-refresh-token",
-        "tokenType": AUTH_SCHEME_BEARER,
+        "tokenType": "Bearer",
         "expiresIn": 1800,
     }
 

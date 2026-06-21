@@ -5,7 +5,6 @@ from uuid import UUID, uuid4
 from app.modules.auth.application.commands.login.use_case import LoginCommandUseCase
 from app.modules.auth.application.commands.logout.use_case import LogoutCommandUseCase
 from app.modules.auth.application.commands.refresh.use_case import RefreshTokenCommandUseCase
-from app.modules.auth.application.constants import AUTHENTICATION_FAILED_MESSAGE
 from app.modules.auth.application.ports.credential_repository import (
     CredentialRepository,
     SessionCredential,
@@ -113,7 +112,7 @@ class FakeCredentialRepository(CredentialRepository):
             if credentials.credentials_id == credentials_id:
                 self.login_records.append(credentials.credentials_id)
                 return credentials
-        raise AuthenticationError(AUTHENTICATION_FAILED_MESSAGE)
+        raise AuthenticationError()
 
     async def find_credential_by_user_id(self, *, user_id: UUID) -> UserCredential | None:
         return self.credentials_by_user_id.get(user_id)
@@ -133,7 +132,7 @@ class FakeCredentialRepository(CredentialRepository):
             None,
         )
         if credentials is None:
-            raise AuthenticationError(AUTHENTICATION_FAILED_MESSAGE)
+            raise AuthenticationError()
         identity_key = (identity.issuer.value, identity.subject.value)
         self.credentials_by_identity[identity_key] = credentials
         self.saved_identities.append(
@@ -166,7 +165,7 @@ class FakeCredentialRepository(CredentialRepository):
                     session_id=session_id,
                 )
                 return
-        raise AuthenticationError(AUTHENTICATION_FAILED_MESSAGE)
+        raise AuthenticationError()
 
     async def rotate_refresh_token(
         self,
@@ -179,9 +178,9 @@ class FakeCredentialRepository(CredentialRepository):
         try:
             session_credential = self.refresh_token_hashes.pop(token_hash)
         except KeyError as exc:
-            raise AuthenticationError(AUTHENTICATION_FAILED_MESSAGE) from exc
+            raise AuthenticationError() from exc
         if session_credential.session_id in self.revoked_session_ids:
-            raise AuthenticationError(AUTHENTICATION_FAILED_MESSAGE)
+            raise AuthenticationError()
         self.refresh_token_hashes[new_token_hash] = session_credential
         return session_credential
 

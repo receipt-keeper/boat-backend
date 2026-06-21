@@ -1,6 +1,5 @@
 from app.modules.auth.application.commands.refresh.command import RefreshTokenCommand
 from app.modules.auth.application.commands.refresh.result import RefreshTokenResult
-from app.modules.auth.application.constants import AUTH_SCHEME_BEARER
 from app.modules.auth.application.ports.credential_repository import CredentialRepository
 from app.modules.auth.application.ports.token_issuer import (
     AccessTokenIssuer,
@@ -40,6 +39,5 @@ class RefreshTokenCommandUseCase:
         return RefreshTokenResult(
             access_token=access_token.token,
             refresh_token=rotated_refresh_token.token,
-            token_type=AUTH_SCHEME_BEARER,
             expires_in=access_token.expires_in,
         )

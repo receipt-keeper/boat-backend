@@ -1,8 +1,5 @@
-import json
-from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 from uuid import UUID
 
 import anyio
@@ -31,9 +28,6 @@ from app.modules.auth.infrastructure.persistence.external_identity_login_synchro
 )
 from app.modules.users.dependencies import build_resolve_user_for_login_command_use_case
 from tests.support.users_persistence import count_persisted_users
-
-TASK_11_EVIDENCE_DIR = Path(".omo/evidence/auth-users-bc-prd-completion")
-type ManualQaValue = int | str
 
 
 @dataclass(frozen=True)
@@ -64,19 +58,6 @@ class PersistedLoginRows:
     credentials: int
     external_identities: int
     refresh_tokens: int
-
-
-def _write_manual_qa_evidence(
-    name: str,
-    payload: Mapping[str, ManualQaValue],
-) -> Path:
-    TASK_11_EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
-    path = TASK_11_EVIDENCE_DIR / name
-    path.write_text(
-        json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
-    return path
 
 
 class ConcurrentLoginBarrier:
@@ -291,16 +272,3 @@ async def test_concurrent_first_login_for_same_external_identity_is_idempotent(
         external_identities=1,
         refresh_tokens=2,
     )
-    manual_qa = {
-        "scenario": "concurrent_first_login",
-        "token_pairs": repr(sorted(token_pairs)),
-        "users": rows.users,
-        "credentials": rows.credentials,
-        "external_identities": rows.external_identities,
-        "refresh_tokens": rows.refresh_tokens,
-    }
-    evidence_path = _write_manual_qa_evidence(
-        "task-11-concurrent-first-login-manual-qa.json",
-        manual_qa,
-    )
-    assert evidence_path.is_file()

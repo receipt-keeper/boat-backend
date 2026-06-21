@@ -11,7 +11,6 @@ from app.modules.auth.application.commands.logout.command import LogoutCommand
 from app.modules.auth.application.commands.refresh.command import RefreshTokenCommand
 from app.modules.auth.application.commands.refresh.result import RefreshTokenResult
 from app.modules.auth.application.commands.withdraw.command import WithdrawAccountCommand
-from app.modules.auth.application.constants import AUTH_SCHEME_BEARER
 from app.modules.auth.dependencies import (
     LoginCommandUseCaseDep,
     LogoutCommandUseCaseDep,
@@ -43,7 +42,7 @@ def _token_response(tokens: LoginResult | RefreshTokenResult) -> AuthTokenRespon
     return AuthTokenResponse(
         accessToken=tokens.access_token,
         refreshToken=tokens.refresh_token,
-        tokenType=AUTH_SCHEME_BEARER,
+        tokenType="Bearer",
         expiresIn=tokens.expires_in,
     )
 

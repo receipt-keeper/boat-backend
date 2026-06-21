@@ -10,6 +10,7 @@ class LoginRequest(AppBaseModel):
 
     id_token: str = Field(
         alias="idToken",
+        min_length=1,
         description="Firebase ID 토큰. 구글/애플 로그인 후 클라이언트가 전달한다.",
     )
     terms_version: str | None = Field(

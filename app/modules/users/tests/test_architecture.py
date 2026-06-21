@@ -93,3 +93,14 @@ def test_users_domain_does_not_import_persistence_frameworks() -> None:
     assert "sqlalchemy.orm" not in domain_imports
     assert "sqlalchemy.dialects.postgresql" not in domain_imports
     assert "app.core.db.base" not in domain_imports
+
+
+def test_users_module_does_not_import_auth_api_internals() -> None:
+    offending_files = [
+        path.relative_to(PROJECT_ROOT).as_posix()
+        for path in USERS_ROOT.rglob("*.py")
+        if "tests" not in path.parts
+        and any(imported.startswith("app.modules.auth.api") for imported in _imports(path))
+    ]
+
+    assert offending_files == []
