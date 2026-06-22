@@ -36,7 +36,7 @@ def test_item_name_rejects_whitespace_only_value() -> None:
 
 
 async def test_receipt_ocr_dependency_rejects_missing_provider_in_non_local_env() -> None:
-    settings = Settings(app_env="dev", openrouter_api_key=None, gemini_api_key=None)
+    settings = Settings(app_env="dev", openrouter_api_key=None)
 
     with pytest.raises(ReceiptOcrProviderUnavailableError):
         await get_receipt_ocr_client(settings)
