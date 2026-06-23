@@ -26,7 +26,7 @@ TEST_SETTINGS = Settings(
 )
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class SeededUser:
     user_id: UUID
     credentials_id: UUID
@@ -128,26 +128,25 @@ async def test_get_me_returns_profile_envelope(
     assert body["success"] is True
     assert body["status"] == 200
     data = body["data"]
-    # 앱 공개 계약: PRD에 필요한 사용자 정보만 노출한다.
     assert set(data.keys()) == {
         "email",
         "name",
         "nickname",
         "profileImageUrl",
+        "notificationEnabled",
         "marketingConsent",
         "freeAnalysisTokensRemaining",
     }
     assert data["email"] == "profile@example.com"
     assert data["name"] == "프로필 사용자"
+    assert data["notificationEnabled"] is True
     assert data["marketingConsent"] is False
     assert data["freeAnalysisTokensRemaining"] == 5
-    # 내부 식별/푸시/알림 필드는 앱 공개 응답에서 제거됐다.
     assert "normalizedEmail" not in data
-    assert "notificationEnabled" not in data
     assert "pushTokenCount" not in data
 
 
-async def test_patch_me_updates_marketing_consent(
+async def test_patch_me_updates_notification_and_marketing_settings(
     postgres_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     async with postgres_session_factory() as session, session.begin():
@@ -164,19 +163,19 @@ async def test_patch_me_updates_marketing_consent(
         patch_response = await client.patch(
             "/api/v1/users/me",
             headers=_auth_headers(seeded),
-            json={"marketingConsent": True},
+            json={"notificationEnabled": False, "marketingConsent": True},
         )
         get_response = await client.get("/api/v1/users/me", headers=_auth_headers(seeded))
 
     patch_body = patch_response.json()
     assert patch_response.status_code == 200
     assert patch_body["success"] is True
-    # 앱 공개 PATCH 응답은 marketingConsent만 노출한다.
-    assert set(patch_body["data"].keys()) == {"marketingConsent"}
+    assert set(patch_body["data"].keys()) == {"notificationEnabled", "marketingConsent"}
+    assert patch_body["data"]["notificationEnabled"] is False
     assert patch_body["data"]["marketingConsent"] is True
-    assert "notificationEnabled" not in patch_body["data"]
 
     get_body = get_response.json()
+    assert get_body["data"]["notificationEnabled"] is False
     assert get_body["data"]["marketingConsent"] is True
 
 
@@ -197,7 +196,7 @@ async def test_patch_me_rejects_unknown_fields(
         response = await client.patch(
             "/api/v1/users/me",
             headers=_auth_headers(seeded),
-            json={"notificationEnabled": False},
+            json={"unknownField": False},
         )
 
     body = response.json()
@@ -215,7 +214,7 @@ async def test_endpoints_require_bearer_token(
     bad_token = {"Authorization": "Bearer invalid-token"}
     requests = [
         ("GET", "/api/v1/users/me", None),
-        ("PATCH", "/api/v1/users/me", {"marketingConsent": False}),
+        ("PATCH", "/api/v1/users/me", {"notificationEnabled": False}),
     ]
 
     async with _client(postgres_session_factory) as client:

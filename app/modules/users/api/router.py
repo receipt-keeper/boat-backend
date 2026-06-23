@@ -63,6 +63,7 @@ async def get_me(
             name=profile.name,
             nickname=profile.nickname,
             profileImageUrl=profile.profile_image_url,
+            notificationEnabled=profile.notification_enabled,
             marketingConsent=profile.marketing_consent,
             freeAnalysisTokensRemaining=profile.free_analysis_tokens_remaining,
         ),
@@ -85,7 +86,7 @@ async def update_me(
     settings = await command_use_case.execute(
         UpdateSettingsCommand(
             user_id=principal.user_id,
-            notification_enabled=None,
+            notification_enabled=request.notification_enabled,
             marketing_consent=request.marketing_consent,
         )
     )
@@ -93,6 +94,7 @@ async def update_me(
         success=True,
         status=status.HTTP_200_OK,
         data=UpdateCurrentUserResponse(
+            notificationEnabled=settings.notification_enabled,
             marketingConsent=settings.marketing_consent,
         ),
     )
