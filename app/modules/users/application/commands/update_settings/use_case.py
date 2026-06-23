@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 
+from app.core.application.unit_of_work import UnitOfWork
 from app.core.domain.exceptions import NotFoundError
 from app.modules.users.application.commands.update_settings.command import UpdateSettingsCommand
 from app.modules.users.application.commands.update_settings.result import UpdateSettingsResult
@@ -8,8 +9,9 @@ from app.modules.users.domain.model import UserSettings
 
 
 class UpdateSettingsCommandUseCase:
-    def __init__(self, *, user_repository: UserRepository) -> None:
+    def __init__(self, *, user_repository: UserRepository, unit_of_work: UnitOfWork) -> None:
         self._user_repository = user_repository
+        self._unit_of_work = unit_of_work
 
     async def execute(self, command: UpdateSettingsCommand) -> UpdateSettingsResult:
         state = await self._user_repository.find_account_state(user_id=command.user_id)
@@ -46,6 +48,7 @@ class UpdateSettingsCommandUseCase:
                 marketing_consent_updated_at=marketing_consent_updated_at,
             )
         )
+        await self._unit_of_work.commit()
         return UpdateSettingsResult(
             user_id=settings.id,
             notification_enabled=settings.notification_enabled,

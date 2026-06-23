@@ -1,3 +1,4 @@
+from app.core.application.unit_of_work import UnitOfWork
 from app.core.domain.exceptions import ErrorDetail, NotFoundError, ValidationError
 from app.modules.users.application.commands.register_push_token.command import (
     RegisterPushTokenCommand,
@@ -10,8 +11,9 @@ from app.modules.users.domain.model import UserPushToken
 
 
 class RegisterPushTokenCommandUseCase:
-    def __init__(self, *, user_repository: UserRepository) -> None:
+    def __init__(self, *, user_repository: UserRepository, unit_of_work: UnitOfWork) -> None:
         self._user_repository = user_repository
+        self._unit_of_work = unit_of_work
 
     async def execute(self, command: RegisterPushTokenCommand) -> RegisterPushTokenResult:
         _validate_push_token_command(command)
@@ -27,6 +29,7 @@ class RegisterPushTokenCommandUseCase:
                 platform=command.platform,
             )
         )
+        await self._unit_of_work.commit()
         return RegisterPushTokenResult(push_token_id=push_token.id)
 
 

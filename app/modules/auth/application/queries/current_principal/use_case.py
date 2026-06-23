@@ -1,5 +1,5 @@
 from app.core.security.principal import AuthenticatedPrincipal
-from app.modules.auth.application.ports.credential_repository import CredentialRepositoryProvider
+from app.modules.auth.application.ports.credential_repository import ActiveSessionChecker
 from app.modules.auth.application.ports.token_issuer import AccessTokenVerifier
 from app.modules.auth.application.queries.current_principal.query import CurrentPrincipalQuery
 from app.modules.auth.domain.exceptions import AuthenticationError, AuthorizationError
@@ -10,15 +10,14 @@ class CurrentPrincipalQueryUseCase:
         self,
         *,
         access_token_verifier: AccessTokenVerifier,
-        credential_repository_provider: CredentialRepositoryProvider,
+        active_session_checker: ActiveSessionChecker,
     ) -> None:
         self._access_token_verifier = access_token_verifier
-        self._credential_repository_provider = credential_repository_provider
+        self._active_session_checker = active_session_checker
 
     async def execute(self, query: CurrentPrincipalQuery) -> AuthenticatedPrincipal:
         principal = self._access_token_verifier.verify(query.token)
-        credential_repository = self._credential_repository_provider.get()
-        session_exists = await credential_repository.exists_active_session(
+        session_exists = await self._active_session_checker.exists_active_session(
             user_id=principal.user_id,
             credentials_id=principal.credentials_id,
             session_id=principal.session_id,

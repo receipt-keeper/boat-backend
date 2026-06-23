@@ -4,6 +4,8 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core.application.unit_of_work import DeferredCommitUnitOfWork
+from app.core.db.unit_of_work import SqlAlchemyUnitOfWork
 from app.modules.auth.application.commands.login.command import LoginCommand
 from app.modules.auth.application.commands.login.use_case import LoginCommandUseCase
 from app.modules.auth.application.ports.external_identity_verifier import ExternalIdentityVerifier
@@ -25,7 +27,7 @@ from app.modules.users.dependencies import build_resolve_user_for_login_command_
 from tests.support.users_persistence import count_persisted_users
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class IdentitySpec:
     subject: str
     provider: str
@@ -49,7 +51,7 @@ class ScriptedExternalIdentityVerifier(ExternalIdentityVerifier):
         )
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class PersistedRows:
     users: int
     credentials: int
@@ -66,10 +68,14 @@ def _build_login_use_case(
         login_synchronizer=SqlAlchemyExternalIdentityLoginSynchronizer(session),
         credential_repository=SqlAlchemyCredentialRepository(session),
         user_provisioner=_ProvisionUserPortAdapter(
-            build_resolve_user_for_login_command_use_case(session)
+            build_resolve_user_for_login_command_use_case(
+                session,
+                DeferredCommitUnitOfWork(),
+            )
         ),
         access_token_issuer=build_access_token_issuer(),
         refresh_token_issuer=build_refresh_token_service(),
+        unit_of_work=SqlAlchemyUnitOfWork(session),
     )
 
 
@@ -80,7 +86,6 @@ async def _login(
     provider_token: str,
 ) -> None:
     async with session_factory() as session:
-        transaction = await session.begin()
         use_case = _build_login_use_case(session=session, verifier=verifier)
         await use_case.execute(
             LoginCommand(
@@ -89,7 +94,6 @@ async def _login(
                 privacy_accepted=True,
             )
         )
-        await transaction.commit()
 
 
 async def _count_rows(session_factory: async_sessionmaker[AsyncSession]) -> PersistedRows:

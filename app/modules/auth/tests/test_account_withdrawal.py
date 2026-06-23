@@ -39,7 +39,7 @@ TEST_SETTINGS = Settings(
 )
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class SeededAccount:
     user_id: UUID
     credentials_id: UUID

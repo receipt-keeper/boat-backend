@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 
+from app.core.application.unit_of_work import UnitOfWork
 from app.modules.auth.application.commands.login.command import LoginCommand
 from app.modules.auth.application.commands.login.result import LoginResult
 from app.modules.auth.application.ports.credential_repository import CredentialRepository
@@ -26,6 +27,7 @@ class LoginCommandUseCase:
         user_provisioner: UserProvisioner,
         access_token_issuer: AccessTokenIssuer,
         refresh_token_issuer: RefreshTokenIssuer,
+        unit_of_work: UnitOfWork,
     ) -> None:
         self._identity_verifier = identity_verifier
         self._login_synchronizer = login_synchronizer
@@ -33,6 +35,7 @@ class LoginCommandUseCase:
         self._user_provisioner = user_provisioner
         self._access_token_issuer = access_token_issuer
         self._refresh_token_issuer = refresh_token_issuer
+        self._unit_of_work = unit_of_work
 
     async def execute(self, command: LoginCommand) -> LoginResult:
         identity = await self._identity_verifier.verify(command.provider_token)
@@ -97,6 +100,7 @@ class LoginCommandUseCase:
             session_id=session_id,
             role=credentials.role.value,
         )
+        await self._unit_of_work.commit()
 
         return LoginResult(
             access_token=access_token.token,

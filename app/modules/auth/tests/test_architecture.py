@@ -3,9 +3,9 @@ import importlib
 from inspect import signature
 from pathlib import Path
 
+from app.core.db.session import AsyncSessionDep
 from app.core.domain.entity import Entity
 from app.modules.auth.dependencies import (
-    AuthTransactionSessionDep,
     get_credential_repository,
     get_external_identity_login_synchronizer,
     get_user_provisioner,
@@ -215,7 +215,7 @@ def test_runtime_wiring_uses_module_dependencies_not_app_composition() -> None:
 
 def test_signup_wiring_shares_one_transaction_session() -> None:
     assert all(
-        signature(dependency).parameters["session"].annotation == AuthTransactionSessionDep
+        signature(dependency).parameters["session"].annotation == AsyncSessionDep
         for dependency in (
             get_credential_repository,
             get_external_identity_login_synchronizer,

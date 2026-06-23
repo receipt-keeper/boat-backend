@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 
+from app.core.application.unit_of_work import UnitOfWork
 from app.core.domain.exceptions import ErrorDetail, ValidationError
 from app.modules.users.application.commands.resolve_user_for_login.command import (
     ResolveUserForLoginCommand,
@@ -16,8 +17,9 @@ from app.modules.users.domain.model import User, UserEntitlement, UserSettings
 
 
 class ResolveUserForLoginCommandUseCase:
-    def __init__(self, *, user_repository: UserRepository) -> None:
+    def __init__(self, *, user_repository: UserRepository, unit_of_work: UnitOfWork) -> None:
         self._user_repository = user_repository
+        self._unit_of_work = unit_of_work
 
     async def execute(self, command: ResolveUserForLoginCommand) -> ResolveUserForLoginResult:
         _require_consent(command)
@@ -47,6 +49,7 @@ class ResolveUserForLoginCommandUseCase:
                 ),
             )
         )
+        await self._unit_of_work.commit()
         return _resolve_result(state)
 
 

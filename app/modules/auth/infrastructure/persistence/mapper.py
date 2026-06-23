@@ -24,6 +24,15 @@ def user_credential_to_domain(record: orm.UserCredential) -> DomainUserCredentia
     )
 
 
+def user_credential_to_record(credentials: DomainUserCredential) -> orm.UserCredential:
+    return orm.UserCredential(
+        id=credentials.credentials_id,
+        user_id=credentials.user_id,
+        role=credentials.role.value,
+        last_login_at=credentials.last_login_at,
+    )
+
+
 def external_identity_to_record(
     identity: DomainExternalIdentity,
     *,

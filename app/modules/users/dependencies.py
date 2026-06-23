@@ -1,8 +1,11 @@
 from typing import Annotated
 
-from fastapi import Depends, Request
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from fastapi import Depends
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.application.unit_of_work import UnitOfWork
+from app.core.db.session import AsyncSessionDep
+from app.core.db.unit_of_work import SqlAlchemyUnitOfWork
 from app.modules.users.application.commands.delete.use_case import DeleteUserCommandUseCase
 from app.modules.users.application.commands.delete_push_token.use_case import (
     DeletePushTokenCommandUseCase,
@@ -26,87 +29,105 @@ from app.modules.users.application.queries.current_user_profile.use_case import 
 )
 from app.modules.users.infrastructure.persistence.repository import SqlAlchemyUserRepository
 
-SessionProvider = AsyncSession | async_sessionmaker[AsyncSession]
-
 
 def build_provision_user_command_use_case(
-    session_provider: SessionProvider,
+    session: AsyncSession,
+    unit_of_work: UnitOfWork,
 ) -> ProvisionUserCommandUseCase:
     return ProvisionUserCommandUseCase(
-        user_repository=SqlAlchemyUserRepository(session_provider),
+        user_repository=SqlAlchemyUserRepository(session),
+        unit_of_work=unit_of_work,
     )
 
 
 def build_delete_user_command_use_case(
-    session_provider: SessionProvider,
+    session: AsyncSession,
+    unit_of_work: UnitOfWork,
 ) -> DeleteUserCommandUseCase:
     return DeleteUserCommandUseCase(
-        user_repository=SqlAlchemyUserRepository(session_provider),
+        user_repository=SqlAlchemyUserRepository(session),
+        unit_of_work=unit_of_work,
     )
 
 
 def build_current_user_profile_query_use_case(
-    session_provider: SessionProvider,
+    session: AsyncSession,
 ) -> CurrentUserProfileQueryUseCase:
     return CurrentUserProfileQueryUseCase(
-        user_repository=SqlAlchemyUserRepository(session_provider),
+        user_repository=SqlAlchemyUserRepository(session),
     )
 
 
 def build_update_settings_command_use_case(
-    session_provider: SessionProvider,
+    session: AsyncSession,
+    unit_of_work: UnitOfWork,
 ) -> UpdateSettingsCommandUseCase:
     return UpdateSettingsCommandUseCase(
-        user_repository=SqlAlchemyUserRepository(session_provider),
+        user_repository=SqlAlchemyUserRepository(session),
+        unit_of_work=unit_of_work,
     )
 
 
 def build_register_push_token_command_use_case(
-    session_provider: SessionProvider,
+    session: AsyncSession,
+    unit_of_work: UnitOfWork,
 ) -> RegisterPushTokenCommandUseCase:
     return RegisterPushTokenCommandUseCase(
-        user_repository=SqlAlchemyUserRepository(session_provider),
+        user_repository=SqlAlchemyUserRepository(session),
+        unit_of_work=unit_of_work,
     )
 
 
 def build_delete_push_token_command_use_case(
-    session_provider: SessionProvider,
+    session: AsyncSession,
+    unit_of_work: UnitOfWork,
 ) -> DeletePushTokenCommandUseCase:
     return DeletePushTokenCommandUseCase(
-        user_repository=SqlAlchemyUserRepository(session_provider),
+        user_repository=SqlAlchemyUserRepository(session),
+        unit_of_work=unit_of_work,
     )
 
 
 def build_withdrawal_cleanup_command_use_case(
-    session_provider: SessionProvider,
+    session: AsyncSession,
+    unit_of_work: UnitOfWork,
 ) -> WithdrawalCleanupCommandUseCase:
     return WithdrawalCleanupCommandUseCase(
-        user_repository=SqlAlchemyUserRepository(session_provider),
+        user_repository=SqlAlchemyUserRepository(session),
+        unit_of_work=unit_of_work,
     )
 
 
 def build_resolve_user_for_login_command_use_case(
-    session_provider: SessionProvider,
+    session: AsyncSession,
+    unit_of_work: UnitOfWork,
 ) -> ResolveUserForLoginCommandUseCase:
     return ResolveUserForLoginCommandUseCase(
-        user_repository=SqlAlchemyUserRepository(session_provider),
+        user_repository=SqlAlchemyUserRepository(session),
+        unit_of_work=unit_of_work,
     )
 
 
-async def get_user_repository(request: Request) -> UserRepository:
-    return SqlAlchemyUserRepository(request.app.state.session_factory)
+async def get_user_repository(session: AsyncSessionDep) -> UserRepository:
+    return SqlAlchemyUserRepository(session)
+
+
+async def get_unit_of_work(session: AsyncSessionDep) -> UnitOfWork:
+    return SqlAlchemyUnitOfWork(session)
 
 
 async def get_provision_user_command_use_case(
     user_repository: Annotated[UserRepository, Depends(get_user_repository)],
+    unit_of_work: Annotated[UnitOfWork, Depends(get_unit_of_work)],
 ) -> ProvisionUserCommandUseCase:
-    return ProvisionUserCommandUseCase(user_repository=user_repository)
+    return ProvisionUserCommandUseCase(user_repository=user_repository, unit_of_work=unit_of_work)
 
 
 async def get_delete_user_command_use_case(
     user_repository: Annotated[UserRepository, Depends(get_user_repository)],
+    unit_of_work: Annotated[UnitOfWork, Depends(get_unit_of_work)],
 ) -> DeleteUserCommandUseCase:
-    return DeleteUserCommandUseCase(user_repository=user_repository)
+    return DeleteUserCommandUseCase(user_repository=user_repository, unit_of_work=unit_of_work)
 
 
 async def get_current_user_profile_query_use_case(
@@ -117,32 +138,46 @@ async def get_current_user_profile_query_use_case(
 
 async def get_update_settings_command_use_case(
     user_repository: Annotated[UserRepository, Depends(get_user_repository)],
+    unit_of_work: Annotated[UnitOfWork, Depends(get_unit_of_work)],
 ) -> UpdateSettingsCommandUseCase:
-    return UpdateSettingsCommandUseCase(user_repository=user_repository)
+    return UpdateSettingsCommandUseCase(user_repository=user_repository, unit_of_work=unit_of_work)
 
 
 async def get_register_push_token_command_use_case(
     user_repository: Annotated[UserRepository, Depends(get_user_repository)],
+    unit_of_work: Annotated[UnitOfWork, Depends(get_unit_of_work)],
 ) -> RegisterPushTokenCommandUseCase:
-    return RegisterPushTokenCommandUseCase(user_repository=user_repository)
+    return RegisterPushTokenCommandUseCase(
+        user_repository=user_repository,
+        unit_of_work=unit_of_work,
+    )
 
 
 async def get_delete_push_token_command_use_case(
     user_repository: Annotated[UserRepository, Depends(get_user_repository)],
+    unit_of_work: Annotated[UnitOfWork, Depends(get_unit_of_work)],
 ) -> DeletePushTokenCommandUseCase:
-    return DeletePushTokenCommandUseCase(user_repository=user_repository)
+    return DeletePushTokenCommandUseCase(user_repository=user_repository, unit_of_work=unit_of_work)
 
 
 async def get_withdrawal_cleanup_command_use_case(
     user_repository: Annotated[UserRepository, Depends(get_user_repository)],
+    unit_of_work: Annotated[UnitOfWork, Depends(get_unit_of_work)],
 ) -> WithdrawalCleanupCommandUseCase:
-    return WithdrawalCleanupCommandUseCase(user_repository=user_repository)
+    return WithdrawalCleanupCommandUseCase(
+        user_repository=user_repository,
+        unit_of_work=unit_of_work,
+    )
 
 
 async def get_resolve_user_for_login_command_use_case(
     user_repository: Annotated[UserRepository, Depends(get_user_repository)],
+    unit_of_work: Annotated[UnitOfWork, Depends(get_unit_of_work)],
 ) -> ResolveUserForLoginCommandUseCase:
-    return ResolveUserForLoginCommandUseCase(user_repository=user_repository)
+    return ResolveUserForLoginCommandUseCase(
+        user_repository=user_repository,
+        unit_of_work=unit_of_work,
+    )
 
 
 ProvisionUserCommandUseCaseDep = Annotated[
