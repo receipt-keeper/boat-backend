@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, UniqueConstraint, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, UniqueConstraint, func, text
 from sqlalchemy.dialects.postgresql import UUID as PostgreSQLUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -49,6 +49,11 @@ class ExternalIdentity(Base):
     __table_args__ = (
         UniqueConstraint("issuer", "subject"),
         UniqueConstraint("credentials_id", "issuer"),
+        Index(
+            "ix_external_identities_verified_normalized_email",
+            "normalized_email",
+            postgresql_where=text("email_verified IS TRUE AND normalized_email IS NOT NULL"),
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(
