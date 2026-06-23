@@ -140,8 +140,8 @@ class FirebaseExternalIdentityVerifier(ExternalIdentityVerifier):
         if clean_provider is None:
             raise AuthenticationError()
 
-        email = self._identity_mapping.email_from(claims)
-        normalized_email = None if email is None else email.strip().lower()
+        raw_email = self._identity_mapping.email_from(claims)
+        email = None if raw_email is None else raw_email.strip()
         try:
             return ExternalIdentity.create(
                 issuer=clean_provider,
@@ -149,7 +149,6 @@ class FirebaseExternalIdentityVerifier(ExternalIdentityVerifier):
                 email=email,
                 name=self._identity_mapping.name_from(claims),
                 provider=clean_provider,
-                normalized_email=normalized_email,
                 email_verified=self._identity_mapping.email_verified_from(claims),
             )
         except ValidationError as exc:

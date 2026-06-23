@@ -74,7 +74,6 @@ async def test_login_creates_credentials_and_returns_service_tokens() -> None:
                 provider="apple",
                 email="user@example.com",
                 name="테스트 사용자",
-                normalized_email="user@example.com",
                 email_verified=True,
             )
         ),
@@ -97,7 +96,7 @@ async def test_login_creates_credentials_and_returns_service_tokens() -> None:
     provisioning_request = user_provisioner.provisioned[0]
     assert provisioning_request.name == "테스트 사용자"
     assert provisioning_request.email == "user@example.com"
-    assert provisioning_request.normalized_email == "user@example.com"
+    assert not hasattr(provisioning_request, "normalized_email")
     assert provisioning_request.terms_accepted is True
     assert provisioning_request.privacy_accepted is True
     assert repository.saved_identities == [
@@ -118,7 +117,6 @@ async def test_login_rejects_new_signup_without_consent() -> None:
                 provider="google",
                 email="user@example.com",
                 name="테스트 사용자",
-                normalized_email="user@example.com",
                 email_verified=True,
             )
         ),
@@ -150,7 +148,6 @@ async def test_login_rejects_new_external_identity_without_verified_email() -> N
                 provider="google",
                 email="user@example.com",
                 name="테스트 사용자",
-                normalized_email="user@example.com",
                 email_verified=False,
             )
         ),
@@ -229,7 +226,6 @@ async def test_refresh_rotates_refresh_token_and_rejects_old_token() -> None:
                 provider="apple",
                 email="user@example.com",
                 name=None,
-                normalized_email="user@example.com",
                 email_verified=True,
             )
         ),
@@ -268,7 +264,6 @@ async def test_logout_revokes_only_presented_refresh_token() -> None:
                 provider="apple",
                 email="user@example.com",
                 name=None,
-                normalized_email="user@example.com",
                 email_verified=True,
             )
         ),
@@ -301,7 +296,6 @@ async def test_logout_invalidates_same_session_access_token() -> None:
                 provider="apple",
                 email="user@example.com",
                 name=None,
-                normalized_email="user@example.com",
                 email_verified=True,
             )
         ),

@@ -49,42 +49,38 @@ CountableUsersTable = (
 )
 
 
-async def test_resolve_user_for_login_normalizes_email_and_is_idempotent(
+async def test_resolve_user_for_login_creates_profile_email_value(
     postgres_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    # Given: a users repository and two login attempts sharing one email with different casing.
+    # Given: a users repository and a verified identity email from auth.
     repository = SqlAlchemyUserRepository(postgres_session_factory)
     use_case = ResolveUserForLoginCommandUseCase(user_repository=repository)
 
-    # When: the same normalized email is resolved twice.
-    first = await use_case.execute(
+    # When: users creates the service user profile for login.
+    result = await use_case.execute(
         ResolveUserForLoginCommand(
             name="첫 사용자",
-            email="Person@Example.COM",
+            email="person@example.com",
             profile_image_url="https://example.com/a.png",
             terms_accepted=True,
             privacy_accepted=True,
         )
     )
-    second = await use_case.execute(
-        ResolveUserForLoginCommand(
-            name="다른 이름",
-            email=" person@example.com ",
-            profile_image_url="https://example.com/b.png",
-        )
-    )
+    state = await repository.find_account_state(user_id=result.user_id)
 
-    # Then: one user state exists and both results point at the same service user.
+    # Then: users stores a profile email value only; identity email lookup belongs to auth.
     async with postgres_session_factory() as session:
         users_count = await _count(session, orm.User)
         settings_count = await _count(session, orm.UserSettings)
         entitlement_count = await _count(session, orm.UserEntitlement)
 
-    assert second.user_id == first.user_id
-    assert first.normalized_email == "person@example.com"
-    assert first.free_analysis_tokens_remaining == 0
-    assert first.notification_enabled is True
-    assert first.marketing_consent is False
+    assert state is not None
+    assert state.user.email is not None
+    assert state.user.email.value == "person@example.com"
+    assert not hasattr(state.user, "normalized_email")
+    assert result.free_analysis_tokens_remaining == 0
+    assert result.notification_enabled is True
+    assert result.marketing_consent is False
     assert users_count == 1
     assert settings_count == 1
     assert entitlement_count == 1
@@ -175,6 +171,8 @@ async def test_use_cases_reject_malformed_input(
                 name="잘못된 이메일",
                 email="not-an-email",
                 profile_image_url=None,
+                terms_accepted=True,
+                privacy_accepted=True,
             )
         )
     with pytest.raises(ValidationError) as empty_device:
@@ -196,7 +194,7 @@ async def test_use_cases_reject_malformed_input(
             )
         )
 
-    assert [detail.field for detail in invalid_email.value.details] == ["normalizedEmail"]
+    assert [detail.field for detail in invalid_email.value.details] == ["email"]
     assert [detail.field for detail in empty_device.value.details] == ["deviceId"]
     assert [detail.field for detail in empty_token.value.details] == ["fcmToken"]
 

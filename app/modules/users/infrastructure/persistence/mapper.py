@@ -18,7 +18,6 @@ def user_to_domain(record: orm.User) -> DomainUser:
         user_id=record.id,
         name=record.name,
         email=record.email,
-        normalized_email=record.normalized_email,
         nickname=record.nickname,
         profile_image_url=record.profile_image_url,
     )
@@ -29,8 +28,7 @@ def user_to_record(user: DomainUser) -> orm.User:
         id=user.id,
         name=user.name,
         nickname=user.nickname,
-        email=user.email,
-        normalized_email=None if user.normalized_email is None else user.normalized_email.value,
+        email=None if user.email is None else user.email.value,
         profile_image_url=user.profile_image_url,
     )
 

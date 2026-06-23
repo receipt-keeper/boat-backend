@@ -31,14 +31,6 @@ class SqlAlchemyUserRepository(UserRepository):
     async def delete_by_id(self, *, user_id: UUID) -> None:
         await self.delete_account_state(user_id=user_id)
 
-    async def find_user_by_normalized_email(self, *, normalized_email: str) -> User | None:
-        async with self._session(transactional=False) as session:
-            statement = select(orm.User).where(orm.User.normalized_email == normalized_email)
-            record = await session.scalar(statement)
-            if record is None:
-                return None
-            return mapper.user_to_domain(record)
-
     async def find_account_state(self, *, user_id: UUID) -> UserAccountState | None:
         async with self._session(transactional=False) as session:
             user_record = await session.get(orm.User, user_id)

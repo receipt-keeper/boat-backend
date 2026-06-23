@@ -22,6 +22,10 @@ class CredentialRepository(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    async def find_by_verified_email(self, *, canonical_email: str) -> UserCredential | None:
+        raise NotImplementedError
+
+    @abstractmethod
     async def create_for_external_identity(
         self,
         *,

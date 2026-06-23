@@ -41,6 +41,24 @@ class SqlAlchemyCredentialRepository(CredentialRepository):
                 return None
             return mapper.user_credential_to_domain(credentials)
 
+    async def find_by_verified_email(self, *, canonical_email: str) -> UserCredential | None:
+        async with self._session(transactional=False) as session:
+            statement = (
+                select(orm.UserCredential)
+                .join(
+                    orm.ExternalIdentity,
+                    orm.ExternalIdentity.credentials_id == orm.UserCredential.id,
+                )
+                .where(
+                    orm.ExternalIdentity.normalized_email == canonical_email,
+                    orm.ExternalIdentity.email_verified.is_(True),
+                )
+            )
+            credentials = await session.scalar(statement)
+            if credentials is None:
+                return None
+            return mapper.user_credential_to_domain(credentials)
+
     async def create_for_external_identity(
         self,
         *,

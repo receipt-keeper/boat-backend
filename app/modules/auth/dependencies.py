@@ -74,7 +74,7 @@ class _ProvisionUserPortAdapter(UserProvisioner):
         result = await self._command_use_case.execute(
             ResolveUserForLoginCommand(
                 name=request.name,
-                email=request.normalized_email,
+                email=request.email,
                 profile_image_url=request.profile_image_url or self._default_profile_image_url,
                 initial_free_analysis_tokens=self._initial_free_analysis_tokens,
                 terms_version=request.terms_version,

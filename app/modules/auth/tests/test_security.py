@@ -7,6 +7,7 @@ from fastapi import Depends
 from httpx import ASGITransport, AsyncClient, Response
 
 from app.core.config.settings import Settings
+from app.core.domain.exceptions import ValidationError
 from app.main import create_app
 from app.modules.auth.api.security import CurrentPrincipalDep, require_roles
 from app.modules.auth.application.ports.credential_repository import (
@@ -76,7 +77,10 @@ def test_firebase_identity_mapping_carries_email_verified_to_external_identity()
 
     assert identity.provider.value == "google"
     assert identity.issuer.value == "google"
+    assert identity.email is not None
+    assert identity.email.value == "user@example.com"
     assert identity.email_verified is True
+    assert not hasattr(identity, "normalized_email")
 
 
 def test_firebase_identity_mapping_rejects_missing_provider_claim() -> None:
@@ -113,21 +117,35 @@ def test_firebase_identity_mapping_rejects_provider_outside_allowlist() -> None:
         assert error.value.message == "인증 정보가 올바르지 않습니다."
 
 
-def test_firebase_identity_mapping_sets_normalized_email_from_email() -> None:
+def test_external_identity_rejects_malformed_email() -> None:
+    for malformed_email in (" user@example.com ", "missing-at.example.com"):
+        with pytest.raises(ValidationError):
+            ExternalIdentity.create(
+                issuer="google",
+                subject="firebase-uid",
+                provider="google",
+                email=malformed_email,
+                name=None,
+                email_verified=True,
+            )
+
+
+def test_firebase_identity_mapping_keeps_single_email_value_object() -> None:
     mapping = FirebaseIdentityMapping.from_settings(_test_settings())
     verifier = _firebase_verifier(mapping)
 
     identity = verifier._to_external_identity(
         {
             "uid": "firebase-uid",
-            "email": "  User@Example.com  ",
+            "email": " user@example.com ",
             "email_verified": True,
             "firebase": {"sign_in_provider": "google.com"},
         }
     )
 
-    assert identity.normalized_email is not None
-    assert identity.normalized_email.value == "user@example.com"
+    assert identity.email is not None
+    assert identity.email.value == "user@example.com"
+    assert not hasattr(identity, "normalized_email")
     assert identity.issuer.value == "google"
     assert identity.provider.value == "google"
 
@@ -142,6 +160,10 @@ class CredentialStateRepository(CredentialRepository):
         identity: ExternalIdentity,
     ) -> UserCredential | None:
         assert identity
+        return None
+
+    async def find_by_verified_email(self, *, canonical_email: str) -> UserCredential | None:
+        assert canonical_email
         return None
 
     async def create_for_external_identity(

@@ -39,22 +39,21 @@ class Provider(ValueObject[str]):
 
 
 @dataclass(frozen=True)
-class NormalizedEmail(ValueObject[str]):
+class Email(ValueObject[str]):
     MAX_LENGTH: ClassVar[int] = 255
 
     def validate(self) -> None:
         if (
             not self.value
             or self.value.strip() != self.value
-            or self.value.lower() != self.value
             or "@" not in self.value
             or len(self.value) > self.MAX_LENGTH
         ):
             raise ValidationError(
                 [
                     ErrorDetail(
-                        field="normalizedEmail",
-                        message="정규화된 이메일이 올바르지 않습니다.",
+                        field="email",
+                        message="이메일이 올바르지 않습니다.",
                     )
                 ]
             )

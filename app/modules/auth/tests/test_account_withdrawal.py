@@ -87,7 +87,7 @@ async def _seed_full_account(
             issuer="google",
             subject=subject,
             provider="google",
-            email=user.email,
+            email=None if user.email is None else user.email.value,
             name=user.name,
         ),
         user_id=user.id,

@@ -33,7 +33,7 @@ from tests.support.users_persistence import count_persisted_users
 @dataclass(frozen=True)
 class ConcurrentLoginContext:
     session_factory: async_sessionmaker[AsyncSession]
-    identity: ExternalIdentity
+    identities: dict[str, ExternalIdentity]
     barrier: "ConcurrentLoginBarrier"
 
 
@@ -78,26 +78,20 @@ class ConcurrentLoginBarrier:
 
 
 class BarrierExternalIdentityVerifier(ExternalIdentityVerifier):
-    def __init__(self, *, identity: ExternalIdentity, barrier: ConcurrentLoginBarrier) -> None:
-        self._identity = identity
-        self._barrier = barrier
+    def __init__(self, *, context: ConcurrentLoginContext) -> None:
+        self._context = context
 
     async def verify(self, provider_token: str) -> ExternalIdentity:
         assert provider_token
-        await self._barrier.wait()
-        normalized_email = (
-            None
-            if self._identity.normalized_email is None
-            else self._identity.normalized_email.value
-        )
+        await self._context.barrier.wait()
+        identity = self._context.identities[provider_token]
         return ExternalIdentity.create(
-            issuer=self._identity.issuer.value,
-            subject=self._identity.subject.value,
-            provider=self._identity.provider.value,
-            email=self._identity.email,
-            name=self._identity.name,
-            normalized_email=normalized_email,
-            email_verified=self._identity.email_verified,
+            issuer=identity.issuer.value,
+            subject=identity.subject.value,
+            provider=identity.provider.value,
+            email=None if identity.email is None else identity.email.value,
+            name=identity.name,
+            email_verified=identity.email_verified,
         )
 
 
@@ -138,8 +132,7 @@ def _build_login_command_use_case(
 ) -> LoginCommandUseCase:
     return LoginCommandUseCase(
         identity_verifier=BarrierExternalIdentityVerifier(
-            identity=context.identity,
-            barrier=context.barrier,
+            context=context,
         ),
         login_synchronizer=SqlAlchemyExternalIdentityLoginSynchronizer(session),
         credential_repository=SqlAlchemyCredentialRepository(session),
@@ -215,17 +208,20 @@ def _require_count(value: int | None) -> int:
 async def test_concurrent_first_login_for_same_external_identity_is_idempotent(
     postgres_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
+    identity = ExternalIdentity.create(
+        issuer="google",
+        subject="shared-firebase-uid",
+        provider="google",
+        email="shared-user@example.com",
+        name="동시 로그인 사용자",
+        email_verified=True,
+    )
     context = ConcurrentLoginContext(
         session_factory=postgres_session_factory,
-        identity=ExternalIdentity.create(
-            issuer="google",
-            subject="shared-firebase-uid",
-            provider="google",
-            email="shared-user@example.com",
-            name="동시 로그인 사용자",
-            normalized_email="shared-user@example.com",
-            email_verified=True,
-        ),
+        identities={
+            "provider-token-a": identity,
+            "provider-token-b": identity,
+        },
         barrier=ConcurrentLoginBarrier(parties=2),
     )
     attempts = [
@@ -270,5 +266,61 @@ async def test_concurrent_first_login_for_same_external_identity_is_idempotent(
         users=1,
         credentials=1,
         external_identities=1,
+        refresh_tokens=2,
+    )
+
+
+async def test_concurrent_first_login_for_same_verified_email_links_identities(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    context = ConcurrentLoginContext(
+        session_factory=postgres_session_factory,
+        identities={
+            "google-token": ExternalIdentity.create(
+                issuer="google",
+                subject="google-subject",
+                provider="google",
+                email="shared-email@example.com",
+                name="동시 연결 사용자",
+                email_verified=True,
+            ),
+            "apple-token": ExternalIdentity.create(
+                issuer="apple",
+                subject="apple-subject",
+                provider="apple",
+                email="shared-email@example.com",
+                name="동시 연결 사용자",
+                email_verified=True,
+            ),
+        },
+        barrier=ConcurrentLoginBarrier(parties=2),
+    )
+    attempts = [
+        LoginAttempt(
+            label="request-a",
+            provider_token="google-token",
+            refresh_token="refresh-token-a",
+            refresh_token_hash="refresh-token-hash-a",
+        ),
+        LoginAttempt(
+            label="request-b",
+            provider_token="apple-token",
+            refresh_token="refresh-token-b",
+            refresh_token_hash="refresh-token-hash-b",
+        ),
+    ]
+    outcomes: list[LoginOutcome] = []
+
+    async with anyio.create_task_group() as task_group:
+        for attempt in attempts:
+            task_group.start_soon(_run_login_attempt, attempt, context, outcomes)
+
+    login_errors = [outcome.error for outcome in outcomes if outcome.error is not None]
+    assert login_errors == []
+    rows = await _count_persisted_login_rows(postgres_session_factory)
+    assert rows == PersistedLoginRows(
+        users=1,
+        credentials=1,
+        external_identities=2,
         refresh_tokens=2,
     )

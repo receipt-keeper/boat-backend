@@ -58,6 +58,7 @@ class NoOpExternalIdentityLoginSynchronizer(ExternalIdentityLoginSynchronizer):
 class FakeCredentialRepository(CredentialRepository):
     def __init__(self) -> None:
         self.credentials_by_identity: dict[tuple[str, str], UserCredential] = {}
+        self.credentials_by_verified_email: dict[str, UserCredential] = {}
         self.credentials_by_user_id: dict[UUID, UserCredential] = {}
         self.refresh_token_hashes: dict[str, SessionCredential] = {}
         self.saved_identities: list[tuple[str, str, str, str | None, str | None]] = []
@@ -71,6 +72,9 @@ class FakeCredentialRepository(CredentialRepository):
         identity: ExternalIdentity,
     ) -> UserCredential | None:
         return self.credentials_by_identity.get((identity.issuer.value, identity.subject.value))
+
+    async def find_by_verified_email(self, *, canonical_email: str) -> UserCredential | None:
+        return self.credentials_by_verified_email.get(canonical_email)
 
     async def create_for_external_identity(
         self,
@@ -87,6 +91,9 @@ class FakeCredentialRepository(CredentialRepository):
             last_login_at=logged_in_at,
         )
         identity_key = (identity.issuer.value, identity.subject.value)
+        canonical_email = _canonical_email(identity)
+        if identity.email_verified and canonical_email is not None:
+            self.credentials_by_verified_email[canonical_email] = credentials
         self.credentials_by_identity[identity_key] = credentials
         self.credentials_by_user_id[credentials.user_id] = credentials
         self.saved_identities.append(
@@ -94,7 +101,7 @@ class FakeCredentialRepository(CredentialRepository):
                 identity.issuer.value,
                 identity.subject.value,
                 identity.provider.value,
-                identity.email,
+                None if identity.email is None else identity.email.value,
                 identity.name,
             )
         )
@@ -134,13 +141,16 @@ class FakeCredentialRepository(CredentialRepository):
         if credentials is None:
             raise AuthenticationError()
         identity_key = (identity.issuer.value, identity.subject.value)
+        canonical_email = _canonical_email(identity)
+        if identity.email_verified and canonical_email is not None:
+            self.credentials_by_verified_email[canonical_email] = credentials
         self.credentials_by_identity[identity_key] = credentials
         self.saved_identities.append(
             (
                 identity.issuer.value,
                 identity.subject.value,
                 identity.provider.value,
-                identity.email,
+                None if identity.email is None else identity.email.value,
                 identity.name,
             )
         )
@@ -236,6 +246,11 @@ class FakeCredentialRepository(CredentialRepository):
             for stored_user_id, credentials in self.credentials_by_user_id.items()
             if credentials.user_id != user_id or credentials.credentials_id != credentials_id
         }
+        self.credentials_by_verified_email = {
+            email: credentials
+            for email, credentials in self.credentials_by_verified_email.items()
+            if credentials.user_id != user_id or credentials.credentials_id != credentials_id
+        }
         self.refresh_token_hashes = {
             token_hash: session_credential
             for token_hash, session_credential in self.refresh_token_hashes.items()
@@ -251,6 +266,12 @@ def build_access_token_issuer() -> JwtAccessTokenService:
         audience="boat-api-test",
         expires_minutes=30,
     )
+
+
+def _canonical_email(identity: ExternalIdentity) -> str | None:
+    if identity.email is None:
+        return None
+    return identity.email.value.lower()
 
 
 def build_refresh_token_service() -> OpaqueRefreshTokenIssuer:

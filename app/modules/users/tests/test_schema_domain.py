@@ -21,16 +21,15 @@ def test_prd_account_schema_tables_columns_and_constraints_are_declared() -> Non
     assert {"auth_sessions", "user_settings", "user_entitlements", "user_push_tokens"}.issubset(
         metadata.tables
     )
-    assert {"normalized_email", "profile_image_url"}.issubset(
-        metadata.tables["users"].columns.keys()
-    )
+    assert "profile_image_url" in metadata.tables["users"].columns
+    assert "normalized_email" not in metadata.tables["users"].columns
     assert {"email", "normalized_email", "email_verified"}.issubset(
         metadata.tables["external_identities"].columns.keys()
     )
     assert "session_id" in metadata.tables["refresh_tokens"].columns
 
     users_indexes = metadata.tables["users"].indexes
-    assert any(_is_partial_unique_normalized_email_index(index) for index in users_indexes)
+    assert not any(_is_partial_unique_normalized_email_index(index) for index in users_indexes)
 
     entitlement_checks = [
         constraint
@@ -68,28 +67,27 @@ def test_prd_schema_has_no_future_bc_foreign_keys() -> None:
     assert discovered_targets.isdisjoint(future_bc_tables)
 
 
-def test_user_domain_normalizes_email_and_carries_profile_image_url() -> None:
+def test_user_domain_uses_email_value_object_and_carries_profile_image_url() -> None:
     user = user_model.User.create(
         name="테스트 사용자",
-        email=" Person@Example.COM ",
-        normalized_email="person@example.com",
+        email="person@example.com",
         profile_image_url="https://example.com/profile.png",
     )
 
-    assert user.normalized_email is not None
-    assert user.normalized_email.value == "person@example.com"
+    assert user.email is not None
+    assert user.email.value == "person@example.com"
+    assert not hasattr(user, "normalized_email")
     assert user.profile_image_url == "https://example.com/profile.png"
 
 
-def test_user_domain_rejects_invalid_normalized_email() -> None:
+def test_user_domain_rejects_invalid_email() -> None:
     with pytest.raises(ValidationError) as error:
         user_model.User.create(
             name="테스트 사용자",
-            email="person@example.com",
-            normalized_email="",
+            email="not-an-email",
         )
 
-    assert [detail.field for detail in error.value.details] == ["normalizedEmail"]
+    assert [detail.field for detail in error.value.details] == ["email"]
 
 
 def test_user_entitlement_rejects_negative_free_analysis_tokens() -> None:

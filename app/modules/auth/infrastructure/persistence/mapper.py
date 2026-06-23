@@ -35,10 +35,8 @@ def external_identity_to_record(
         issuer=identity.issuer.value,
         subject=identity.subject.value,
         provider=identity.provider.value,
-        email=identity.email,
-        normalized_email=(
-            None if identity.normalized_email is None else identity.normalized_email.value
-        ),
+        email=None if identity.email is None else identity.email.value,
+        normalized_email=_canonical_email(identity),
         email_verified=identity.email_verified,
     )
 
@@ -59,3 +57,9 @@ def refresh_token_to_record(token: DomainRefreshToken) -> orm.RefreshToken:
         token_hash=token.token_hash.value,
         expires_at=token.expires_at,
     )
+
+
+def _canonical_email(identity: DomainExternalIdentity) -> str | None:
+    if identity.email is None:
+        return None
+    return identity.email.value.lower()

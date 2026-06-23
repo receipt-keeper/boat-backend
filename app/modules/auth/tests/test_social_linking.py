@@ -45,7 +45,6 @@ class ScriptedExternalIdentityVerifier(ExternalIdentityVerifier):
             provider=spec.provider,
             email=spec.email,
             name=None,
-            normalized_email=spec.email.strip().lower(),
             email_verified=spec.email_verified,
         )
 
@@ -129,6 +128,39 @@ async def test_verified_same_email_links_into_single_user(
                 subject="apple-subject",
                 provider="apple",
                 email="linked@example.com",
+            ),
+        }
+    )
+
+    await _login(
+        session_factory=postgres_session_factory,
+        verifier=verifier,
+        provider_token="google-token",
+    )
+    await _login(
+        session_factory=postgres_session_factory,
+        verifier=verifier,
+        provider_token="apple-token",
+    )
+
+    rows = await _count_rows(postgres_session_factory)
+    assert rows == PersistedRows(users=1, credentials=1, external_identities=2)
+
+
+async def test_verified_mixed_case_same_email_links_by_canonical_key(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    verifier = ScriptedExternalIdentityVerifier(
+        specs={
+            "google-token": IdentitySpec(
+                subject="google-subject",
+                provider="google",
+                email="User@Example.com",
+            ),
+            "apple-token": IdentitySpec(
+                subject="apple-subject",
+                provider="apple",
+                email="user@example.com",
             ),
         }
     )
