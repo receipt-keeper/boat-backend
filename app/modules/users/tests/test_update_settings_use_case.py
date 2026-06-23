@@ -1,6 +1,7 @@
-from datetime import datetime
+from datetime import datetime, timedelta, tzinfo
 from uuid import UUID
 
+import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.db.unit_of_work import SqlAlchemyUnitOfWork
@@ -9,6 +10,9 @@ from app.modules.users.application.commands.resolve_user_for_login.command impor
 )
 from app.modules.users.application.commands.resolve_user_for_login.use_case import (
     ResolveUserForLoginCommandUseCase,
+)
+from app.modules.users.application.commands.update_settings import (
+    use_case as update_settings_module,
 )
 from app.modules.users.application.commands.update_settings.command import (
     UpdateSettingsCommand,
@@ -112,12 +116,23 @@ async def test_update_settings_preserves_marketing_timestamp_when_only_notificat
 
 async def test_update_settings_refreshes_marketing_timestamp_on_opt_out(
     postgres_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     async with postgres_session_factory() as session:
         repository = SqlAlchemyUserRepository(session)
         unit_of_work = SqlAlchemyUnitOfWork(session)
         user_id = await _create_user(session, email="consent-optout@example.com")
         optin_ts = await _opt_in_marketing(session, user_id=user_id)
+        optout_ts = optin_ts + timedelta(microseconds=1)
+
+        class FixedDatetime(datetime):
+            @classmethod
+            def now(cls, tz: tzinfo | None = None) -> datetime:
+                if tz is None:
+                    return optout_ts.replace(tzinfo=None)
+                return optout_ts.astimezone(tz)
+
+        monkeypatch.setattr(update_settings_module, "datetime", FixedDatetime)
 
         await UpdateSettingsCommandUseCase(
             user_repository=repository,

@@ -1,7 +1,7 @@
 from typing import Final
 
 import pytest
-from fastapi import Depends
+from fastapi import Depends, FastAPI
 from httpx import ASGITransport, AsyncClient, Response
 
 from app.core.config.settings import Settings
@@ -147,7 +147,7 @@ def test_firebase_identity_mapping_keeps_single_email_value_object() -> None:
     assert identity.provider.value == "google"
 
 
-def _override_credential_state(test_app, *, active: bool) -> None:
+def _override_credential_state(test_app: FastAPI, *, active: bool) -> None:
     test_app.dependency_overrides[get_active_session_checker] = lambda: StaticActiveSessionChecker(
         CredentialStateRepository(active=active)
     )

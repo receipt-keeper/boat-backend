@@ -245,20 +245,28 @@ class SqlAlchemyCredentialRepository(CredentialRepository):
         user_id: UUID,
         credentials_id: UUID,
     ) -> None:
+        owned_credentials_id = await self._session.scalar(
+            select(orm.UserCredential.id).where(
+                orm.UserCredential.id == credentials_id,
+                orm.UserCredential.user_id == user_id,
+            )
+        )
+        if owned_credentials_id is None:
+            return
+
         await self._session.execute(
-            delete(orm.RefreshToken).where(orm.RefreshToken.credentials_id == credentials_id)
+            delete(orm.RefreshToken).where(orm.RefreshToken.credentials_id == owned_credentials_id)
         )
         await self._session.execute(
-            delete(orm.AuthSession).where(orm.AuthSession.credentials_id == credentials_id)
+            delete(orm.AuthSession).where(orm.AuthSession.credentials_id == owned_credentials_id)
         )
         await self._session.execute(
             delete(orm.ExternalIdentity).where(
-                orm.ExternalIdentity.credentials_id == credentials_id
+                orm.ExternalIdentity.credentials_id == owned_credentials_id
             )
         )
         await self._session.execute(
             delete(orm.UserCredential).where(
-                orm.UserCredential.id == credentials_id,
-                orm.UserCredential.user_id == user_id,
+                orm.UserCredential.id == owned_credentials_id,
             )
         )

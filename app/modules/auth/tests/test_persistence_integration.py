@@ -159,6 +159,62 @@ async def test_concurrent_rotate_refresh_token_exactly_one_wins(
     assert remaining == 1
 
 
+async def test_delete_account_auth_state_ignores_credentials_owned_by_other_user(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with postgres_session_factory() as session, session.begin():
+        owner = await create_persisted_user(
+            session,
+            name="소유 사용자",
+            email="owner@example.com",
+        )
+        requester = await create_persisted_user(
+            session,
+            name="요청 사용자",
+            email="requester@example.com",
+        )
+        repository = SqlAlchemyCredentialRepository(session)
+        credentials = await repository.create_for_external_identity(
+            identity=ExternalIdentity.create(
+                issuer="google",
+                subject="owner-subject",
+                provider="google",
+                email=None if owner.email is None else owner.email.value,
+                name=owner.name,
+            ),
+            user_id=owner.id,
+            logged_in_at=datetime.now(UTC),
+        )
+        session_id = await repository.create_session(credentials_id=credentials.credentials_id)
+        await repository.save_refresh_token(
+            credentials_id=credentials.credentials_id,
+            session_id=session_id,
+            token_hash="owner-token-hash",
+            expires_at=datetime.now(UTC) + timedelta(days=7),
+        )
+
+        await repository.delete_account_auth_state(
+            user_id=requester.id,
+            credentials_id=credentials.credentials_id,
+        )
+
+        refresh_tokens = await session.scalar(
+            select(func.count()).select_from(auth_orm.RefreshToken)
+        )
+        sessions = await session.scalar(select(func.count()).select_from(auth_orm.AuthSession))
+        external_identities = await session.scalar(
+            select(func.count()).select_from(auth_orm.ExternalIdentity)
+        )
+        user_credentials = await session.scalar(
+            select(func.count()).select_from(auth_orm.UserCredential)
+        )
+
+    assert refresh_tokens == 1
+    assert sessions == 1
+    assert external_identities == 1
+    assert user_credentials == 1
+
+
 async def test_rotate_refresh_token_insert_failure_restores_original_token(
     postgres_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
