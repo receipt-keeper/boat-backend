@@ -4,7 +4,7 @@ from dataclasses import dataclass
 @dataclass(frozen=True, slots=True)
 class ResolveUserForLoginCommand:
     name: str | None
-    email: str
+    email: str | None
     profile_image_url: str | None
     initial_free_analysis_tokens: int = 0
     terms_version: str | None = None

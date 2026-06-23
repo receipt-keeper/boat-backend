@@ -3,9 +3,9 @@ import importlib
 from inspect import signature
 from pathlib import Path
 
+from app.core.db.session import AsyncSessionDep
 from app.core.domain.entity import Entity
 from app.modules.auth.dependencies import (
-    AuthTransactionSessionDep,
     get_credential_repository,
     get_external_identity_login_synchronizer,
     get_user_provisioner,
@@ -46,6 +46,13 @@ EXPECTED_AUTH_FILES = {
 }
 
 FORBIDDEN_AUTH_FILES = {
+    "api/auth_scheme.py",
+    "application/constants.py",
+    "application/principal.py",
+    "application/queries/current_principal/result.py",
+    "application/security/__init__.py",
+    "application/security/messages.py",
+    "application/security/principal.py",
     "application/authorize/use_case.py",
     "application/login/schemas.py",
     "application/login/use_case.py",
@@ -86,7 +93,19 @@ def _imports(path: Path) -> set[str]:
             imported.update(alias.name for alias in node.names)
         if isinstance(node, ast.ImportFrom) and node.module is not None:
             imported.add(node.module)
+            imported.update(f"{node.module}.{alias.name}" for alias in node.names)
     return imported
+
+
+def _class_field_names(path: Path, class_name: str) -> set[str]:
+    tree = ast.parse(path.read_text())
+    return {
+        statement.target.id
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ClassDef) and node.name == class_name
+        for statement in node.body
+        if isinstance(statement, ast.AnnAssign) and isinstance(statement.target, ast.Name)
+    }
 
 
 def test_auth_file_structure_matches_hexagonal_completion_goal() -> None:
@@ -125,18 +144,15 @@ def test_auth_application_flow_classes_use_command_query_use_case_names() -> Non
 
 
 def test_auth_domain_models_use_core_entity_base() -> None:
-    assert issubclass(UserCredential, Entity)
-    assert issubclass(ExternalIdentity, Entity)
-    assert issubclass(RefreshToken, Entity)
+    assert all(
+        issubclass(model, Entity) for model in (UserCredential, ExternalIdentity, RefreshToken)
+    )
 
 
 def test_auth_domain_does_not_import_persistence_frameworks() -> None:
-    domain_imports = _imports(AUTH_ROOT / "domain" / "model.py")
-
-    assert "sqlalchemy" not in domain_imports
-    assert "sqlalchemy.orm" not in domain_imports
-    assert "sqlalchemy.dialects.postgresql" not in domain_imports
-    assert "app.core.db.base" not in domain_imports
+    assert _imports(AUTH_ROOT / "domain" / "model.py").isdisjoint(
+        {"sqlalchemy", "sqlalchemy.orm", "sqlalchemy.dialects.postgresql", "app.core.db.base"}
+    )
 
 
 def test_auth_application_does_not_import_infrastructure() -> None:
@@ -198,45 +214,60 @@ def test_runtime_wiring_uses_module_dependencies_not_app_composition() -> None:
 
 
 def test_signup_wiring_shares_one_transaction_session() -> None:
-    credential_repository_session = (
-        signature(get_credential_repository).parameters["session"].annotation
+    assert all(
+        signature(dependency).parameters["session"].annotation == AsyncSessionDep
+        for dependency in (
+            get_credential_repository,
+            get_external_identity_login_synchronizer,
+            get_user_provisioner,
+        )
     )
-    login_synchronizer_session = (
-        signature(get_external_identity_login_synchronizer).parameters["session"].annotation
-    )
-    user_provisioner_session = signature(get_user_provisioner).parameters["session"].annotation
-
-    assert credential_repository_session == AuthTransactionSessionDep
-    assert login_synchronizer_session == AuthTransactionSessionDep
-    assert user_provisioner_session == AuthTransactionSessionDep
 
 
 def test_token_port_contract_is_provider_neutral() -> None:
     port_file = AUTH_ROOT / "application" / "ports" / "token_issuer.py"
-    assert port_file.is_file()
 
-    port_imports = _imports(port_file)
-    assert "jwt" not in port_imports
-    assert "PyJWT" not in port_imports
-    assert "app.modules.auth.infrastructure.tokens.jwt" not in port_imports
-    assert "app.modules.auth.infrastructure.tokens.opaque_refresh_token" not in port_imports
+    assert _imports(port_file).isdisjoint(
+        {
+            "PyJWT",
+            "app.modules.auth.infrastructure.tokens.jwt",
+            "app.modules.auth.infrastructure.tokens.opaque_refresh_token",
+            "jwt",
+        }
+    )
 
     token_issuer = importlib.import_module("app.modules.auth.application.ports.token_issuer")
-    for name in (
+    assert {
         "AccessTokenIssuer",
         "AccessTokenVerifier",
         "RefreshTokenIssuer",
         "RefreshTokenHasher",
         "IssuedAccessToken",
         "IssuedRefreshToken",
-    ):
-        assert hasattr(token_issuer, name)
+    }.issubset(vars(token_issuer))
 
 
-def test_token_principal_model_is_not_owned_by_authorize_use_case() -> None:
-    forbidden_import = "app.modules.auth.application.authorize" + ".schemas"
+def test_command_results_do_not_own_http_token_type() -> None:
+    assert "token_type" not in _class_field_names(
+        AUTH_ROOT / "application" / "commands" / "login" / "result.py", "LoginResult"
+    )
+    assert "token_type" not in _class_field_names(
+        AUTH_ROOT / "application" / "commands" / "refresh" / "result.py",
+        "RefreshTokenResult",
+    )
+
+
+def test_token_principal_model_is_owned_by_core_security() -> None:
+    principal_module = importlib.import_module("app.core.security.principal")
+    forbidden_imports = {
+        "app.modules.auth.application.authorize" + ".schemas",
+        "app.modules.auth.application" + ".principal",
+        "app.modules.auth.application.queries.current_principal" + ".result",
+        "app.modules.auth.application" + ".security",
+    }
     guarded_files = (
         AUTH_ROOT / "application" / "ports" / "token_issuer.py",
+        AUTH_ROOT / "application" / "queries" / "current_principal" / "use_case.py",
         AUTH_ROOT / "infrastructure" / "tokens" / "jwt.py",
         AUTH_ROOT / "api" / "security.py",
     )
@@ -244,11 +275,13 @@ def test_token_principal_model_is_not_owned_by_authorize_use_case() -> None:
     offending_imports = [
         f"{path.relative_to(PROJECT_ROOT).as_posix()} imports {forbidden_import}"
         for path in guarded_files
+        for forbidden_import in forbidden_imports
         if forbidden_import in _imports(path)
     ]
 
+    assert hasattr(principal_module, "AuthenticatedPrincipal")
     assert offending_imports == [], (
         "AuthenticatedPrincipal must be owned by "
-        "app.modules.auth.application.principal; "
-        f"forbidden imports: {offending_imports}"
+        "app.core.security.principal; "
+        f"violations: {offending_imports}"
     )

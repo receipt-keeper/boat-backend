@@ -4,19 +4,15 @@ from fastapi import APIRouter, Response, status
 
 from app.core.http.responses import ApiErrorData, CommonResponse
 from app.modules.auth.api.schemas import AuthTokenResponse, LoginRequest, RefreshTokenRequest
-from app.modules.auth.api.security import CurrentPrincipalDep
 from app.modules.auth.application.commands.login.command import LoginCommand
 from app.modules.auth.application.commands.login.result import LoginResult
 from app.modules.auth.application.commands.logout.command import LogoutCommand
 from app.modules.auth.application.commands.refresh.command import RefreshTokenCommand
 from app.modules.auth.application.commands.refresh.result import RefreshTokenResult
-from app.modules.auth.application.commands.withdraw.command import WithdrawAccountCommand
-from app.modules.auth.application.constants import AUTH_SCHEME_BEARER
 from app.modules.auth.dependencies import (
     LoginCommandUseCaseDep,
     LogoutCommandUseCaseDep,
     RefreshTokenCommandUseCaseDep,
-    WithdrawAccountCommandUseCaseDep,
 )
 
 _ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
@@ -43,7 +39,7 @@ def _token_response(tokens: LoginResult | RefreshTokenResult) -> AuthTokenRespon
     return AuthTokenResponse(
         accessToken=tokens.access_token,
         refreshToken=tokens.refresh_token,
-        tokenType=AUTH_SCHEME_BEARER,
+        tokenType="Bearer",
         expiresIn=tokens.expires_in,
     )
 
@@ -113,26 +109,4 @@ async def logout(
     같은 세션의 access token은 즉시 무효화되며, 성공 시 204 No Content(빈 본문)를 반환한다.
     """
     await command_use_case.execute(LogoutCommand(refresh_token=request.refresh_token))
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-
-@router.delete(
-    "/me",
-    status_code=status.HTTP_204_NO_CONTENT,
-)
-async def withdraw_account(
-    principal: CurrentPrincipalDep,
-    command_use_case: WithdrawAccountCommandUseCaseDep,
-) -> Response:
-    """회원 탈퇴.
-
-    인증 측(credential/session/refresh/external identity)과 users 측(설정/엔타이틀먼트/
-    푸시 토큰/user row)을 한 트랜잭션에서 삭제한다. 성공 시 204, 실패 시 전체 롤백한다.
-    """
-    await command_use_case.execute(
-        WithdrawAccountCommand(
-            user_id=principal.user_id,
-            credentials_id=principal.credentials_id,
-        )
-    )
     return Response(status_code=status.HTTP_204_NO_CONTENT)

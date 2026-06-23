@@ -12,7 +12,6 @@ class ProvisionedUser:
 class UserProvisioningRequest:
     name: str | None
     email: str | None
-    normalized_email: str
     profile_image_url: str | None
     terms_version: str | None
     privacy_version: str | None

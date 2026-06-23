@@ -1,10 +1,11 @@
 from dataclasses import dataclass
-from pathlib import Path
 
 import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core.application.unit_of_work import DeferredCommitUnitOfWork
+from app.core.db.unit_of_work import SqlAlchemyUnitOfWork
 from app.modules.auth.application.commands.login.command import LoginCommand
 from app.modules.auth.application.commands.login.use_case import LoginCommandUseCase
 from app.modules.auth.application.ports.external_identity_verifier import ExternalIdentityVerifier
@@ -25,10 +26,8 @@ from app.modules.auth.tests.service_fakes import (
 from app.modules.users.dependencies import build_resolve_user_for_login_command_use_case
 from tests.support.users_persistence import count_persisted_users
 
-EVIDENCE_DIR = Path(".omo/evidence/auth-users-bc-prd-completion")
 
-
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class IdentitySpec:
     subject: str
     provider: str
@@ -48,12 +47,11 @@ class ScriptedExternalIdentityVerifier(ExternalIdentityVerifier):
             provider=spec.provider,
             email=spec.email,
             name=None,
-            normalized_email=spec.email.strip().lower(),
             email_verified=spec.email_verified,
         )
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class PersistedRows:
     users: int
     credentials: int
@@ -70,10 +68,14 @@ def _build_login_use_case(
         login_synchronizer=SqlAlchemyExternalIdentityLoginSynchronizer(session),
         credential_repository=SqlAlchemyCredentialRepository(session),
         user_provisioner=_ProvisionUserPortAdapter(
-            build_resolve_user_for_login_command_use_case(session)
+            build_resolve_user_for_login_command_use_case(
+                session,
+                DeferredCommitUnitOfWork(),
+            )
         ),
         access_token_issuer=build_access_token_issuer(),
         refresh_token_issuer=build_refresh_token_service(),
+        unit_of_work=SqlAlchemyUnitOfWork(session),
     )
 
 
@@ -84,7 +86,6 @@ async def _login(
     provider_token: str,
 ) -> None:
     async with session_factory() as session:
-        transaction = await session.begin()
         use_case = _build_login_use_case(session=session, verifier=verifier)
         await use_case.execute(
             LoginCommand(
@@ -93,7 +94,6 @@ async def _login(
                 privacy_accepted=True,
             )
         )
-        await transaction.commit()
 
 
 async def _count_rows(session_factory: async_sessionmaker[AsyncSession]) -> PersistedRows:
@@ -118,16 +118,8 @@ def _require_count(value: int | None) -> int:
     return value
 
 
-def _write_evidence(name: str, content: str) -> Path:
-    EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
-    path = EVIDENCE_DIR / name
-    path.write_text(content + "\n", encoding="utf-8")
-    return path
-
-
 async def test_verified_same_email_links_into_single_user(
     postgres_session_factory: async_sessionmaker[AsyncSession],
-    capsys: pytest.CaptureFixture[str],
 ) -> None:
     verifier = ScriptedExternalIdentityVerifier(
         specs={
@@ -158,15 +150,38 @@ async def test_verified_same_email_links_into_single_user(
     rows = await _count_rows(postgres_session_factory)
     assert rows == PersistedRows(users=1, credentials=1, external_identities=2)
 
-    summary = (
-        f"unique_user_count={rows.users} "
-        f"credential_count={rows.credentials} "
-        f"external_identity_count={rows.external_identities}"
+
+async def test_verified_mixed_case_same_email_links_by_canonical_key(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    verifier = ScriptedExternalIdentityVerifier(
+        specs={
+            "google-token": IdentitySpec(
+                subject="google-subject",
+                provider="google",
+                email="User@Example.com",
+            ),
+            "apple-token": IdentitySpec(
+                subject="apple-subject",
+                provider="apple",
+                email="user@example.com",
+            ),
+        }
     )
-    evidence_path = _write_evidence("task-5-same-email-green.log", summary)
-    assert evidence_path.is_file()
-    with capsys.disabled():
-        print(summary)
+
+    await _login(
+        session_factory=postgres_session_factory,
+        verifier=verifier,
+        provider_token="google-token",
+    )
+    await _login(
+        session_factory=postgres_session_factory,
+        verifier=verifier,
+        provider_token="apple-token",
+    )
+
+    rows = await _count_rows(postgres_session_factory)
+    assert rows == PersistedRows(users=1, credentials=1, external_identities=2)
 
 
 async def test_different_emails_create_separate_users(
@@ -204,7 +219,6 @@ async def test_different_emails_create_separate_users(
 
 async def test_unverified_second_email_does_not_merge(
     postgres_session_factory: async_sessionmaker[AsyncSession],
-    capsys: pytest.CaptureFixture[str],
 ) -> None:
     verifier = ScriptedExternalIdentityVerifier(
         specs={
@@ -239,13 +253,3 @@ async def test_unverified_second_email_does_not_merge(
     rows_after = await _count_rows(postgres_session_factory)
     assert rows_after == rows_before
     assert rows_after == PersistedRows(users=1, credentials=1, external_identities=1)
-
-    summary = (
-        f"unverified_email_rejected users={rows_after.users} "
-        f"credentials={rows_after.credentials} "
-        f"external_identities={rows_after.external_identities}"
-    )
-    evidence_path = _write_evidence("task-5-unverified-email-rejected.log", summary)
-    assert evidence_path.is_file()
-    with capsys.disabled():
-        print(summary)

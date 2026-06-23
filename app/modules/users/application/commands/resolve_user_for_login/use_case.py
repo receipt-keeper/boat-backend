@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 
-from app.core.domain.exceptions import ErrorDetail, NotFoundError, ValidationError
+from app.core.application.unit_of_work import UnitOfWork
+from app.core.domain.exceptions import ErrorDetail, ValidationError
 from app.modules.users.application.commands.resolve_user_for_login.command import (
     ResolveUserForLoginCommand,
 )
@@ -12,31 +13,20 @@ from app.modules.users.application.ports.user_repository import (
     UserAccountState,
     UserRepository,
 )
-from app.modules.users.domain.model import NormalizedEmail, User, UserEntitlement, UserSettings
+from app.modules.users.domain.model import User, UserEntitlement, UserSettings
 
 
 class ResolveUserForLoginCommandUseCase:
-    def __init__(self, *, user_repository: UserRepository) -> None:
+    def __init__(self, *, user_repository: UserRepository, unit_of_work: UnitOfWork) -> None:
         self._user_repository = user_repository
+        self._unit_of_work = unit_of_work
 
     async def execute(self, command: ResolveUserForLoginCommand) -> ResolveUserForLoginResult:
-        normalized_email = NormalizedEmail(command.email.strip().lower())
-        existing_user = await self._user_repository.find_user_by_normalized_email(
-            normalized_email=normalized_email.value
-        )
-        if existing_user is not None:
-            existing_state = await self._user_repository.find_account_state(
-                user_id=existing_user.id
-            )
-            if existing_state is not None:
-                return _resolve_result(existing_state)
-
         _require_consent(command)
         accepted_at = datetime.now(UTC)
         user = User.create(
             name=command.name,
-            email=command.email.strip(),
-            normalized_email=normalized_email.value,
+            email=command.email,
             profile_image_url=command.profile_image_url,
         )
         state = await self._user_repository.create_account_state(
@@ -59,6 +49,7 @@ class ResolveUserForLoginCommandUseCase:
                 ),
             )
         )
+        await self._unit_of_work.commit()
         return _resolve_result(state)
 
 
@@ -80,11 +71,8 @@ def _require_consent(command: ResolveUserForLoginCommand) -> None:
 
 
 def _resolve_result(state: UserAccountState) -> ResolveUserForLoginResult:
-    if state.user.normalized_email is None:
-        raise NotFoundError("정규화된 이메일 사용자를 찾을 수 없습니다.")
     return ResolveUserForLoginResult(
         user_id=state.user.id,
-        normalized_email=state.user.normalized_email.value,
         notification_enabled=state.settings.notification_enabled,
         marketing_consent=state.settings.marketing_consent,
         free_analysis_tokens_remaining=state.entitlement.free_analysis_tokens_remaining.value,

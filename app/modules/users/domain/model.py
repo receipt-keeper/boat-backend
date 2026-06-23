@@ -1,66 +1,20 @@
 from dataclasses import dataclass
 from datetime import datetime
-from typing import ClassVar
 from uuid import UUID, uuid4
 
 from app.core.domain.entity import Entity
-from app.core.domain.exceptions import ErrorDetail, ValidationError
 from app.core.domain.validation import Notification
-from app.core.domain.value_object import ValueObject
-
-
-@dataclass(frozen=True)
-class NormalizedEmail(ValueObject[str]):
-    MAX_LENGTH: ClassVar[int] = 255
-
-    def validate(self) -> None:
-        if (
-            not self.value
-            or self.value.strip() != self.value
-            or self.value.lower() != self.value
-            or "@" not in self.value
-            or len(self.value) > self.MAX_LENGTH
-        ):
-            raise ValidationError(
-                [
-                    ErrorDetail(
-                        field="normalizedEmail",
-                        message="정규화된 이메일이 올바르지 않습니다.",
-                    )
-                ]
-            )
-
-
-@dataclass(frozen=True)
-class FreeAnalysisTokensRemaining(ValueObject[int]):
-    def validate(self) -> None:
-        if self.value < 0:
-            raise ValidationError(
-                [
-                    ErrorDetail(
-                        field="freeAnalysisTokensRemaining",
-                        message="무료 분석 토큰 수는 0 이상이어야 합니다.",
-                    )
-                ]
-            )
-
-
-@dataclass(frozen=True)
-class PushPlatform(ValueObject[str]):
-    ALLOWED: ClassVar[set[str]] = {"android", "ios", "web"}
-
-    def validate(self) -> None:
-        if self.value not in self.ALLOWED:
-            raise ValidationError(
-                [ErrorDetail(field="platform", message="푸시 플랫폼이 올바르지 않습니다.")]
-            )
+from app.modules.users.domain.value_objects import (
+    Email,
+    FreeAnalysisTokensRemaining,
+    PushPlatform,
+)
 
 
 @dataclass(eq=False)
 class User(Entity[UUID]):
     name: str | None
-    email: str | None
-    normalized_email: NormalizedEmail | None = None
+    email: Email | None
     nickname: str | None = None
     profile_image_url: str | None = None
 
@@ -71,23 +25,17 @@ class User(Entity[UUID]):
         name: str | None,
         email: str | None,
         user_id: UUID | None = None,
-        normalized_email: str | None = None,
         nickname: str | None = None,
         profile_image_url: str | None = None,
     ) -> "User":
         notification = Notification()
-        new_normalized_email = (
-            None
-            if normalized_email is None
-            else notification.collect(lambda: NormalizedEmail(normalized_email))
-        )
+        new_email = None if email is None else notification.collect(lambda: Email(email))
         notification.raise_if_any()
 
         return cls(
             id=user_id or uuid4(),
             name=name,
-            email=email,
-            normalized_email=new_normalized_email,
+            email=new_email,
             nickname=nickname,
             profile_image_url=profile_image_url,
         )

@@ -1,9 +1,7 @@
-import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 from uuid import UUID
 
 from httpx import ASGITransport, AsyncClient
@@ -39,10 +37,9 @@ TEST_SETTINGS = Settings(
     jwt_issuer="boat-backend-test",
     jwt_audience="boat-api-test",
 )
-EVIDENCE_DIR = Path(".omo/evidence/auth-users-bc-prd-completion")
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class SeededAccount:
     user_id: UUID
     credentials_id: UUID
@@ -90,7 +87,7 @@ async def _seed_full_account(
             issuer="google",
             subject=subject,
             provider="google",
-            email=user.email,
+            email=None if user.email is None else user.email.value,
             name=user.name,
         ),
         user_id=user.id,
@@ -231,16 +228,6 @@ async def _client_with_failing_cleanup(
         yield client
 
 
-def _write_evidence(name: str, payload: dict[str, object]) -> Path:
-    EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
-    path = EVIDENCE_DIR / name
-    path.write_text(
-        json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
-    return path
-
-
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
@@ -250,27 +237,27 @@ async def test_delete_me_requires_bearer_token(
     postgres_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     async with _plain_client(postgres_session_factory) as client:
-        response = await client.delete("/api/v1/auth/me")
+        response = await client.delete("/api/v1/users/me")
         invalid_response = await client.delete(
-            "/api/v1/auth/me",
+            "/api/v1/users/me",
             headers={"Authorization": "Bearer invalid-token"},
         )
 
     body = response.json()
     assert response.status_code == 401
     assert body["success"] is False
-    assert body["data"]["path"] == "/api/v1/auth/me"
+    assert body["data"]["path"] == "/api/v1/users/me"
 
     invalid_body = invalid_response.json()
     assert invalid_response.status_code == 401
     assert invalid_body["success"] is False
-    assert invalid_body["data"]["path"] == "/api/v1/auth/me"
+    assert invalid_body["data"]["path"] == "/api/v1/users/me"
 
 
 async def test_delete_me_withdraws_full_account(
     postgres_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    """Happy path: DELETE /api/v1/auth/me removes ALL owned rows; second account untouched."""
+    """Happy path: DELETE /api/v1/users/me removes ALL owned rows; second account untouched."""
     async with postgres_session_factory() as session, session.begin():
         current = await _seed_full_account(
             session,
@@ -287,12 +274,12 @@ async def test_delete_me_withdraws_full_account(
 
     async with _plain_client(postgres_session_factory) as client:
         response = await client.delete(
-            "/api/v1/auth/me",
+            "/api/v1/users/me",
             headers={"Authorization": f"Bearer {current.access_token}"},
         )
         # stale token reuse must 401
         stale_response = await client.delete(
-            "/api/v1/auth/me",
+            "/api/v1/users/me",
             headers={"Authorization": f"Bearer {current.access_token}"},
         )
 
@@ -367,15 +354,6 @@ async def test_delete_me_withdraws_full_account(
         "user_push_tokens": 1,
     }
 
-    evidence = {
-        "scenario": "account_withdrawal",
-        "http_status_delete": response.status_code,
-        "http_status_stale": stale_response.status_code,
-        **{f"remaining_{k}": v for k, v in counts.items()},
-    }
-    path = _write_evidence("task-10-withdraw-green.log", evidence)
-    assert path.is_file()
-
 
 async def test_delete_me_rolls_back_when_users_cleanup_fails(
     postgres_session_factory: async_sessionmaker[AsyncSession],
@@ -391,7 +369,7 @@ async def test_delete_me_rolls_back_when_users_cleanup_fails(
 
     async with _client_with_failing_cleanup(postgres_session_factory) as client:
         response = await client.delete(
-            "/api/v1/auth/me",
+            "/api/v1/users/me",
             headers={"Authorization": f"Bearer {current.access_token}"},
         )
 
@@ -400,7 +378,7 @@ async def test_delete_me_rolls_back_when_users_cleanup_fails(
     assert body["success"] is False
     assert body["status"] == 500
     assert body["data"]["message"] == "서버 내부 오류가 발생했습니다."
-    assert body["data"]["path"] == "/api/v1/auth/me"
+    assert body["data"]["path"] == "/api/v1/users/me"
 
     counts = await _count_all_rows(postgres_session_factory)
     assert counts == {
@@ -413,11 +391,3 @@ async def test_delete_me_rolls_back_when_users_cleanup_fails(
         "user_entitlements": 1,
         "user_push_tokens": 1,
     }, f"Expected all rows intact after rollback but got: {counts}"
-
-    evidence = {
-        "scenario": "account_withdrawal_cleanup_failure",
-        "http_status": response.status_code,
-        **{f"rollback_{k}": v for k, v in counts.items()},
-    }
-    path = _write_evidence("task-10-withdraw-rollback.log", evidence)
-    assert path.is_file()

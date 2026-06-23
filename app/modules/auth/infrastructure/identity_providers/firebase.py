@@ -9,7 +9,6 @@ from firebase_admin import exceptions as firebase_exceptions
 
 from app.core.config.settings import Settings
 from app.core.domain.exceptions import ValidationError
-from app.modules.auth.application.constants import AUTHENTICATION_FAILED_MESSAGE
 from app.modules.auth.application.ports.external_identity_verifier import ExternalIdentityVerifier
 from app.modules.auth.domain.exceptions import AuthenticationError
 from app.modules.auth.domain.model import ExternalIdentity
@@ -126,23 +125,23 @@ class FirebaseExternalIdentityVerifier(ExternalIdentityVerifier):
                 check_revoked=self._check_revoked,
             )
         except firebase_exceptions.FirebaseError as exc:
-            raise AuthenticationError(AUTHENTICATION_FAILED_MESSAGE) from exc
+            raise AuthenticationError() from exc
 
         return self._to_external_identity(claims)
 
     def _to_external_identity(self, claims: Mapping[str, Any]) -> ExternalIdentity:
         subject = self._identity_mapping.subject_from(claims)
         if subject is None:
-            raise AuthenticationError(AUTHENTICATION_FAILED_MESSAGE)
+            raise AuthenticationError()
         raw_provider = self._identity_mapping.raw_provider_from(claims)
         if raw_provider is None:
-            raise AuthenticationError(AUTHENTICATION_FAILED_MESSAGE)
+            raise AuthenticationError()
         clean_provider = self._identity_mapping.normalize_provider(raw_provider)
         if clean_provider is None:
-            raise AuthenticationError(AUTHENTICATION_FAILED_MESSAGE)
+            raise AuthenticationError()
 
-        email = self._identity_mapping.email_from(claims)
-        normalized_email = None if email is None else email.strip().lower()
+        raw_email = self._identity_mapping.email_from(claims)
+        email = None if raw_email is None else raw_email.strip()
         try:
             return ExternalIdentity.create(
                 issuer=clean_provider,
@@ -150,8 +149,7 @@ class FirebaseExternalIdentityVerifier(ExternalIdentityVerifier):
                 email=email,
                 name=self._identity_mapping.name_from(claims),
                 provider=clean_provider,
-                normalized_email=normalized_email,
                 email_verified=self._identity_mapping.email_verified_from(claims),
             )
         except ValidationError as exc:
-            raise AuthenticationError(AUTHENTICATION_FAILED_MESSAGE) from exc
+            raise AuthenticationError() from exc

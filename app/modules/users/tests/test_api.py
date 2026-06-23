@@ -26,7 +26,7 @@ TEST_SETTINGS = Settings(
 )
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class SeededUser:
     user_id: UUID
     credentials_id: UUID
@@ -128,14 +128,25 @@ async def test_get_me_returns_profile_envelope(
     assert body["success"] is True
     assert body["status"] == 200
     data = body["data"]
+    assert set(data.keys()) == {
+        "email",
+        "name",
+        "nickname",
+        "profileImageUrl",
+        "notificationEnabled",
+        "marketingConsent",
+        "freeAnalysisTokensRemaining",
+    }
     assert data["email"] == "profile@example.com"
-    assert data["freeAnalysisTokensRemaining"] == 5
+    assert data["name"] == "프로필 사용자"
     assert data["notificationEnabled"] is True
     assert data["marketingConsent"] is False
-    assert data["pushTokenCount"] == 0
+    assert data["freeAnalysisTokensRemaining"] == 5
+    assert "normalizedEmail" not in data
+    assert "pushTokenCount" not in data
 
 
-async def test_patch_settings_flips_and_persists(
+async def test_patch_me_updates_notification_and_marketing_settings(
     postgres_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     async with postgres_session_factory() as session, session.begin():
@@ -150,7 +161,7 @@ async def test_patch_settings_flips_and_persists(
 
     async with _client(postgres_session_factory) as client:
         patch_response = await client.patch(
-            "/api/v1/users/me/settings",
+            "/api/v1/users/me",
             headers=_auth_headers(seeded),
             json={"notificationEnabled": False, "marketingConsent": True},
         )
@@ -159,6 +170,7 @@ async def test_patch_settings_flips_and_persists(
     patch_body = patch_response.json()
     assert patch_response.status_code == 200
     assert patch_body["success"] is True
+    assert set(patch_body["data"].keys()) == {"notificationEnabled", "marketingConsent"}
     assert patch_body["data"]["notificationEnabled"] is False
     assert patch_body["data"]["marketingConsent"] is True
 
@@ -167,15 +179,42 @@ async def test_patch_settings_flips_and_persists(
     assert get_body["data"]["marketingConsent"] is True
 
 
+async def test_patch_me_rejects_unknown_fields(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with postgres_session_factory() as session, session.begin():
+        seeded = await _seed_user(
+            session,
+            subject="unknown-field-user",
+            email="unknown@example.com",
+            name="알 수 없는 필드 사용자",
+            notification_enabled=True,
+            marketing_consent=False,
+        )
+
+    async with _client(postgres_session_factory) as client:
+        response = await client.patch(
+            "/api/v1/users/me",
+            headers=_auth_headers(seeded),
+            json={"unknownField": False},
+        )
+
+    body = response.json()
+    assert response.status_code == 422
+    assert body["success"] is False
+    assert body["status"] == 422
+    assert body["data"]["path"] == "/api/v1/users/me"
+
+
 async def test_endpoints_require_bearer_token(
     postgres_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    # 푸시 토큰 API는 현재 라우터에 노출되지 않으므로(알림 기능 착수 전) 마이페이지/설정만 검증한다.
+    # 푸시 토큰 API는 앱 공개 계약에 없으므로(알림 기능 착수 전) 내 정보 조회/수정만 검증한다.
     no_token: dict[str, str] = {}
     bad_token = {"Authorization": "Bearer invalid-token"}
     requests = [
         ("GET", "/api/v1/users/me", None),
-        ("PATCH", "/api/v1/users/me/settings", {"notificationEnabled": False}),
+        ("PATCH", "/api/v1/users/me", {"notificationEnabled": False}),
     ]
 
     async with _client(postgres_session_factory) as client:

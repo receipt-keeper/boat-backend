@@ -30,10 +30,6 @@ class UserRepository(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def find_user_by_normalized_email(self, *, normalized_email: str) -> User | None:
-        raise NotImplementedError
-
-    @abstractmethod
     async def find_account_state(self, *, user_id: UUID) -> UserAccountState | None:
         raise NotImplementedError
 

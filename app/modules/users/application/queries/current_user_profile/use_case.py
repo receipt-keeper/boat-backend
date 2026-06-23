@@ -18,13 +18,9 @@ class CurrentUserProfileQueryUseCase:
 
 
 def _profile_result(state: UserAccountState) -> CurrentUserProfileResult:
-    normalized_email = (
-        None if state.user.normalized_email is None else state.user.normalized_email.value
-    )
     return CurrentUserProfileResult(
         user_id=state.user.id,
-        email=state.user.email,
-        normalized_email=normalized_email,
+        email=None if state.user.email is None else state.user.email.value,
         name=state.user.name,
         nickname=state.user.nickname,
         profile_image_url=state.user.profile_image_url,

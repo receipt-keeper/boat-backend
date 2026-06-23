@@ -6,7 +6,8 @@ import pytest
 from fastapi import Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.auth.dependencies import get_auth_transaction_session
+from app.core.db.session import get_async_session
+from app.core.db.unit_of_work import SqlAlchemyUnitOfWork
 
 
 class FakeSession:
@@ -44,35 +45,45 @@ def build_request(session: FakeSession) -> Request:
     return cast(Request, request)
 
 
-async def test_auth_transaction_session_commits_after_success() -> None:
+async def test_core_async_session_dependency_does_not_commit_after_success() -> None:
     session = FakeSession()
-    transaction_session = cast(
+    session_dependency = cast(
         AsyncGenerator[AsyncSession, None],
-        get_auth_transaction_session(build_request(session)),
+        get_async_session(build_request(session)),
     )
 
-    yielded_session = await anext(transaction_session)
+    yielded_session = await anext(session_dependency)
     assert yielded_session is session
     with pytest.raises(StopAsyncIteration):
-        await anext(transaction_session)
+        await anext(session_dependency)
 
-    assert session.commit_count == 1
+    assert session.commit_count == 0
     assert session.rollback_count == 0
     assert session.closed is True
 
 
-async def test_auth_transaction_session_rolls_back_on_failure() -> None:
+async def test_core_async_session_dependency_closes_on_failure_without_rollback() -> None:
     session = FakeSession()
-    transaction_session = cast(
+    session_dependency = cast(
         AsyncGenerator[AsyncSession, None],
-        get_auth_transaction_session(build_request(session)),
+        get_async_session(build_request(session)),
     )
 
-    yielded_session = await anext(transaction_session)
+    yielded_session = await anext(session_dependency)
     assert yielded_session is session
     with pytest.raises(RuntimeError, match="signup failed"):
-        await transaction_session.athrow(RuntimeError("signup failed"))
+        await session_dependency.athrow(RuntimeError("signup failed"))
 
     assert session.commit_count == 0
-    assert session.rollback_count == 1
+    assert session.rollback_count == 0
     assert session.closed is True
+
+
+async def test_sqlalchemy_unit_of_work_commits_before_response_boundary() -> None:
+    session = FakeSession()
+    unit_of_work = SqlAlchemyUnitOfWork(cast(AsyncSession, session))
+
+    await unit_of_work.commit()
+
+    assert session.commit_count == 1
+    assert session.rollback_count == 0

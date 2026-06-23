@@ -6,12 +6,10 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
-    Index,
     Integer,
     String,
     UniqueConstraint,
     func,
-    text,
 )
 from sqlalchemy.dialects.postgresql import UUID as PostgreSQLUUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -21,14 +19,6 @@ from app.core.db.base import Base
 
 class User(Base):
     __tablename__ = "users"
-    __table_args__ = (
-        Index(
-            "ix_users_normalized_email_unique",
-            "normalized_email",
-            unique=True,
-            postgresql_where=text("normalized_email IS NOT NULL"),
-        ),
-    )
 
     id: Mapped[UUID] = mapped_column(
         type_=PostgreSQLUUID(as_uuid=True),
@@ -38,7 +28,6 @@ class User(Base):
     name: Mapped[str | None] = mapped_column(type_=String(255), nullable=True)
     nickname: Mapped[str | None] = mapped_column(type_=String(255), nullable=True)
     email: Mapped[str | None] = mapped_column(type_=String(255), nullable=True)
-    normalized_email: Mapped[str | None] = mapped_column(type_=String(255), nullable=True)
     profile_image_url: Mapped[str | None] = mapped_column(type_=String(2048), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         type_=DateTime(timezone=True),

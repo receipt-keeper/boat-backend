@@ -1,8 +1,8 @@
 from datetime import UTC, datetime
 
+from app.core.application.unit_of_work import UnitOfWork
 from app.modules.auth.application.commands.login.command import LoginCommand
 from app.modules.auth.application.commands.login.result import LoginResult
-from app.modules.auth.application.constants import AUTH_SCHEME_BEARER, AUTHENTICATION_FAILED_MESSAGE
 from app.modules.auth.application.ports.credential_repository import CredentialRepository
 from app.modules.auth.application.ports.external_identity_login_synchronizer import (
     ExternalIdentityLoginSynchronizer,
@@ -14,6 +14,7 @@ from app.modules.auth.application.ports.user_provisioner import (
     UserProvisioningRequest,
 )
 from app.modules.auth.domain.exceptions import AuthenticationError
+from app.modules.auth.domain.model import ExternalIdentity
 
 
 class LoginCommandUseCase:
@@ -26,6 +27,7 @@ class LoginCommandUseCase:
         user_provisioner: UserProvisioner,
         access_token_issuer: AccessTokenIssuer,
         refresh_token_issuer: RefreshTokenIssuer,
+        unit_of_work: UnitOfWork,
     ) -> None:
         self._identity_verifier = identity_verifier
         self._login_synchronizer = login_synchronizer
@@ -33,6 +35,7 @@ class LoginCommandUseCase:
         self._user_provisioner = user_provisioner
         self._access_token_issuer = access_token_issuer
         self._refresh_token_issuer = refresh_token_issuer
+        self._unit_of_work = unit_of_work
 
     async def execute(self, command: LoginCommand) -> LoginResult:
         identity = await self._identity_verifier.verify(command.provider_token)
@@ -47,34 +50,34 @@ class LoginCommandUseCase:
                 logged_in_at=logged_in_at,
             )
         else:
-            if not identity.email_verified or identity.normalized_email is None:
-                raise AuthenticationError(AUTHENTICATION_FAILED_MESSAGE)
-            provisioned = await self._user_provisioner.provision(
-                request=UserProvisioningRequest(
-                    name=identity.name,
-                    email=identity.email,
-                    normalized_email=identity.normalized_email.value,
-                    profile_image_url=None,
-                    terms_version=command.terms_version,
-                    privacy_version=command.privacy_version,
-                    terms_accepted=command.terms_accepted,
-                    privacy_accepted=command.privacy_accepted,
-                    marketing_consent=command.marketing_consent,
-                )
+            canonical_email = _canonical_email(identity)
+            if not identity.email_verified or canonical_email is None:
+                raise AuthenticationError()
+            credentials = await self._credential_repository.find_by_verified_email(
+                canonical_email=canonical_email
             )
-            existing = await self._credential_repository.find_credential_by_user_id(
-                user_id=provisioned.user_id,
-            )
-            if existing is not None:
+            if credentials is not None:
                 await self._credential_repository.attach_external_identity(
-                    credentials_id=existing.credentials_id,
+                    credentials_id=credentials.credentials_id,
                     identity=identity,
                 )
                 credentials = await self._credential_repository.record_login(
-                    credentials_id=existing.credentials_id,
+                    credentials_id=credentials.credentials_id,
                     logged_in_at=logged_in_at,
                 )
             else:
+                provisioned = await self._user_provisioner.provision(
+                    request=UserProvisioningRequest(
+                        name=identity.name,
+                        email=None if identity.email is None else identity.email.value,
+                        profile_image_url=None,
+                        terms_version=command.terms_version,
+                        privacy_version=command.privacy_version,
+                        terms_accepted=command.terms_accepted,
+                        privacy_accepted=command.privacy_accepted,
+                        marketing_consent=command.marketing_consent,
+                    )
+                )
                 credentials = await self._credential_repository.create_for_external_identity(
                     identity=identity,
                     user_id=provisioned.user_id,
@@ -97,10 +100,16 @@ class LoginCommandUseCase:
             session_id=session_id,
             role=credentials.role.value,
         )
+        await self._unit_of_work.commit()
 
         return LoginResult(
             access_token=access_token.token,
             refresh_token=refresh_token.token,
-            token_type=AUTH_SCHEME_BEARER,
             expires_in=access_token.expires_in,
         )
+
+
+def _canonical_email(identity: ExternalIdentity) -> str | None:
+    if identity.email is None:
+        return None
+    return identity.email.value.lower()

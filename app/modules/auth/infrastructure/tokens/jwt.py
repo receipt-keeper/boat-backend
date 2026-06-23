@@ -4,13 +4,12 @@ from uuid import UUID, uuid4
 import jwt
 
 from app.core.config.settings import Settings
-from app.modules.auth.application.constants import AUTHENTICATION_FAILED_MESSAGE
+from app.core.security.principal import AuthenticatedPrincipal
 from app.modules.auth.application.ports.token_issuer import (
     AccessTokenIssuer,
     AccessTokenVerifier,
     IssuedAccessToken,
 )
-from app.modules.auth.application.principal import AuthenticatedPrincipal
 from app.modules.auth.domain.exceptions import AuthenticationError
 
 JWT_ALGORITHM_HS256 = "HS256"
@@ -107,4 +106,4 @@ class JwtAccessTokenService(AccessTokenIssuer, AccessTokenVerifier):
                 role=str(claims[JWT_CLAIM_ROLE]),
             )
         except (jwt.PyJWTError, ValueError, TypeError, KeyError) as exc:
-            raise AuthenticationError(AUTHENTICATION_FAILED_MESSAGE) from exc
+            raise AuthenticationError() from exc

@@ -1,8 +1,6 @@
 from datetime import UTC, datetime, timedelta
 
 import anyio
-import pytest
-from anyio import Path as AnyioPath
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -17,12 +15,9 @@ from app.modules.auth.infrastructure.persistence.credential_repository import (
 )
 from tests.support.users_persistence import count_persisted_users, create_persisted_user
 
-EVIDENCE_DIR = ".omo/evidence/auth-users-bc-prd-completion"
-
 
 async def test_postgres_fixture_persists_and_rolls_back_auth_users_rows(
     postgres_session_factory: async_sessionmaker[AsyncSession],
-    capsys: pytest.CaptureFixture[str],
 ) -> None:
     async with postgres_session_factory() as session:
         transaction = await session.begin()
@@ -39,7 +34,7 @@ async def test_postgres_fixture_persists_and_rolls_back_auth_users_rows(
                     issuer="google",
                     subject="firebase-subject",
                     provider="google",
-                    email=user.email,
+                    email=None if user.email is None else user.email.value,
                     name=user.name,
                 ),
                 user_id=user.id,
@@ -89,13 +84,6 @@ async def test_postgres_fixture_persists_and_rolls_back_auth_users_rows(
     assert external_identities_after_rollback == 0
     assert refresh_tokens_after_rollback == 0
 
-    with capsys.disabled():
-        print(
-            "postgres integration verified: "
-            "inside_transaction users=1 credentials=1 external_identities=1 refresh_tokens=1; "
-            "after_rollback users=0 credentials=0 external_identities=0 refresh_tokens=0"
-        )
-
 
 async def _setup_refresh_token(
     session_factory: async_sessionmaker[AsyncSession],
@@ -113,7 +101,7 @@ async def _setup_refresh_token(
                 issuer="google",
                 subject="rotate-subject",
                 provider="google",
-                email=user.email,
+                email=None if user.email is None else user.email.value,
                 name=user.name,
             ),
             user_id=user.id,
@@ -133,7 +121,6 @@ async def _setup_refresh_token(
 
 async def test_concurrent_rotate_refresh_token_exactly_one_wins(
     postgres_session_factory: async_sessionmaker[AsyncSession],
-    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Two concurrent rotate_refresh_token calls on the same token_hash:
     exactly one returns a SessionCredential, the other raises AuthenticationError.
@@ -171,24 +158,65 @@ async def test_concurrent_rotate_refresh_token_exactly_one_wins(
         remaining = await session.scalar(select(func.count()).select_from(auth_orm.RefreshToken))
     assert remaining == 1
 
-    summary = (
-        f"concurrent refresh rotation verified: "
-        f"outcomes={sorted(outcomes)} remaining_refresh_tokens={remaining}"
-    )
-    with capsys.disabled():
-        print(summary)
 
-    evidence_dir = AnyioPath(EVIDENCE_DIR)
-    await evidence_dir.mkdir(parents=True, exist_ok=True)
-    await (evidence_dir / "task-7-refresh-race-green.log").write_text(
-        f"# Todo 7 acceptance — atomic refresh rotation\n{summary}\n",
-        encoding="utf-8",
-    )
+async def test_delete_account_auth_state_ignores_credentials_owned_by_other_user(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with postgres_session_factory() as session, session.begin():
+        owner = await create_persisted_user(
+            session,
+            name="소유 사용자",
+            email="owner@example.com",
+        )
+        requester = await create_persisted_user(
+            session,
+            name="요청 사용자",
+            email="requester@example.com",
+        )
+        repository = SqlAlchemyCredentialRepository(session)
+        credentials = await repository.create_for_external_identity(
+            identity=ExternalIdentity.create(
+                issuer="google",
+                subject="owner-subject",
+                provider="google",
+                email=None if owner.email is None else owner.email.value,
+                name=owner.name,
+            ),
+            user_id=owner.id,
+            logged_in_at=datetime.now(UTC),
+        )
+        session_id = await repository.create_session(credentials_id=credentials.credentials_id)
+        await repository.save_refresh_token(
+            credentials_id=credentials.credentials_id,
+            session_id=session_id,
+            token_hash="owner-token-hash",
+            expires_at=datetime.now(UTC) + timedelta(days=7),
+        )
+
+        await repository.delete_account_auth_state(
+            user_id=requester.id,
+            credentials_id=credentials.credentials_id,
+        )
+
+        refresh_tokens = await session.scalar(
+            select(func.count()).select_from(auth_orm.RefreshToken)
+        )
+        sessions = await session.scalar(select(func.count()).select_from(auth_orm.AuthSession))
+        external_identities = await session.scalar(
+            select(func.count()).select_from(auth_orm.ExternalIdentity)
+        )
+        user_credentials = await session.scalar(
+            select(func.count()).select_from(auth_orm.UserCredential)
+        )
+
+    assert refresh_tokens == 1
+    assert sessions == 1
+    assert external_identities == 1
+    assert user_credentials == 1
 
 
 async def test_rotate_refresh_token_insert_failure_restores_original_token(
     postgres_session_factory: async_sessionmaker[AsyncSession],
-    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Force new_token_hash to collide with an existing token_hash (UNIQUE violation).
     The INSERT fails -> whole tx rolls back -> original token is still present.
@@ -234,18 +262,3 @@ async def test_rotate_refresh_token_insert_failure_restores_original_token(
             .where(auth_orm.RefreshToken.token_hash == token_hash)
         )
     assert original_count == 1, "Original token must survive after INSERT rollback"
-
-    summary = (
-        f"rollback verified: IntegrityError raised, original token_hash='{token_hash}' "
-        f"still present (count={original_count})"
-    )
-    with capsys.disabled():
-        print(summary)
-
-    evidence_dir = AnyioPath(EVIDENCE_DIR)
-    await evidence_dir.mkdir(parents=True, exist_ok=True)
-    await (evidence_dir / "task-7-refresh-rollback.log").write_text(
-        f"# Todo 7 rollback — duplicate new-token-hash forces IntegrityError + restores old token\n"
-        f"{summary}\n",
-        encoding="utf-8",
-    )
