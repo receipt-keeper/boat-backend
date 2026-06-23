@@ -26,7 +26,7 @@ auth/
 | Login command | `application/commands/login/use_case.py` | Verify identity, provision user, create credentials, issue tokens. |
 | Refresh command | `application/commands/refresh/use_case.py` | Rotate refresh token and issue a new access token pair. |
 | Logout command | `application/commands/logout/use_case.py` | Revoke the presented refresh token. |
-| Withdraw command | `application/commands/withdraw/use_case.py` | Delete auth credentials and request user deletion/cleanup. |
+| Withdraw command | `application/commands/withdraw/use_case.py` | Delete auth credentials and request user deletion/cleanup; the public `DELETE /api/v1/users/me` route lives in the users BC and delegates here. |
 | Current principal query | `application/queries/current_principal/use_case.py` | Restore bearer principal and verify active credentials without side effects. |
 | Token contracts | `application/ports/token_issuer.py` | Provider-neutral access/refresh token ports. |
 | Runtime wiring | `dependencies.py` | One transaction session shared across credential and user provisioning. |
