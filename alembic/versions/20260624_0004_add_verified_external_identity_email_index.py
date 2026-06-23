@@ -30,5 +30,4 @@ def downgrade() -> None:
     op.drop_index(
         "ix_external_identities_verified_normalized_email",
         table_name="external_identities",
-        postgresql_where=sa.text("email_verified IS TRUE AND normalized_email IS NOT NULL"),
     )
