@@ -31,6 +31,11 @@ def test_prd_account_schema_tables_columns_and_constraints_are_declared() -> Non
     users_indexes = metadata.tables["users"].indexes
     assert not any(_is_partial_unique_normalized_email_index(index) for index in users_indexes)
 
+    external_identity_indexes = metadata.tables["external_identities"].indexes
+    assert any(
+        _is_verified_external_identity_email_index(index) for index in external_identity_indexes
+    )
+
     entitlement_checks = [
         constraint
         for constraint in metadata.tables["user_entitlements"].constraints
@@ -106,6 +111,17 @@ def _is_partial_unique_normalized_email_index(index: Index) -> bool:
         index.unique is True
         and tuple(column.name for column in index.columns) == ("normalized_email",)
         and dialect_options["where"] is not None
+    )
+
+
+def _is_verified_external_identity_email_index(index: Index) -> bool:
+    dialect_options = index.dialect_options["postgresql"]
+    return (
+        index.name == "ix_external_identities_verified_normalized_email"
+        and index.unique is False
+        and tuple(column.name for column in index.columns) == ("normalized_email",)
+        and str(dialect_options["where"])
+        == "email_verified IS TRUE AND normalized_email IS NOT NULL"
     )
 
 
