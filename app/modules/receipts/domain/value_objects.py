@@ -12,9 +12,10 @@ class ItemName(ValueObject[str]):
     MAX_LENGTH: ClassVar[int] = 255
 
     def validate(self) -> None:
-        if not self.value or not self.value.strip():
+        stripped = self.value.strip()
+        if not stripped:
             raise ValidationError([ErrorDetail(field="item_name", message="제품명은 필수입니다.")])
-        if len(self.value) > self.MAX_LENGTH:
+        if len(stripped) > self.MAX_LENGTH:
             raise ValidationError(
                 [
                     ErrorDetail(

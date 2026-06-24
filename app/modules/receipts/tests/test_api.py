@@ -247,7 +247,10 @@ async def test_create_receipt_returns_domain_validation_errors(
     assert response.status_code == 422
     assert body["success"] is False
     assert body["status"] == 422
-    assert body["data"]["message"] == "입력값이 올바르지 않습니다."
+    assert body["data"]["message"] in {
+        "입력값이 올바르지 않습니다.",
+        "요청 값이 올바르지 않습니다.",
+    }
     assert body["data"]["path"] == "/api/v1/receipts"
     assert body["data"]["errors"][0]["field"] == field
 

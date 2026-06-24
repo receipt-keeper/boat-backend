@@ -1,6 +1,7 @@
 import asyncio
 from pathlib import Path
 
+import pytest
 from alembic.config import Config
 from sqlalchemy import text
 
@@ -11,7 +12,7 @@ from app.core.db.session import build_engine
 
 def test_receipts_migration_creates_receipt_tables(
     postgres_async_database_url: str,
-    monkeypatch,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("DATABASE_URL", postgres_async_database_url)
     get_settings.cache_clear()

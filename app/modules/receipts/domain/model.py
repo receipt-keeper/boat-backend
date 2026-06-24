@@ -115,6 +115,41 @@ class Receipt(Entity[UUID]):
             receipt_file_ids=new_file_references.value,
         )
 
+    @classmethod
+    def rehydrate(
+        cls,
+        *,
+        receipt_id: UUID,
+        user_id: UUID,
+        item_name: str,
+        payment_date: date,
+        expires_on: date,
+        brand_name: str | None = None,
+        payment_location: str | None = None,
+        total_amount: int | None = None,
+        period_months: int | None = None,
+        category: str | None = None,
+        memo: str | None = None,
+        requires_physical_receipt: bool = False,
+        receipt_file_ids: tuple[UUID, ...] = (),
+    ) -> "Receipt":
+        receipt = cls.create(
+            receipt_id=receipt_id,
+            user_id=user_id,
+            item_name=item_name,
+            brand_name=brand_name,
+            payment_location=payment_location,
+            payment_date=payment_date,
+            total_amount=total_amount,
+            period_months=period_months,
+            category=category,
+            memo=memo,
+            requires_physical_receipt=requires_physical_receipt,
+            receipt_file_ids=receipt_file_ids,
+        )
+        receipt.expires_on = expires_on
+        return receipt
+
 
 def _optional_text(
     *,
@@ -131,9 +166,22 @@ def _optional_text(
         return None
     if len(stripped) > max_length:
         raise ValidationError(
-            [ErrorDetail(field=field, message=f"{label}은 {max_length}자 이하여야 합니다.")]
+            [
+                ErrorDetail(
+                    field=field,
+                    message=f"{label}{_topic_particle(label)} {max_length}자 이하여야 합니다.",
+                )
+            ]
         )
     return stripped
+
+
+def _topic_particle(label: str) -> str:
+    last_character = label[-1]
+    if not ("가" <= last_character <= "힣"):
+        return "은"
+    has_final_consonant = (ord(last_character) - ord("가")) % 28 != 0
+    return "은" if has_final_consonant else "는"
 
 
 def _add_months(start_date: date, months: int) -> date:

@@ -30,7 +30,7 @@ def receipt_to_domain(
     *,
     receipt_file_ids: tuple[UUID, ...] = (),
 ) -> DomainReceipt:
-    return DomainReceipt.create(
+    return DomainReceipt.rehydrate(
         receipt_id=record.id,
         user_id=record.user_id,
         item_name=record.item_name,
@@ -39,6 +39,7 @@ def receipt_to_domain(
         payment_date=record.payment_date,
         total_amount=record.total_amount,
         period_months=record.period_months,
+        expires_on=record.expires_on,
         category=record.category,
         memo=record.memo,
         requires_physical_receipt=record.requires_physical_receipt,
