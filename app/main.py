@@ -21,6 +21,7 @@ from app.modules.auth.api.security import authenticate_current_principal
 from app.modules.auth.domain.exceptions import AuthenticationError, AuthorizationError
 from app.modules.examples.api.router import router as examples_router
 from app.modules.ocr.api.router import router as ocr_router
+from app.modules.receipts.api.router import router as receipts_router
 from app.modules.users.api.router import router as users_router
 
 
@@ -81,6 +82,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.include_router(examples_router, prefix=resolved_settings.api_prefix)
     app.include_router(ocr_router, prefix=resolved_settings.api_prefix)
+    app.include_router(
+        receipts_router,
+        prefix=resolved_settings.api_prefix,
+        dependencies=[Depends(authenticate_current_principal)],
+    )
     app.include_router(observability_router)
     _register_exception_handlers(app)
 
