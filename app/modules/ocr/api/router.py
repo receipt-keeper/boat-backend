@@ -31,7 +31,7 @@ _UNREADABLE_RECEIPT_EXAMPLE = {
         "path": "/api/v1/ocr/receipt",
         "errors": [
             {
-                "field": "image_uri",
+                "field": "file_id",
                 "message": _UNREADABLE_RECEIPT_MESSAGE,
             }
         ],
@@ -90,17 +90,17 @@ async def extract_receipt_ocr(
     request: ReceiptOcrRequest,
     service: ReceiptOcrServiceDep,
 ) -> CommonResponse[ReceiptOcrResultResponse]:
-    result = await service.extract_receipt(image_uri=request.image_uri)
+    result = await service.extract_receipt(file_id=request.file_id)
 
     return CommonResponse(
         success=True,
         status=status.HTTP_200_OK,
         data=ReceiptOcrResultResponse(
             item_name=result.item_name.value,
-            brand_name=result.brand_name,
-            payment_location=result.payment_location,
+            brand_name=result.brand_name.value if result.brand_name else None,
+            payment_location=result.payment_location.value if result.payment_location else None,
             payment_date=result.payment_date.value,
-            total_amount=result.total_amount,
+            total_amount=result.total_amount.value if result.total_amount else None,
             period_months=result.period_months.value,
             expires_on=result.expires_on,
             needs_review=bool(result.warnings),
