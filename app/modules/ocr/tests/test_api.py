@@ -30,6 +30,18 @@ class ProviderUnavailableReceiptOcrClient:
         raise ReceiptOcrProviderUnavailableError()
 
 
+class ZeroTotalAmountReceiptOcrClient:
+    async def extract(self, *, image_uri: str) -> ExtractedReceiptOcrFields:
+        return ExtractedReceiptOcrFields(
+            item_name="무상 교체",
+            brand_name=None,
+            payment_location=None,
+            payment_date=date.today(),
+            total_amount=0,
+            period_months=12,
+        )
+
+
 def test_item_name_rejects_whitespace_only_value() -> None:
     with pytest.raises(ValidationError):
         ItemName("   ")
@@ -81,6 +93,23 @@ async def test_receipt_ocr_endpoint_returns_contract_response(client: AsyncClien
         "needs_review": True,
         "warnings": ["무상 AS 기간을 찾지 못해 12개월 기본값을 적용했습니다."],
     }
+
+
+async def test_receipt_ocr_endpoint_keeps_zero_total_amount(
+    client: AsyncClient,
+    override_receipt_ocr_client: Callable[[ZeroTotalAmountReceiptOcrClient], None],
+) -> None:
+    override_receipt_ocr_client(ZeroTotalAmountReceiptOcrClient())
+
+    response = await client.post(
+        "/api/v1/ocr/receipt",
+        json={"image_uri": "https://storage.example.com/receipts/free-replacement.png"},
+    )
+
+    body = response.json()
+
+    assert response.status_code == 200
+    assert body["data"]["total_amount"] == 0
 
 
 async def test_receipt_ocr_endpoint_uses_request_validation_envelope(
