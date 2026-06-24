@@ -1,7 +1,7 @@
 from functools import lru_cache
 from typing import Final, Literal, Self
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEFAULT_JWT_SECRET_KEY: Final = "local-development-secret-change-me-32bytes"  # noqa: S105
@@ -81,6 +81,22 @@ class Settings(BaseSettings):
 
     initial_free_analysis_tokens: int = 0
     default_profile_image_url: str | None = None
+    file_storage_backend: Literal["local"] = "local"
+    file_storage_root: str = "./storage/files"
+    file_max_upload_bytes: int = Field(default=10_485_760, gt=0)
+    file_allowed_content_types: tuple[str, ...] = (
+        "image/jpeg",
+        "image/png",
+        "image/heic",
+        "image/heif",
+    )
+
+    @field_validator("file_allowed_content_types", mode="before")
+    @classmethod
+    def split_file_allowed_content_types(cls, value: str | tuple[str, ...]) -> tuple[str, ...]:
+        if isinstance(value, str):
+            return tuple(item.strip() for item in value.split(",") if item.strip())
+        return value
 
     @model_validator(mode="after")
     def reject_default_token_secrets_for_secure_envs(self) -> Self:

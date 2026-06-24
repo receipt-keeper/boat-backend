@@ -14,6 +14,7 @@ htmlcov/
 dist/
 build/
 *.egg-info/
+storage/files/
 .omx
 .omc
 .omo
