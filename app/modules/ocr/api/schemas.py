@@ -10,14 +10,14 @@ class ReceiptOcrRequest(AppBaseModel):
         json_schema_extra={
             "examples": [
                 {
-                    "file_id": "01J0Z4E4R6R9N8J8X4QG2R7V9A",
+                    "image_uri": "https://storage.example.com/receipts/receipt-20240526.png",
                 }
             ]
         }
     )
 
-    file_id: str = Field(
-        description="파일 업로드 API로 저장된 영수증 이미지 파일 ID.",
+    image_uri: str = Field(
+        description="OCR 분석 대상 영수증 이미지 URI. http(s), file 경로를 지원한다.",
     )
 
 

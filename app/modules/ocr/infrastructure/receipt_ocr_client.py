@@ -87,7 +87,7 @@ class ReceiptOcrStructuredOutput(BaseModel):
 
 
 class ReceiptOcrClientProtocol(Protocol):
-    async def extract(self, *, file_id: str) -> ExtractedReceiptOcrFields: ...
+    async def extract(self, *, image_uri: str) -> ExtractedReceiptOcrFields: ...
 
 
 class ReceiptOcrClient:
@@ -96,7 +96,7 @@ class ReceiptOcrClient:
     실제 AI OCR 연동 전까지 Swagger와 앱 연동 흐름을 먼저 맞추기 위한 구현이다.
     """
 
-    async def extract(self, *, file_id: str) -> ExtractedReceiptOcrFields:
+    async def extract(self, *, image_uri: str) -> ExtractedReceiptOcrFields:
         structured_output = ReceiptOcrStructuredOutput(
             item_name="테스트 전자제품",
             brand_name="BOAT",
@@ -114,12 +114,10 @@ class OpenRouterReceiptOcrClient:
         self._model = model
         self._allow_local_files = allow_local_files
 
-    async def extract(self, *, file_id: str) -> ExtractedReceiptOcrFields:
+    async def extract(self, *, image_uri: str) -> ExtractedReceiptOcrFields:
         try:
-            # ponytail: storage module is not in this repo yet; replace this pass-through
-            # with file_id -> stored image URL/bytes resolution when the upload API lands.
             image_url = await _load_openrouter_image_url(
-                file_id,
+                image_uri,
                 allow_local_files=self._allow_local_files,
             )
             payload = {

@@ -14,7 +14,7 @@ from app.modules.ocr.infrastructure.receipt_ocr_client import ExtractedReceiptOc
 
 
 class UnreadableReceiptOcrClient:
-    async def extract(self, *, file_id: str) -> ExtractedReceiptOcrFields:
+    async def extract(self, *, image_uri: str) -> ExtractedReceiptOcrFields:
         return ExtractedReceiptOcrFields(
             item_name="",
             brand_name=None,
@@ -26,7 +26,7 @@ class UnreadableReceiptOcrClient:
 
 
 class ProviderUnavailableReceiptOcrClient:
-    async def extract(self, *, file_id: str) -> ExtractedReceiptOcrFields:
+    async def extract(self, *, image_uri: str) -> ExtractedReceiptOcrFields:
         raise ReceiptOcrProviderUnavailableError()
 
 
@@ -62,7 +62,7 @@ async def test_receipt_ocr_endpoint_returns_contract_response(client: AsyncClien
 
     response = await client.post(
         "/api/v1/ocr/receipt",
-        json={"file_id": "sample-receipt-file-id"},
+        json={"image_uri": "https://storage.example.com/receipts/sample.png"},
     )
 
     body = response.json()
@@ -95,7 +95,7 @@ async def test_receipt_ocr_endpoint_uses_request_validation_envelope(
     assert body["status"] == 422
     assert body["data"]["message"] == "요청 값이 올바르지 않습니다."
     assert body["data"]["path"] == "/api/v1/ocr/receipt"
-    assert body["data"]["errors"] == [{"field": "file_id", "message": "Field required"}]
+    assert body["data"]["errors"] == [{"field": "image_uri", "message": "Field required"}]
 
 
 async def test_receipt_ocr_endpoint_returns_unreadable_image_failure(
@@ -106,7 +106,7 @@ async def test_receipt_ocr_endpoint_returns_unreadable_image_failure(
 
     response = await client.post(
         "/api/v1/ocr/receipt",
-        json={"file_id": "unreadable-receipt-file-id"},
+        json={"image_uri": "https://storage.example.com/receipts/unreadable.png"},
     )
 
     body = response.json()
@@ -118,7 +118,7 @@ async def test_receipt_ocr_endpoint_returns_unreadable_image_failure(
     assert body["data"]["path"] == "/api/v1/ocr/receipt"
     assert body["data"]["errors"] == [
         {
-            "field": "file_id",
+            "field": "image_uri",
             "message": "영수증 이미지를 인식하지 못했습니다. 다시 촬영하거나 수동 입력해 주세요.",
         }
     ]
@@ -132,7 +132,7 @@ async def test_receipt_ocr_endpoint_returns_provider_unavailable_failure(
 
     response = await client.post(
         "/api/v1/ocr/receipt",
-        json={"file_id": "sample-receipt-file-id"},
+        json={"image_uri": "https://storage.example.com/receipts/sample.png"},
     )
 
     body = response.json()
@@ -161,5 +161,5 @@ async def test_receipt_ocr_endpoint_openapi_examples(client: AsyncClient) -> Non
     assert operation["summary"] == "영수증 OCR 분석"
     assert success_example["data"]["item_name"] == "삼성 냉장고 875L"
     assert success_example["data"]["needs_review"] is True
-    assert unreadable_example["data"]["errors"][0]["field"] == "file_id"
+    assert unreadable_example["data"]["errors"][0]["field"] == "image_uri"
     assert provider_unavailable_example["status"] == 503

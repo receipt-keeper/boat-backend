@@ -31,7 +31,7 @@ _UNREADABLE_RECEIPT_EXAMPLE = {
         "path": "/api/v1/ocr/receipt",
         "errors": [
             {
-                "field": "file_id",
+                "field": "image_uri",
                 "message": _UNREADABLE_RECEIPT_MESSAGE,
             }
         ],
@@ -90,7 +90,7 @@ async def extract_receipt_ocr(
     request: ReceiptOcrRequest,
     service: ReceiptOcrServiceDep,
 ) -> CommonResponse[ReceiptOcrResultResponse]:
-    result = await service.extract_receipt(file_id=request.file_id)
+    result = await service.extract_receipt(image_uri=request.image_uri)
 
     return CommonResponse(
         success=True,
