@@ -12,8 +12,6 @@ from typing import Protocol
 from urllib.parse import unquote, urlparse
 
 import httpx
-from google import genai
-from google.genai import errors, types
 from pydantic import BaseModel, Field
 from pydantic import ValidationError as PydanticValidationError
 
@@ -98,41 +96,6 @@ class ReceiptOcrClient:
         return structured_output.to_extracted_fields()
 
 
-class GeminiReceiptOcrClient:
-    def __init__(self, *, api_key: str, model: str, allow_local_files: bool = False) -> None:
-        self._client = genai.Client(api_key=api_key)
-        self._model = model
-        self._allow_local_files = allow_local_files
-
-    async def extract(self, *, image_uri: str) -> ExtractedReceiptOcrFields:
-        try:
-            image_part = await _load_image_part(
-                image_uri,
-                allow_local_files=self._allow_local_files,
-            )
-            config = types.GenerateContentConfig(
-                response_mime_type="application/json",
-                response_schema=ReceiptOcrStructuredOutput,
-            )
-            response = await self._client.aio.models.generate_content(
-                model=self._model,
-                contents=[image_part, _RECEIPT_OCR_PROMPT],
-                config=config,
-            )
-            structured_output = ReceiptOcrStructuredOutput.model_validate_json(
-                response.text or "{}"
-            )
-            return structured_output.to_extracted_fields()
-        except (
-            ValueError,
-            OSError,
-            errors.APIError,
-            httpx.HTTPError,
-            PydanticValidationError,
-        ) as exception:
-            raise ReceiptOcrProviderUnavailableError() from exception
-
-
 class OpenRouterReceiptOcrClient:
     def __init__(self, *, api_key: str, model: str, allow_local_files: bool = False) -> None:
         self._api_key = api_key
@@ -191,24 +154,6 @@ class OpenRouterReceiptOcrClient:
             raise ReceiptOcrProviderUnavailableError() from exception
 
 
-async def _load_image_part(image_uri: str, *, allow_local_files: bool) -> types.Part:
-    parsed = urlparse(image_uri)
-    if parsed.scheme in {"http", "https"}:
-        return await _load_remote_image_part(image_uri)
-
-    image_path = _resolve_local_image_path(
-        image_uri,
-        parsed.scheme,
-        allow_local_files=allow_local_files,
-    )
-    _validate_local_image_size(image_path)
-    image_bytes = await asyncio.to_thread(image_path.read_bytes)
-    return types.Part.from_bytes(
-        data=image_bytes,
-        mime_type=_guess_mime_type(image_path.as_posix()),
-    )
-
-
 async def _load_openrouter_image_url(image_uri: str, *, allow_local_files: bool) -> str:
     parsed = urlparse(image_uri)
     if parsed.scheme in {"http", "https"}:
@@ -225,32 +170,6 @@ async def _load_openrouter_image_url(image_uri: str, *, allow_local_files: bool)
     mime_type = _guess_mime_type(image_path.as_posix())
     encoded_image = base64.b64encode(image_bytes).decode("ascii")
     return f"data:{mime_type};base64,{encoded_image}"
-
-
-async def _load_remote_image_part(image_uri: str) -> types.Part:
-    await _validate_remote_image_url(image_uri)
-    async with (
-        httpx.AsyncClient(
-            timeout=_HTTP_TIMEOUT_SECONDS,
-        ) as client,
-        client.stream("GET", image_uri, follow_redirects=True) as response,
-    ):
-        response.raise_for_status()
-        _validate_remote_image_size_header(response.headers.get("content-length"))
-        chunks: list[bytes] = []
-        total_bytes = 0
-        async for chunk in response.aiter_bytes():
-            total_bytes += len(chunk)
-            if total_bytes > _MAX_IMAGE_BYTES:
-                raise ValueError("image file is too large")
-            chunks.append(chunk)
-        image_bytes = b"".join(chunks)
-
-    content_type = response.headers.get("content-type", "").split(";")[0].strip()
-    return types.Part.from_bytes(
-        data=image_bytes,
-        mime_type=content_type or _guess_mime_type(image_uri),
-    )
 
 
 def _resolve_local_image_path(image_uri: str, scheme: str, *, allow_local_files: bool) -> Path:
@@ -320,17 +239,6 @@ def _validate_public_ip_address(ip_address: ipaddress.IPv4Address | ipaddress.IP
         or ip_address.is_unspecified
     ):
         raise ValueError("remote image host resolves to a blocked address")
-
-
-def _validate_remote_image_size_header(content_length: str | None) -> None:
-    if content_length is None:
-        return
-    try:
-        size = int(content_length)
-    except ValueError:
-        return
-    if size > _MAX_IMAGE_BYTES:
-        raise ValueError("image file is too large")
 
 
 def _is_windows_drive_scheme(scheme: str, image_uri: str) -> bool:

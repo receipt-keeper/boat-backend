@@ -6,7 +6,6 @@ from app.core.config.settings import Settings, get_settings
 from app.modules.ocr.application.service import ReceiptOcrService
 from app.modules.ocr.domain.exceptions import ReceiptOcrProviderUnavailableError
 from app.modules.ocr.infrastructure.receipt_ocr_client import (
-    GeminiReceiptOcrClient,
     OpenRouterReceiptOcrClient,
     ReceiptOcrClient,
     ReceiptOcrClientProtocol,
@@ -21,13 +20,6 @@ async def get_receipt_ocr_client(
         return OpenRouterReceiptOcrClient(
             api_key=settings.openrouter_api_key,
             model=settings.openrouter_model,
-            allow_local_files=allow_local_files,
-        )
-
-    if settings.gemini_api_key:
-        return GeminiReceiptOcrClient(
-            api_key=settings.gemini_api_key,
-            model=settings.gemini_model,
             allow_local_files=allow_local_files,
         )
 

@@ -28,14 +28,6 @@ class Settings(BaseSettings):
         default="postgresql+asyncpg://boat:boat@localhost:5432/boat",
         description="Async SQLAlchemy database URL.",
     )
-    gemini_api_key: str | None = Field(
-        default=None,
-        description="Google AI Studio Gemini API key.",
-    )
-    gemini_model: str = Field(
-        default="gemini-3.1-flash-lite",
-        description="Gemini model for receipt OCR structured extraction.",
-    )
     openrouter_api_key: str | None = Field(
         default=None,
         description="OpenRouter API key.",
