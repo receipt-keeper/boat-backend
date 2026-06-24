@@ -3,6 +3,7 @@ from uuid import UUID
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.domain.exceptions import NotFoundError
 from app.modules.users.application.ports.user_repository import (
     CreateUserAccountState,
     UserAccountState,
@@ -62,6 +63,23 @@ class SqlAlchemyUserRepository(UserRepository):
         record.marketing_consent_updated_at = settings.marketing_consent_updated_at
         await self._session.flush()
         return mapper.settings_to_domain(record)
+
+    async def update_profile_image_file(
+        self,
+        *,
+        user_id: UUID,
+        file_id: UUID | None,
+    ) -> User:
+        record = await self._session.get(orm.User, user_id)
+        if record is None:
+            raise NotFoundError("사용자를 찾을 수 없습니다.")
+        record.profile_image_file_id = file_id
+        await self._session.flush()
+        return mapper.user_to_domain(record)
+
+    async def has_profile_image_file_reference(self, *, file_id: UUID) -> bool:
+        statement = select(orm.User.id).where(orm.User.profile_image_file_id == file_id)
+        return await self._session.scalar(statement) is not None
 
     async def upsert_push_token(self, *, push_token: UserPushToken) -> UserPushToken:
         statement = select(orm.UserPushToken).where(

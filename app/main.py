@@ -8,6 +8,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.core.config.settings import Settings
 from app.core.db.session import build_engine, build_session_factory
 from app.core.domain.exceptions import (
+    ConflictError,
     DomainError,
     ExternalServiceError,
     NotFoundError,
@@ -29,6 +30,7 @@ def _register_exception_handlers(app: FastAPI) -> None:
     # 예외 클래스 → 핸들러 등록이 곧 의미 카테고리 → HTTP 상태 매핑이다 (subclass 핸들러 우선)
     app.add_exception_handler(ValidationError, exception_handlers.handle_domain_validation_error)
     app.add_exception_handler(NotFoundError, exception_handlers.handle_not_found_error)
+    app.add_exception_handler(ConflictError, exception_handlers.handle_conflict_error)
     app.add_exception_handler(
         ExternalServiceError,
         exception_handlers.handle_external_service_error,

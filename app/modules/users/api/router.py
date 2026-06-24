@@ -8,13 +8,20 @@ from app.modules.auth.application.commands.withdraw.command import WithdrawAccou
 from app.modules.auth.dependencies import WithdrawAccountCommandUseCaseDep
 from app.modules.users.api.schemas import (
     CurrentUserResponse,
+    ProfileImageResponse,
+    SetProfileImageRequest,
     UpdateCurrentUserRequest,
     UpdateCurrentUserResponse,
+)
+from app.modules.users.application.commands.update_profile_image.command import (
+    ClearProfileImageCommand,
+    SetProfileImageCommand,
 )
 from app.modules.users.application.commands.update_settings.command import UpdateSettingsCommand
 from app.modules.users.application.queries.current_user_profile.query import CurrentUserProfileQuery
 from app.modules.users.dependencies import (
     CurrentUserProfileQueryUseCaseDep,
+    UpdateProfileImageCommandUseCaseDep,
     UpdateSettingsCommandUseCaseDep,
 )
 
@@ -98,6 +105,37 @@ async def update_me(
             marketingConsent=settings.marketing_consent,
         ),
     )
+
+
+@router.put(
+    "/me/profile-image",
+    response_model=CommonResponse[ProfileImageResponse],
+)
+async def set_profile_image(
+    request: SetProfileImageRequest,
+    principal: CurrentPrincipalDep,
+    command_use_case: UpdateProfileImageCommandUseCaseDep,
+) -> CommonResponse[ProfileImageResponse]:
+    result = await command_use_case.set_profile_image(
+        SetProfileImageCommand(user_id=principal.user_id, file_id=request.file_id)
+    )
+    return CommonResponse(
+        success=True,
+        status=status.HTTP_200_OK,
+        data=ProfileImageResponse(profileImageUrl=result.profile_image_url),
+    )
+
+
+@router.delete(
+    "/me/profile-image",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def clear_profile_image(
+    principal: CurrentPrincipalDep,
+    command_use_case: UpdateProfileImageCommandUseCaseDep,
+) -> Response:
+    await command_use_case.clear_profile_image(ClearProfileImageCommand(user_id=principal.user_id))
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.delete(

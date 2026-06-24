@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from app.core.domain.exceptions import NotFoundError
 from app.modules.users.application.ports.user_repository import UserAccountState, UserRepository
 from app.modules.users.application.queries.current_user_profile.query import CurrentUserProfileQuery
@@ -23,9 +25,18 @@ def _profile_result(state: UserAccountState) -> CurrentUserProfileResult:
         email=None if state.user.email is None else state.user.email.value,
         name=state.user.name,
         nickname=state.user.nickname,
-        profile_image_url=state.user.profile_image_url,
+        profile_image_url=_profile_image_url(
+            state.user.profile_image_file_id,
+        )
+        or state.user.profile_image_url,
         notification_enabled=state.settings.notification_enabled,
         marketing_consent=state.settings.marketing_consent,
         free_analysis_tokens_remaining=state.entitlement.free_analysis_tokens_remaining.value,
         push_token_count=len(state.push_tokens),
     )
+
+
+def _profile_image_url(file_id: UUID | None) -> str | None:
+    if file_id is None:
+        return None
+    return f"/api/v1/files/{file_id}/content"

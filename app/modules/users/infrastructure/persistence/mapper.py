@@ -20,6 +20,7 @@ def user_to_domain(record: orm.User) -> DomainUser:
         email=record.email,
         nickname=record.nickname,
         profile_image_url=record.profile_image_url,
+        profile_image_file_id=record.profile_image_file_id,
     )
 
 
@@ -30,6 +31,7 @@ def user_to_record(user: DomainUser) -> orm.User:
         nickname=user.nickname,
         email=None if user.email is None else user.email.value,
         profile_image_url=user.profile_image_url,
+        profile_image_file_id=user.profile_image_file_id,
     )
 
 

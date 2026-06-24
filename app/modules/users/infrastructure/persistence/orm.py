@@ -29,6 +29,10 @@ class User(Base):
     nickname: Mapped[str | None] = mapped_column(type_=String(255), nullable=True)
     email: Mapped[str | None] = mapped_column(type_=String(255), nullable=True)
     profile_image_url: Mapped[str | None] = mapped_column(type_=String(2048), nullable=True)
+    profile_image_file_id: Mapped[UUID | None] = mapped_column(
+        type_=PostgreSQLUUID(as_uuid=True),
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         type_=DateTime(timezone=True),
         nullable=False,
