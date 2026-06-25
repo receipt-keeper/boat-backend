@@ -52,16 +52,16 @@ router = APIRouter(
 @router.get(
     "/me",
     response_model=CommonResponse[CurrentUserResponse],
+    summary="내 정보 조회",
+    description=(
+        "현재 로그인한 사용자의 프로필, 알림 설정, 마케팅 동의, 남은 무료 분석 토큰 수를 조회한다."
+    ),
 )
 async def get_me(
     request: Request,
     principal: CurrentPrincipalDep,
     query_use_case: CurrentUserProfileQueryUseCaseDep,
 ) -> CommonResponse[CurrentUserResponse]:
-    """현재 로그인 사용자의 내 정보를 조회한다.
-
-    이메일, 이름/닉네임, 프로필 이미지 URL, 마케팅 동의, 무료 분석 토큰 잔량을 반환한다.
-    """
     profile = await query_use_case.execute(CurrentUserProfileQuery(user_id=principal.user_id))
     return CommonResponse(
         success=True,
@@ -81,16 +81,16 @@ async def get_me(
 @router.patch(
     "/me",
     response_model=CommonResponse[UpdateCurrentUserResponse],
+    summary="내 설정 수정",
+    description=(
+        "알림 수신 여부와 마케팅 수신 동의를 수정한다. 보내지 않은 필드는 기존 값을 유지한다."
+    ),
 )
 async def update_me(
     request: UpdateCurrentUserRequest,
     principal: CurrentPrincipalDep,
     command_use_case: UpdateSettingsCommandUseCaseDep,
 ) -> CommonResponse[UpdateCurrentUserResponse]:
-    """현재 로그인 사용자의 내 정보를 부분 수정한다.
-
-    전달된 필드만 수정하며(None이면 기존 값 유지), 변경 결과를 즉시 DB에 반영한다.
-    """
     settings = await command_use_case.execute(
         UpdateSettingsCommand(
             user_id=principal.user_id,
@@ -111,6 +111,8 @@ async def update_me(
 @router.put(
     "/me/profile-image",
     response_model=CommonResponse[ProfileImageResponse],
+    summary="프로필 이미지 설정",
+    description="업로드 파일을 프로필 이미지로 설정하고 프로필 이미지 경로를 반환한다.",
 )
 async def set_profile_image(
     request: Request,
@@ -133,6 +135,8 @@ async def set_profile_image(
 @router.delete(
     "/me/profile-image",
     status_code=status.HTTP_204_NO_CONTENT,
+    summary="프로필 이미지 삭제",
+    description="현재 프로필 이미지를 제거한다. 성공하면 본문 없이 204를 반환한다.",
 )
 async def clear_profile_image(
     principal: CurrentPrincipalDep,
@@ -145,16 +149,16 @@ async def clear_profile_image(
 @router.delete(
     "/me",
     status_code=status.HTTP_204_NO_CONTENT,
+    summary="회원 탈퇴",
+    description=(
+        "현재 계정을 탈퇴 처리하고 로그인 정보, 사용자 설정, 푸시 토큰 등 계정 데이터를 삭제한다. "
+        "성공하면 본문 없이 204를 반환한다."
+    ),
 )
 async def withdraw_me(
     principal: CurrentPrincipalDep,
     command_use_case: WithdrawAccountCommandUseCaseDep,
 ) -> Response:
-    """회원 탈퇴.
-
-    인증 측(credential/session/refresh/external identity)과 users 측(설정/엔타이틀먼트/
-    푸시 토큰/user row)을 한 트랜잭션에서 삭제한다. 성공 시 204, 실패 시 전체 롤백한다.
-    """
     await command_use_case.execute(
         WithdrawAccountCommand(
             user_id=principal.user_id,

@@ -27,6 +27,8 @@ router = APIRouter(
             "description": "예시 사용자를 찾을 수 없음",
         },
     },
+    summary="예시 사용자 조회",
+    description="예시 사용자 ID로 닉네임과 이메일을 조회한다.",
 )
 async def get_example_user(
     example_user_id: UUID,
@@ -48,6 +50,8 @@ async def get_example_user(
     "",
     status_code=status.HTTP_201_CREATED,
     response_model=CommonResponse[ExampleUserResponse],
+    summary="예시 사용자 생성",
+    description="닉네임, 이메일, 비밀번호로 예시 사용자를 생성한다.",
 )
 async def create_example_user(
     request: CreateExampleUserRequest,

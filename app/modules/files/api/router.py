@@ -46,13 +46,43 @@ router = APIRouter(
     "",
     response_model=CommonResponse[UploadedFileResponse],
     status_code=status.HTTP_201_CREATED,
+    summary="파일 업로드",
+    description=(
+        "이미지 파일을 업로드하고 파일 ID, 파일명, 파일 형식, 크기, 다운로드 경로를 반환한다."
+    ),
+    openapi_extra={
+        "requestBody": {
+            "content": {
+                "multipart/form-data": {
+                    "examples": {
+                        "profile_image": {
+                            "summary": "프로필 이미지 업로드",
+                            "value": {
+                                "file": "profile.png",
+                                "purpose": "profile_image",
+                            },
+                        }
+                    }
+                }
+            }
+        }
+    },
 )
 async def upload_file(
     request: Request,
     principal: CurrentPrincipalDep,
     command_use_case: UploadFileCommandUseCaseDep,
-    file: Annotated[UploadFile, File()],
-    purpose: Annotated[str, Form()] = "profile_image",
+    file: Annotated[
+        UploadFile,
+        File(description="업로드할 이미지 파일.", examples=["profile.png"]),
+    ],
+    purpose: Annotated[
+        str,
+        Form(
+            description="파일 사용 목적. 프로필 이미지는 profile_image를 사용한다.",
+            examples=["profile_image"],
+        ),
+    ] = "profile_image",
 ) -> CommonResponse[UploadedFileResponse]:
     settings = request.app.state.settings
     content = await file.read(settings.file_max_upload_bytes + 1)
@@ -88,6 +118,8 @@ async def upload_file(
 @router.get(
     "/{file_id}",
     response_model=CommonResponse[FileMetadataResponse],
+    summary="파일 정보 조회",
+    description="파일 ID에 해당하는 업로드 파일의 이름, 용도, 상태, 다운로드 경로를 조회한다.",
 )
 async def get_file(
     request: Request,
@@ -111,7 +143,11 @@ async def get_file(
     )
 
 
-@router.get("/{file_id}/content")
+@router.get(
+    "/{file_id}/content",
+    summary="파일 다운로드",
+    description="파일 ID에 해당하는 업로드 파일을 다운로드한다.",
+)
 async def get_file_content(
     file_id: UUID,
     principal: CurrentPrincipalDep,
@@ -136,6 +172,11 @@ async def get_file_content(
             "description": "프로필 이미지로 사용 중인 파일은 삭제할 수 없음",
         },
     },
+    summary="파일 삭제",
+    description=(
+        "파일 ID에 해당하는 업로드 파일을 삭제한다. 현재 프로필 이미지로 설정된 파일은 "
+        "먼저 프로필 이미지에서 해제해야 한다."
+    ),
 )
 async def delete_file(
     file_id: UUID,
