@@ -9,7 +9,7 @@ from app.core.config.settings import Settings
 from app.core.domain.exceptions import ValidationError
 from app.modules.ocr.dependencies import get_receipt_ocr_client
 from app.modules.ocr.domain.exceptions import ReceiptOcrProviderUnavailableError
-from app.modules.ocr.domain.value_objects import ItemName
+from app.modules.ocr.domain.value_objects import BrandName, ItemName, PaymentLocation, TotalAmount
 from app.modules.ocr.infrastructure.receipt_ocr_client import ExtractedReceiptOcrFields
 
 
@@ -22,6 +22,7 @@ class UnreadableReceiptOcrClient:
             payment_date=None,
             total_amount=None,
             period_months=None,
+            category=None,
         )
 
 
@@ -30,13 +31,39 @@ class ProviderUnavailableReceiptOcrClient:
         raise ReceiptOcrProviderUnavailableError()
 
 
+class ZeroTotalAmountReceiptOcrClient:
+    async def extract(self, *, image_uri: str) -> ExtractedReceiptOcrFields:
+        return ExtractedReceiptOcrFields(
+            item_name="무상 교체",
+            brand_name=None,
+            payment_location=None,
+            payment_date=date.today(),
+            total_amount=0,
+            period_months=12,
+            category=None,
+        )
+
+
 def test_item_name_rejects_whitespace_only_value() -> None:
     with pytest.raises(ValidationError):
         ItemName("   ")
 
 
+@pytest.mark.parametrize(
+    ("value_object", "value"),
+    [
+        (BrandName, "   "),
+        (PaymentLocation, "   "),
+        (TotalAmount, -1),
+    ],
+)
+def test_receipt_ocr_value_objects_reject_invalid_values(value_object: type, value: object) -> None:
+    with pytest.raises(ValidationError):
+        value_object(value)
+
+
 async def test_receipt_ocr_dependency_rejects_missing_provider_in_non_local_env() -> None:
-    settings = Settings(app_env="dev", openrouter_api_key=None, gemini_api_key=None)
+    settings = Settings(app_env="dev", openrouter_api_key=None)
 
     with pytest.raises(ReceiptOcrProviderUnavailableError):
         await get_receipt_ocr_client(settings)
@@ -49,7 +76,7 @@ async def test_receipt_ocr_endpoint_returns_contract_response(client: AsyncClien
 
     response = await client.post(
         "/api/v1/ocr/receipt",
-        json={"image_uri": "local://sample-receipt.jpg"},
+        json={"image_uri": "https://storage.example.com/receipts/sample.png"},
     )
 
     body = response.json()
@@ -65,9 +92,27 @@ async def test_receipt_ocr_endpoint_returns_contract_response(client: AsyncClien
         "total_amount": 129000,
         "period_months": 12,
         "expires_on": expected_expires_on.isoformat(),
+        "category": "가전",
         "needs_review": True,
         "warnings": ["무상 AS 기간을 찾지 못해 12개월 기본값을 적용했습니다."],
     }
+
+
+async def test_receipt_ocr_endpoint_keeps_zero_total_amount(
+    client: AsyncClient,
+    override_receipt_ocr_client: Callable[[ZeroTotalAmountReceiptOcrClient], None],
+) -> None:
+    override_receipt_ocr_client(ZeroTotalAmountReceiptOcrClient())
+
+    response = await client.post(
+        "/api/v1/ocr/receipt",
+        json={"image_uri": "https://storage.example.com/receipts/free-replacement.png"},
+    )
+
+    body = response.json()
+
+    assert response.status_code == 200
+    assert body["data"]["total_amount"] == 0
 
 
 async def test_receipt_ocr_endpoint_uses_request_validation_envelope(
@@ -93,7 +138,7 @@ async def test_receipt_ocr_endpoint_returns_unreadable_image_failure(
 
     response = await client.post(
         "/api/v1/ocr/receipt",
-        json={"image_uri": "local://unreadable-receipt.jpg"},
+        json={"image_uri": "https://storage.example.com/receipts/unreadable.png"},
     )
 
     body = response.json()
@@ -119,7 +164,7 @@ async def test_receipt_ocr_endpoint_returns_provider_unavailable_failure(
 
     response = await client.post(
         "/api/v1/ocr/receipt",
-        json={"image_uri": "local://sample-receipt.jpg"},
+        json={"image_uri": "https://storage.example.com/receipts/sample.png"},
     )
 
     body = response.json()
@@ -147,6 +192,7 @@ async def test_receipt_ocr_endpoint_openapi_examples(client: AsyncClient) -> Non
 
     assert operation["summary"] == "영수증 OCR 분석"
     assert success_example["data"]["item_name"] == "삼성 냉장고 875L"
+    assert success_example["data"]["category"] == "가전"
     assert success_example["data"]["needs_review"] is True
     assert unreadable_example["data"]["errors"][0]["field"] == "image_uri"
     assert provider_unavailable_example["status"] == 503

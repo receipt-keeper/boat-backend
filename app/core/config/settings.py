@@ -1,8 +1,8 @@
 from functools import lru_cache
-from typing import Final, Literal, Self
+from typing import Annotated, Final, Literal, Self
 
 from pydantic import Field, field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 DEFAULT_JWT_SECRET_KEY: Final = "local-development-secret-change-me-32bytes"  # noqa: S105
 DEFAULT_REFRESH_TOKEN_PEPPER: Final = "local-refresh-token-pepper-change-me"  # noqa: S105
@@ -27,14 +27,6 @@ class Settings(BaseSettings):
     database_url: str = Field(
         default="postgresql+asyncpg://boat:boat@localhost:5432/boat",
         description="Async SQLAlchemy database URL.",
-    )
-    gemini_api_key: str | None = Field(
-        default=None,
-        description="Google AI Studio Gemini API key.",
-    )
-    gemini_model: str = Field(
-        default="gemini-3.1-flash-lite",
-        description="Gemini model for receipt OCR structured extraction.",
     )
     openrouter_api_key: str | None = Field(
         default=None,
@@ -84,7 +76,7 @@ class Settings(BaseSettings):
     file_storage_backend: Literal["local"] = "local"
     file_storage_root: str = "./storage/files"
     file_max_upload_bytes: int = Field(default=10_485_760, gt=0)
-    file_allowed_content_types: tuple[str, ...] = (
+    file_allowed_content_types: Annotated[tuple[str, ...], NoDecode] = (
         "image/jpeg",
         "image/png",
         "image/heic",

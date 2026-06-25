@@ -34,25 +34,26 @@ class UpdateProfileImageCommandUseCase:
             user_id=command.user_id,
             file_id=command.file_id,
         )
-        await self._user_repository.update_profile_image_file(
+        profile_image_url = _profile_image_path(file_id=command.file_id)
+        await self._user_repository.update_profile_image_url(
             user_id=command.user_id,
-            file_id=command.file_id,
+            profile_image_url=profile_image_url,
         )
         await self._unit_of_work.commit()
         return UpdateProfileImageResult(
-            profile_image_url=_profile_image_path(file_id=command.file_id),
+            profile_image_url=profile_image_url,
         )
 
     async def clear_profile_image(
         self,
         command: ClearProfileImageCommand,
     ) -> None:
-        await self._user_repository.update_profile_image_file(
+        await self._user_repository.update_profile_image_url(
             user_id=command.user_id,
-            file_id=None,
+            profile_image_url=None,
         )
         await self._unit_of_work.commit()
 
 
 def _profile_image_path(*, file_id: UUID) -> str:
-    return f"/api/v1/files/{file_id}/content"
+    return f"/files/{file_id}/content"

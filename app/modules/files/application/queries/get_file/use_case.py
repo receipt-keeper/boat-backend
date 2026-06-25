@@ -22,5 +22,5 @@ class GetFileQueryUseCase:
             status=stored_file.file.status.value,
             content_type=stored_file.file_object.content_type.value,
             size=stored_file.file_object.size.value,
-            content_path=f"/api/v1/files/{stored_file.file.id}/content",
+            content_path=f"/files/{stored_file.file.id}/content",
         )

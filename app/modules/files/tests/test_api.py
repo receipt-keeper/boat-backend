@@ -119,6 +119,37 @@ async def test_upload_download_and_delete_file_through_api(
     assert stored_file is None
 
 
+async def test_file_response_paths_follow_configured_api_prefix(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+    tmp_path: Path,
+) -> None:
+    storage_root = tmp_path / "files"
+    settings = make_test_settings(storage_root, api_prefix="/backend")
+    async with postgres_session_factory() as session, session.begin():
+        seeded = await seed_user(
+            session,
+            subject="files-prefix-owner",
+            email="files-prefix-owner@example.com",
+            name="파일 prefix 사용자",
+            settings=settings,
+        )
+
+    async with api_client(postgres_session_factory, settings) as client:
+        upload_response = await client.post(
+            "/backend/files",
+            headers=auth_headers(seeded),
+            files={"file": ("profile.png", IMAGE_BYTES, "image/png")},
+        )
+        file_id = upload_response.json()["data"]["fileId"]
+        metadata_response = await client.get(
+            f"/backend/files/{file_id}",
+            headers=auth_headers(seeded),
+        )
+
+    assert upload_response.json()["data"]["contentPath"] == f"/backend/files/{file_id}/content"
+    assert metadata_response.json()["data"]["contentPath"] == f"/backend/files/{file_id}/content"
+
+
 async def test_upload_rejects_unsupported_content_type(
     postgres_session_factory: async_sessionmaker[AsyncSession],
     tmp_path: Path,

@@ -22,7 +22,10 @@ from app.modules.auth.api.security import authenticate_current_principal
 from app.modules.auth.domain.exceptions import AuthenticationError, AuthorizationError
 from app.modules.examples.api.router import router as examples_router
 from app.modules.files.api.router import router as files_router
+from app.modules.ocr.api import exception_handlers as ocr_exception_handlers
 from app.modules.ocr.api.router import router as ocr_router
+from app.modules.ocr.domain.exceptions import ReceiptOcrProviderUnavailableError
+from app.modules.receipts.api.router import router as receipts_router
 from app.modules.users.api.router import router as users_router
 
 
@@ -42,6 +45,10 @@ def _register_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(
         AuthorizationError,
         auth_exception_handlers.handle_authorization_error,
+    )
+    app.add_exception_handler(
+        ReceiptOcrProviderUnavailableError,
+        ocr_exception_handlers.handle_receipt_ocr_provider_unavailable_error,
     )
     app.add_exception_handler(DomainError, exception_handlers.handle_domain_error)
     app.add_exception_handler(
@@ -89,6 +96,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.include_router(examples_router, prefix=resolved_settings.api_prefix)
     app.include_router(ocr_router, prefix=resolved_settings.api_prefix)
+    app.include_router(
+        receipts_router,
+        prefix=resolved_settings.api_prefix,
+        dependencies=[Depends(authenticate_current_principal)],
+    )
     app.include_router(observability_router)
     _register_exception_handlers(app)
 

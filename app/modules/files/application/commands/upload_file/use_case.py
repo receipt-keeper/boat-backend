@@ -45,6 +45,7 @@ class UploadFileCommandUseCase:
             )
             file_object = FileObject.create(
                 file_id=file.id,
+                storage_backend=stored_object.storage_backend,
                 storage_key=stored_object.storage_key,
                 content_type=command.content_type,
                 size=stored_object.size,
@@ -57,7 +58,7 @@ class UploadFileCommandUseCase:
             original_name=stored_file.file.original_name.value,
             content_type=stored_file.file_object.content_type.value,
             size=stored_file.file_object.size.value,
-            content_path=f"/api/v1/files/{stored_file.file.id}/content",
+            content_path=f"/files/{stored_file.file.id}/content",
         )
 
 

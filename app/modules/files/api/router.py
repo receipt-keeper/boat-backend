@@ -54,12 +54,13 @@ async def upload_file(
     file: Annotated[UploadFile, File()],
     purpose: Annotated[str, Form()] = "profile_image",
 ) -> CommonResponse[UploadedFileResponse]:
-    content = await file.read()
+    settings = request.app.state.settings
+    content = await file.read(settings.file_max_upload_bytes + 1)
     _validate_upload(
         content_type=file.content_type,
         size=len(content),
-        allowed_content_types=tuple(request.app.state.settings.file_allowed_content_types),
-        max_upload_bytes=request.app.state.settings.file_max_upload_bytes,
+        allowed_content_types=tuple(settings.file_allowed_content_types),
+        max_upload_bytes=settings.file_max_upload_bytes,
     )
     result = await command_use_case.execute(
         UploadFileCommand(
@@ -79,7 +80,7 @@ async def upload_file(
             originalName=result.original_name,
             contentType=result.content_type,
             size=result.size,
-            contentPath=result.content_path,
+            contentPath=_with_api_prefix(request, result.content_path),
         ),
     )
 
@@ -89,6 +90,7 @@ async def upload_file(
     response_model=CommonResponse[FileMetadataResponse],
 )
 async def get_file(
+    request: Request,
     file_id: UUID,
     principal: CurrentPrincipalDep,
     query_use_case: GetFileQueryUseCaseDep,
@@ -104,7 +106,7 @@ async def get_file(
             status=result.status,
             contentType=result.content_type,
             size=result.size,
-            contentPath=result.content_path,
+            contentPath=_with_api_prefix(request, result.content_path),
         ),
     )
 
@@ -128,6 +130,12 @@ async def get_file_content(
 @router.delete(
     "/{file_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    responses={
+        status.HTTP_409_CONFLICT: {
+            "model": CommonResponse[ApiErrorData],
+            "description": "프로필 이미지로 사용 중인 파일은 삭제할 수 없음",
+        },
+    },
 )
 async def delete_file(
     file_id: UUID,
@@ -167,3 +175,8 @@ def _format_bytes(size: int) -> str:
     if size % 1024 == 0:
         return f"{size // 1024}KB"
     return f"{size}B"
+
+
+def _with_api_prefix(request: Request, path: str) -> str:
+    api_prefix = request.app.state.settings.api_prefix.rstrip("/")
+    return f"{api_prefix}{path}"

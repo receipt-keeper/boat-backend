@@ -1,8 +1,8 @@
 """create files tables
 
-Revision ID: 20260624_0004
-Revises: 20260622_0003
-Create Date: 2026-06-24 00:00:00.000000
+Revision ID: 20260625_0006
+Revises: 20260625_0005
+Create Date: 2026-06-25 00:05:00.000000
 """
 
 from collections.abc import Sequence
@@ -12,8 +12,8 @@ from sqlalchemy.dialects import postgresql
 
 from alembic import op
 
-revision: str = "20260624_0004"
-down_revision: str | Sequence[str] | None = "20260622_0003"
+revision: str = "20260625_0006"
+down_revision: str | Sequence[str] | None = "20260625_0005"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

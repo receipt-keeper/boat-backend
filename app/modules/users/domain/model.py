@@ -17,7 +17,6 @@ class User(Entity[UUID]):
     email: Email | None
     nickname: str | None = None
     profile_image_url: str | None = None
-    profile_image_file_id: UUID | None = None
 
     @classmethod
     def create(
@@ -28,7 +27,6 @@ class User(Entity[UUID]):
         user_id: UUID | None = None,
         nickname: str | None = None,
         profile_image_url: str | None = None,
-        profile_image_file_id: UUID | None = None,
     ) -> "User":
         notification = Notification()
         new_email = None if email is None else notification.collect(lambda: Email(email))
@@ -40,7 +38,6 @@ class User(Entity[UUID]):
             email=new_email,
             nickname=nickname,
             profile_image_url=profile_image_url,
-            profile_image_file_id=profile_image_file_id,
         )
 
 

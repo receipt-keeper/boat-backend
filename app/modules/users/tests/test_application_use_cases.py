@@ -193,15 +193,15 @@ async def test_current_user_profile_prefers_file_content_path_over_legacy_url(
         )
         account_state = await repository.find_account_state(user_id=user.user_id)
         assert account_state is not None
-        await repository.update_profile_image_file(
+        await repository.update_profile_image_url(
             user_id=user.user_id,
-            file_id=profile_file_id,
+            profile_image_url=f"/files/{profile_file_id}/content",
         )
         profile = await CurrentUserProfileQueryUseCase(user_repository=repository).execute(
             CurrentUserProfileQuery(user_id=user.user_id)
         )
 
-    assert profile.profile_image_url == f"/api/v1/files/{profile_file_id}/content"
+    assert profile.profile_image_url == f"/files/{profile_file_id}/content"
 
 
 async def test_current_user_profile_keeps_legacy_profile_image_url_without_file(

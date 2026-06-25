@@ -21,6 +21,7 @@ EXPECTED_FILES = {
     "application/queries/open_file_content/result.py",
     "application/queries/open_file_content/use_case.py",
     "application/ports/file_repository.py",
+    "application/ports/file_reference_guard.py",
     "application/ports/object_storage.py",
     "domain/model.py",
     "domain/value_objects.py",

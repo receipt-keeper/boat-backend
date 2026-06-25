@@ -1,4 +1,5 @@
 import importlib
+from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest
@@ -20,6 +21,7 @@ from app.modules.files.application.commands.upload_file.command import UploadFil
 from app.modules.files.application.commands.upload_file.use_case import UploadFileCommandUseCase
 from app.modules.files.application.ports.file_repository import FileRepository
 from app.modules.files.domain.model import File, FileObject, StoredFile
+from app.modules.files.infrastructure.storage.local import LocalObjectStorage
 
 
 def test_files_schema_tables_columns_constraints_and_indexes_are_declared() -> None:
@@ -108,6 +110,27 @@ def test_file_storage_settings_are_declared_with_local_defaults() -> None:
         "image/heic",
         "image/heif",
     )
+
+
+def test_file_allowed_content_types_accept_comma_separated_env_value(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("FILE_ALLOWED_CONTENT_TYPES", "image/png,image/jpeg")
+    settings = Settings()
+
+    assert settings.file_allowed_content_types == ("image/png", "image/jpeg")
+
+
+async def test_local_storage_rejects_root_escape_through_symlink(tmp_path: Path) -> None:
+    storage_root = tmp_path / "storage"
+    outside = tmp_path / "outside"
+    storage_root.mkdir()
+    outside.mkdir()
+    (storage_root / "link").symlink_to(outside, target_is_directory=True)
+    storage = LocalObjectStorage(root=str(storage_root))
+
+    with pytest.raises(ValidationError):
+        await storage.put(key="link/profile.png", content=b"blocked")
 
 
 async def test_upload_file_rejects_pdf_content_type_before_persistence_write() -> None:

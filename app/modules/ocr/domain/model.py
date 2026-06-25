@@ -4,8 +4,11 @@ from datetime import date
 
 from app.core.domain.validation import Notification
 from app.modules.ocr.domain.value_objects import (
+    BrandName,
     ItemName,
     PaymentDate,
+    PaymentLocation,
+    TotalAmount,
     WarrantyPeriodMonths,
 )
 
@@ -15,12 +18,13 @@ DEFAULT_WARRANTY_PERIOD_MONTHS = 12
 @dataclass(frozen=True)
 class ReceiptOcrResult:
     item_name: ItemName
-    brand_name: str | None
-    payment_location: str | None
+    brand_name: BrandName | None
+    payment_location: PaymentLocation | None
     payment_date: PaymentDate
-    total_amount: int | None
+    total_amount: TotalAmount | None
     period_months: WarrantyPeriodMonths
     expires_on: date
+    category: str | None
     warnings: tuple[str, ...]
 
     @classmethod
@@ -33,6 +37,7 @@ class ReceiptOcrResult:
         payment_date: date | None,
         total_amount: int | None,
         period_months: int | None,
+        category: str | None,
     ) -> "ReceiptOcrResult":
         warnings: list[str] = []
         resolved_payment_date = payment_date
@@ -51,16 +56,35 @@ class ReceiptOcrResult:
         new_period_months = notification.collect(
             lambda: WarrantyPeriodMonths(resolved_period_months)
         )
+        normalized_brand_name = _blank_to_none(brand_name)
+        normalized_payment_location = _blank_to_none(payment_location)
+        normalized_category = _blank_to_none(category)
+        new_brand_name = (
+            notification.collect(lambda: BrandName(normalized_brand_name))
+            if normalized_brand_name is not None
+            else None
+        )
+        new_payment_location = (
+            notification.collect(lambda: PaymentLocation(normalized_payment_location))
+            if normalized_payment_location is not None
+            else None
+        )
+        new_total_amount = (
+            notification.collect(lambda: TotalAmount(total_amount))
+            if total_amount is not None
+            else None
+        )
         notification.raise_if_any()
 
         return cls(
             item_name=new_item_name,
-            brand_name=_blank_to_none(brand_name),
-            payment_location=_blank_to_none(payment_location),
+            brand_name=new_brand_name,
+            payment_location=new_payment_location,
             payment_date=new_payment_date,
-            total_amount=total_amount,
+            total_amount=new_total_amount,
             period_months=new_period_months,
             expires_on=_add_months(new_payment_date.value, new_period_months.value),
+            category=normalized_category,
             warnings=tuple(warnings),
         )
 

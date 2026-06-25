@@ -4,6 +4,7 @@ from pathlib import Path
 
 from anyio.to_thread import run_sync
 
+from app.core.domain.exceptions import ErrorDetail, ValidationError
 from app.modules.files.application.ports.object_storage import StoredObject
 from app.modules.files.domain.value_objects import StorageKey
 
@@ -32,7 +33,9 @@ class LocalObjectStorage:
         root = self._root.resolve(strict=False)
         target = (root / Path(key)).resolve(strict=False)
         if not target.is_relative_to(root):
-            StorageKey(f"invalid/{key}")
+            raise ValidationError(
+                [ErrorDetail(field="storageKey", message="파일 저장 키가 올바르지 않습니다.")]
+            )
         return target
 
     def _write_bytes(self, key: str, content: bytes) -> None:

@@ -31,6 +31,11 @@ def test_prd_account_schema_tables_columns_and_constraints_are_declared() -> Non
     users_indexes = metadata.tables["users"].indexes
     assert not any(_is_partial_unique_normalized_email_index(index) for index in users_indexes)
 
+    external_identity_indexes = metadata.tables["external_identities"].indexes
+    assert any(
+        _is_verified_external_identity_email_index(index) for index in external_identity_indexes
+    )
+
     entitlement_checks = [
         constraint
         for constraint in metadata.tables["user_entitlements"].constraints
@@ -67,15 +72,11 @@ def test_prd_schema_has_no_future_bc_foreign_keys() -> None:
     assert discovered_targets.isdisjoint(future_bc_tables)
 
 
-def test_users_profile_image_file_id_is_reference_state_without_database_fk() -> None:
+def test_users_profile_image_uses_url_as_single_persistence_field() -> None:
     users_table = Base.metadata.tables["users"]
 
-    assert "profile_image_file_id" in users_table.columns
-    assert not any(
-        foreign_key.parent.name == "profile_image_file_id"
-        and foreign_key.column.table.name == "files"
-        for foreign_key in users_table.foreign_keys
-    )
+    assert "profile_image_url" in users_table.columns
+    assert "profile_image_file_id" not in users_table.columns
 
 
 def test_user_domain_uses_email_value_object_and_carries_profile_image_url() -> None:
@@ -117,6 +118,17 @@ def _is_partial_unique_normalized_email_index(index: Index) -> bool:
         index.unique is True
         and tuple(column.name for column in index.columns) == ("normalized_email",)
         and dialect_options["where"] is not None
+    )
+
+
+def _is_verified_external_identity_email_index(index: Index) -> bool:
+    dialect_options = index.dialect_options["postgresql"]
+    return (
+        index.name == "ix_external_identities_verified_normalized_email"
+        and index.unique is False
+        and tuple(column.name for column in index.columns) == ("normalized_email",)
+        and str(dialect_options["where"])
+        == "email_verified IS TRUE AND normalized_email IS NOT NULL"
     )
 
 

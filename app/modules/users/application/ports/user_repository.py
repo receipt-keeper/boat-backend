@@ -42,16 +42,12 @@ class UserRepository(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def update_profile_image_file(
+    async def update_profile_image_url(
         self,
         *,
         user_id: UUID,
-        file_id: UUID | None,
+        profile_image_url: str | None,
     ) -> User:
-        raise NotImplementedError
-
-    @abstractmethod
-    async def has_profile_image_file_reference(self, *, file_id: UUID) -> bool:
         raise NotImplementedError
 
     @abstractmethod

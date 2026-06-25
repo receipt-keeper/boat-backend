@@ -109,8 +109,9 @@ def _auth_headers(seeded: SeededUser) -> dict[str, str]:
     return {"Authorization": f"Bearer {seeded.access_token}"}
 
 
-def _settings(storage_root: Path) -> Settings:
+def _settings(storage_root: Path, *, api_prefix: str = "/api/v1") -> Settings:
     return Settings(
+        api_prefix=api_prefix,
         jwt_secret_key=TEST_SETTINGS.jwt_secret_key,
         jwt_issuer=TEST_SETTINGS.jwt_issuer,
         jwt_audience=TEST_SETTINGS.jwt_audience,
@@ -280,6 +281,38 @@ async def test_put_profile_image_uses_uploaded_file_content_path(
     assert delete_response.status_code == 204
     assert delete_response.content == b""
     assert cleared_response.json()["data"]["profileImageUrl"] is None
+
+
+async def test_profile_image_response_path_follows_configured_api_prefix(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+    tmp_path: Path,
+) -> None:
+    settings = _settings(tmp_path / "files", api_prefix="/backend")
+    async with postgres_session_factory() as session, session.begin():
+        seeded = await _seed_user(
+            session,
+            subject="profile-image-prefix-owner",
+            email="profile-image-prefix@example.com",
+            name="프로필 이미지 prefix 사용자",
+        )
+
+    async with _client(postgres_session_factory, settings) as client:
+        upload_response = await client.post(
+            "/backend/files",
+            headers=_auth_headers(seeded),
+            files={"file": ("profile.png", IMAGE_BYTES, "image/png")},
+        )
+        file_id = upload_response.json()["data"]["fileId"]
+        put_response = await client.put(
+            "/backend/users/me/profile-image",
+            headers=_auth_headers(seeded),
+            json={"fileId": file_id},
+        )
+        get_response = await client.get("/backend/users/me", headers=_auth_headers(seeded))
+
+    expected_profile_image_url = f"/backend/files/{file_id}/content"
+    assert put_response.json()["data"]["profileImageUrl"] == expected_profile_image_url
+    assert get_response.json()["data"]["profileImageUrl"] == expected_profile_image_url
 
 
 async def test_put_profile_image_rejects_other_users_file(

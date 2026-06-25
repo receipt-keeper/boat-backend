@@ -20,5 +20,6 @@ def test_openapi_exposes_file_and_profile_image_paths_without_signed_url_contrac
     assert {"post"}.issubset(paths["/api/v1/files"])
     assert {"get", "delete"}.issubset(paths["/api/v1/files/{file_id}"])
     assert {"get"}.issubset(paths["/api/v1/files/{file_id}/content"])
+    assert "409" in paths["/api/v1/files/{file_id}"]["delete"]["responses"]
     assert {"put", "delete"}.issubset(paths["/api/v1/users/me/profile-image"])
     assert not any("signed" in path or "ticket" in path or "presign" in path for path in paths)

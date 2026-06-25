@@ -95,8 +95,10 @@ def make_test_settings(
     storage_root: Path,
     *,
     max_upload_bytes: int = 10_485_760,
+    api_prefix: str = "/api/v1",
 ) -> Settings:
     return Settings(
+        api_prefix=api_prefix,
         jwt_secret_key="x" * 48,
         jwt_issuer="boat-backend-test",
         jwt_audience="boat-api-test",
