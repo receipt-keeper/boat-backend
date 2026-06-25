@@ -146,3 +146,20 @@ def test_users_module_does_not_import_auth_api_or_infrastructure() -> None:
     ]
 
     assert offending_files == []
+
+
+def test_users_application_and_domain_do_not_import_files_infrastructure() -> None:
+    forbidden_files_prefixes = ("app.modules.files.infrastructure",)
+    offending_files = [
+        path.relative_to(PROJECT_ROOT).as_posix()
+        for root in (USERS_ROOT / "application", USERS_ROOT / "domain")
+        for path in root.rglob("*.py")
+        if "tests" not in path.parts
+        and any(
+            imported == prefix or imported.startswith(f"{prefix}.")
+            for imported in _imports(path)
+            for prefix in forbidden_files_prefixes
+        )
+    ]
+
+    assert offending_files == []

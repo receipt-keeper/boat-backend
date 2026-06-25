@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from pydantic import ConfigDict, Field
 
 from app.core.http.responses import AppBaseModel
@@ -68,4 +70,19 @@ class UpdateCurrentUserResponse(AppBaseModel):
     notification_enabled: bool = Field(
         alias="notificationEnabled",
         description="반영된 알림 수신 여부.",
+    )
+
+
+class SetProfileImageRequest(AppBaseModel):
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    file_id: UUID = Field(alias="fileId", description="프로필 이미지로 사용할 파일 ID.")
+
+
+class ProfileImageResponse(AppBaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    profile_image_url: str | None = Field(
+        alias="profileImageUrl",
+        description="앱에서 표시할 프로필 이미지 접근 경로.",
     )

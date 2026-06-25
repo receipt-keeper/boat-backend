@@ -1,6 +1,6 @@
 from typing import Any
 
-from fastapi import APIRouter, Response, status
+from fastapi import APIRouter, Request, Response, status
 
 from app.core.http.auth import CurrentPrincipalDep
 from app.core.http.responses import ApiErrorData, CommonResponse
@@ -8,13 +8,20 @@ from app.modules.auth.application.commands.withdraw.command import WithdrawAccou
 from app.modules.auth.dependencies import WithdrawAccountCommandUseCaseDep
 from app.modules.users.api.schemas import (
     CurrentUserResponse,
+    ProfileImageResponse,
+    SetProfileImageRequest,
     UpdateCurrentUserRequest,
     UpdateCurrentUserResponse,
+)
+from app.modules.users.application.commands.update_profile_image.command import (
+    ClearProfileImageCommand,
+    SetProfileImageCommand,
 )
 from app.modules.users.application.commands.update_settings.command import UpdateSettingsCommand
 from app.modules.users.application.queries.current_user_profile.query import CurrentUserProfileQuery
 from app.modules.users.dependencies import (
     CurrentUserProfileQueryUseCaseDep,
+    UpdateProfileImageCommandUseCaseDep,
     UpdateSettingsCommandUseCaseDep,
 )
 
@@ -47,6 +54,7 @@ router = APIRouter(
     response_model=CommonResponse[CurrentUserResponse],
 )
 async def get_me(
+    request: Request,
     principal: CurrentPrincipalDep,
     query_use_case: CurrentUserProfileQueryUseCaseDep,
 ) -> CommonResponse[CurrentUserResponse]:
@@ -62,7 +70,7 @@ async def get_me(
             email=profile.email,
             name=profile.name,
             nickname=profile.nickname,
-            profileImageUrl=profile.profile_image_url,
+            profileImageUrl=_with_api_prefix(request, profile.profile_image_url),
             notificationEnabled=profile.notification_enabled,
             marketingConsent=profile.marketing_consent,
             freeAnalysisTokensRemaining=profile.free_analysis_tokens_remaining,
@@ -100,6 +108,40 @@ async def update_me(
     )
 
 
+@router.put(
+    "/me/profile-image",
+    response_model=CommonResponse[ProfileImageResponse],
+)
+async def set_profile_image(
+    request: Request,
+    body: SetProfileImageRequest,
+    principal: CurrentPrincipalDep,
+    command_use_case: UpdateProfileImageCommandUseCaseDep,
+) -> CommonResponse[ProfileImageResponse]:
+    result = await command_use_case.set_profile_image(
+        SetProfileImageCommand(user_id=principal.user_id, file_id=body.file_id)
+    )
+    return CommonResponse(
+        success=True,
+        status=status.HTTP_200_OK,
+        data=ProfileImageResponse(
+            profileImageUrl=_with_api_prefix(request, result.profile_image_url),
+        ),
+    )
+
+
+@router.delete(
+    "/me/profile-image",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def clear_profile_image(
+    principal: CurrentPrincipalDep,
+    command_use_case: UpdateProfileImageCommandUseCaseDep,
+) -> Response:
+    await command_use_case.clear_profile_image(ClearProfileImageCommand(user_id=principal.user_id))
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.delete(
     "/me",
     status_code=status.HTTP_204_NO_CONTENT,
@@ -120,3 +162,10 @@ async def withdraw_me(
         )
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+def _with_api_prefix(request: Request, path: str | None) -> str | None:
+    if path is None or not path.startswith("/"):
+        return path
+    api_prefix = request.app.state.settings.api_prefix.rstrip("/")
+    return f"{api_prefix}{path}"

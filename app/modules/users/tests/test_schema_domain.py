@@ -72,6 +72,13 @@ def test_prd_schema_has_no_future_bc_foreign_keys() -> None:
     assert discovered_targets.isdisjoint(future_bc_tables)
 
 
+def test_users_profile_image_uses_url_as_single_persistence_field() -> None:
+    users_table = Base.metadata.tables["users"]
+
+    assert "profile_image_url" in users_table.columns
+    assert "profile_image_file_id" not in users_table.columns
+
+
 def test_user_domain_uses_email_value_object_and_carries_profile_image_url() -> None:
     user = user_model.User.create(
         name="테스트 사용자",

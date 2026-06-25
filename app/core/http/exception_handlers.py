@@ -6,7 +6,9 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core.domain.exceptions import (
+    ConflictError,
     DomainError,
+    ExternalServiceError,
     NotFoundError,
     ValidationError,
 )
@@ -54,6 +56,28 @@ async def handle_not_found_error(request: Request, exception: Exception) -> JSON
 
     return _failure_response(
         status_code=status.HTTP_404_NOT_FOUND,
+        message=exception.message,
+        path=request.url.path,
+    )
+
+
+async def handle_conflict_error(request: Request, exception: Exception) -> JSONResponse:
+    if not isinstance(exception, ConflictError):
+        raise exception
+
+    return _failure_response(
+        status_code=status.HTTP_409_CONFLICT,
+        message=exception.message,
+        path=request.url.path,
+    )
+
+
+async def handle_external_service_error(request: Request, exception: Exception) -> JSONResponse:
+    if not isinstance(exception, ExternalServiceError):
+        raise exception
+
+    return _failure_response(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
         message=exception.message,
         path=request.url.path,
     )
