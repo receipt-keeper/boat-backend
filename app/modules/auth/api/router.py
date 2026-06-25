@@ -26,8 +26,6 @@ _ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
     },
 }
 
-# auth BC의 인증 API. 외부 신원 검증(Firebase) 뒤 백엔드 발급 토큰을 다루며,
-# 도메인 예외는 전역 핸들러가 401/403/422 봉투로 변환한다.
 router = APIRouter(
     prefix="/auth",
     tags=["auth"],
@@ -47,16 +45,16 @@ def _token_response(tokens: LoginResult | RefreshTokenResult) -> AuthTokenRespon
 @router.post(
     "/login",
     response_model=CommonResponse[AuthTokenResponse],
+    summary="소셜 로그인",
+    description=(
+        "Firebase 로그인 후 받은 idToken으로 백엔드 accessToken과 refreshToken을 발급한다. "
+        "신규 사용자는 약관 및 개인정보 처리방침 동의값을 함께 보내야 한다."
+    ),
 )
 async def login(
     request: LoginRequest,
     command_use_case: LoginCommandUseCaseDep,
 ) -> CommonResponse[AuthTokenResponse]:
-    """소셜 로그인. Google/Apple만 허용한다.
-
-    신규 가입 시 약관·개인정보 동의가 없으면 422로 거부하고, 검증된 동일 이메일의 다른
-    제공자는 기존 계정에 연결한다. 성공 시 access/refresh 토큰 쌍을 발급한다.
-    """
     tokens = await command_use_case.execute(
         LoginCommand(
             provider_token=request.id_token,
@@ -77,15 +75,16 @@ async def login(
 @router.post(
     "/refresh",
     response_model=CommonResponse[AuthTokenResponse],
+    summary="토큰 재발급",
+    description=(
+        "refreshToken으로 새 accessToken과 refreshToken을 발급한다. "
+        "이미 재발급에 사용한 refreshToken은 다시 사용할 수 없다."
+    ),
 )
 async def refresh(
     request: RefreshTokenRequest,
     command_use_case: RefreshTokenCommandUseCaseDep,
 ) -> CommonResponse[AuthTokenResponse]:
-    """access token 재발급. refresh token을 1회용으로 회전(rotate)해 새 토큰 쌍을 발급한다.
-
-    이미 사용된(회전된) refresh token의 재사용은 401로 거부한다.
-    """
     tokens = await command_use_case.execute(
         RefreshTokenCommand(refresh_token=request.refresh_token)
     )
@@ -99,14 +98,12 @@ async def refresh(
 @router.post(
     "/logout",
     status_code=status.HTTP_204_NO_CONTENT,
+    summary="로그아웃",
+    description="전달한 refreshToken의 로그인 상태를 종료한다. 성공하면 본문 없이 204를 반환한다.",
 )
 async def logout(
     request: RefreshTokenRequest,
     command_use_case: LogoutCommandUseCaseDep,
 ) -> Response:
-    """로그아웃. 제시된 refresh token의 세션을 revoke한다.
-
-    같은 세션의 access token은 즉시 무효화되며, 성공 시 204 No Content(빈 본문)를 반환한다.
-    """
     await command_use_case.execute(LogoutCommand(refresh_token=request.refresh_token))
     return Response(status_code=status.HTTP_204_NO_CONTENT)
