@@ -39,6 +39,7 @@ class _ExtractedReceiptOcrFields:
     payment_date: date | None
     total_amount: int | None
     period_months: int | None
+    category: str | None
 
 
 class _ReceiptOcrClientStub(Protocol):
@@ -54,6 +55,20 @@ class UnreadableReceiptOcrClient:
             payment_date=None,
             total_amount=None,
             period_months=None,
+            category=None,
+        )
+
+
+class CategoryReceiptOcrClient:
+    async def extract(self, *, image_uri: str) -> _ExtractedReceiptOcrFields:
+        return _ExtractedReceiptOcrFields(
+            item_name="삼성 냉장고 875L",
+            brand_name="삼성",
+            payment_location="전자랜드",
+            payment_date=date(2024, 5, 26),
+            total_amount=5137000,
+            period_months=24,
+            category="가전",
         )
 
 
@@ -208,6 +223,38 @@ async def test_ocr_failure_can_fall_back_to_manual_receipt_save(
     assert save_body["data"]["item_name"] == "수동 입력 제품"
     assert save_body["data"]["period_months"] == 12
     assert save_body["data"]["expires_on"] == "2025-06-01"
+
+
+async def test_ocr_auto_fill_category_can_be_saved(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with _client(
+        postgres_session_factory,
+        receipt_ocr_client=CategoryReceiptOcrClient(),
+    ) as client:
+        ocr_response = await client.post(
+            "/api/v1/ocr/receipt",
+            json={"image_uri": "https://storage.example.com/receipts/category.png"},
+        )
+        ocr_data = ocr_response.json()["data"]
+        save_response = await client.post(
+            "/api/v1/receipts",
+            json={
+                "item_name": ocr_data["item_name"],
+                "brand_name": ocr_data["brand_name"],
+                "payment_location": ocr_data["payment_location"],
+                "payment_date": ocr_data["payment_date"],
+                "total_amount": ocr_data["total_amount"],
+                "period_months": ocr_data["period_months"],
+                "category": ocr_data["category"],
+            },
+        )
+
+    save_body = save_response.json()
+    assert ocr_response.status_code == 200
+    assert ocr_data["category"] == "가전"
+    assert save_response.status_code == 201
+    assert save_body["data"]["category"] == "가전"
 
 
 async def test_create_receipt_calculates_expiration_on_month_end(

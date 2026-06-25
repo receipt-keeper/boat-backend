@@ -23,6 +23,7 @@ You are an information extraction specialist for receipts.
 Extract only information that is clearly supported by the receipt image.
 Do not guess missing or ambiguous values.
 If a field is not visible or uncertain, return null.
+Suggest one broad category only when it is clearly supported by the receipt.
 Normalize dates to YYYY-MM-DD when clearly readable.
 Normalize total_amount as an integer number only when clearly readable.
 Do not extract serial numbers. Serial number support is out of scope for MVP.
@@ -47,6 +48,7 @@ class ExtractedReceiptOcrFields:
     payment_date: date | None
     total_amount: int | None
     period_months: int | None
+    category: str | None
 
 
 class ReceiptOcrStructuredOutput(BaseModel):
@@ -74,6 +76,11 @@ class ReceiptOcrStructuredOutput(BaseModel):
         default=None,
         description="무상 AS/보증 기간 개월 수. 영수증에서 명확히 확인되지 않으면 null.",
     )
+    category: str | None = Field(
+        default=None,
+        max_length=100,
+        description="대분류 카테고리 추천값. 예: 가전, 디지털, 생활. 명확하지 않으면 null.",
+    )
 
     def to_extracted_fields(self) -> ExtractedReceiptOcrFields:
         return ExtractedReceiptOcrFields(
@@ -83,6 +90,7 @@ class ReceiptOcrStructuredOutput(BaseModel):
             payment_date=self.payment_date,
             total_amount=self.total_amount,
             period_months=self.period_months,
+            category=(self.category or "").strip() or None,
         )
 
 
@@ -104,6 +112,7 @@ class ReceiptOcrClient:
             payment_date=date.today(),
             total_amount=129000,
             period_months=None,
+            category="가전",
         )
         return structured_output.to_extracted_fields()
 

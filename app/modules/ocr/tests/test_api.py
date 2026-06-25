@@ -22,6 +22,7 @@ class UnreadableReceiptOcrClient:
             payment_date=None,
             total_amount=None,
             period_months=None,
+            category=None,
         )
 
 
@@ -39,6 +40,7 @@ class ZeroTotalAmountReceiptOcrClient:
             payment_date=date.today(),
             total_amount=0,
             period_months=12,
+            category=None,
         )
 
 
@@ -90,6 +92,7 @@ async def test_receipt_ocr_endpoint_returns_contract_response(client: AsyncClien
         "total_amount": 129000,
         "period_months": 12,
         "expires_on": expected_expires_on.isoformat(),
+        "category": "가전",
         "needs_review": True,
         "warnings": ["무상 AS 기간을 찾지 못해 12개월 기본값을 적용했습니다."],
     }
@@ -189,6 +192,7 @@ async def test_receipt_ocr_endpoint_openapi_examples(client: AsyncClient) -> Non
 
     assert operation["summary"] == "영수증 OCR 분석"
     assert success_example["data"]["item_name"] == "삼성 냉장고 875L"
+    assert success_example["data"]["category"] == "가전"
     assert success_example["data"]["needs_review"] is True
     assert unreadable_example["data"]["errors"][0]["field"] == "image_uri"
     assert provider_unavailable_example["status"] == 503
