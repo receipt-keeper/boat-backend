@@ -44,12 +44,7 @@ class FileMetadataResponse(UploadedFileResponse):
                     "contentType": "image/png",
                     "size": 248120,
                     "contentPath": "/api/v1/files/00000000-0000-0000-0000-000000000301/content",
-                    "purpose": "profile_image",
-                    "status": "stored",
                 }
             ]
         },
     )
-
-    purpose: str = Field(description="파일 사용 목적.")
-    status: str = Field(description="파일 상태.")

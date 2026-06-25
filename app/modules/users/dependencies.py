@@ -49,7 +49,7 @@ class FileRepositoryProfileImageFileValidator(ProfileImageFileValidator):
             file_id=file_id,
             user_id=user_id,
         )
-        if stored_file is None or stored_file.file.purpose.value != "profile_image":
+        if stored_file is None:
             raise NotFoundError("파일을 찾을 수 없습니다.")
 
 

@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.files.application.ports.file_repository import FileRepository
 from app.modules.files.domain.model import File, FileObject, StoredFile
+from app.modules.files.domain.value_objects import FileVariant
 from app.modules.files.infrastructure.persistence import mapper, orm
 
 
@@ -40,10 +41,9 @@ class SqlAlchemyFileRepository(FileRepository):
         await self._session.execute(delete(orm.File).where(orm.File.id == file_id))
 
     async def _stored_file(self, *, file_record: orm.File) -> StoredFile | None:
-        statement = (
-            select(orm.FileObject)
-            .where(orm.FileObject.file_id == file_record.id)
-            .order_by(orm.FileObject.created_at)
+        statement = select(orm.FileObject).where(
+            orm.FileObject.file_id == file_record.id,
+            orm.FileObject.variant_type == FileVariant.ORIGINAL.value,
         )
         file_object_record = await self._session.scalar(statement)
         if file_object_record is None:

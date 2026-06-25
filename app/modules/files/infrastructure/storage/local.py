@@ -16,7 +16,6 @@ class LocalObjectStorage:
     async def put(self, *, key: str, content: bytes) -> StoredObject:
         await run_sync(self._write_bytes, key, content)
         return StoredObject(
-            storage_backend="local",
             storage_key=key,
             size=len(content),
             checksum=hashlib.sha256(content, usedforsecurity=False).hexdigest(),

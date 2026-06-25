@@ -21,6 +21,7 @@ from app.modules.files.application.commands.upload_file.command import UploadFil
 from app.modules.files.application.commands.upload_file.use_case import UploadFileCommandUseCase
 from app.modules.files.application.ports.file_repository import FileRepository
 from app.modules.files.domain.model import File, FileObject, StoredFile
+from app.modules.files.domain.value_objects import FileVariant, FileVariantType
 from app.modules.files.infrastructure.storage.local import LocalObjectStorage
 
 
@@ -38,16 +39,11 @@ def test_files_schema_tables_columns_constraints_and_indexes_are_declared() -> N
         "id",
         "user_id",
         "original_name",
-        "purpose",
-        "status",
         "created_at",
-        "updated_at",
     }
     assert isinstance(files.columns["id"].type, PostgreSQLUUID)
     assert isinstance(files.columns["user_id"].type, PostgreSQLUUID)
     assert _string_length(files, "original_name") == 255
-    assert _string_length(files, "purpose") == 50
-    assert _string_length(files, "status") == 50
     assert files.columns["user_id"].nullable is False
     assert files.columns["original_name"].nullable is False
     assert _has_index(files.indexes, ("user_id", "created_at"), unique=False)
@@ -56,18 +52,15 @@ def test_files_schema_tables_columns_constraints_and_indexes_are_declared() -> N
         "id",
         "file_id",
         "variant_type",
-        "storage_backend",
         "storage_key",
         "content_type",
         "size",
         "checksum",
         "created_at",
-        "updated_at",
     }
     assert isinstance(file_objects.columns["id"].type, PostgreSQLUUID)
     assert isinstance(file_objects.columns["file_id"].type, PostgreSQLUUID)
     assert _string_length(file_objects, "variant_type") == 50
-    assert _string_length(file_objects, "storage_backend") == 50
     assert _string_length(file_objects, "storage_key") == 500
     assert _string_length(file_objects, "content_type") == 100
     assert isinstance(file_objects.columns["size"].type, BigInteger)
@@ -110,6 +103,17 @@ def test_file_storage_settings_are_declared_with_local_defaults() -> None:
         "image/heic",
         "image/heif",
     )
+
+
+def test_file_variant_type_supports_source_and_derived_objects() -> None:
+    assert {variant.value for variant in FileVariant} == {
+        "original",
+        "thumbnail",
+        "compressed",
+    }
+    assert FileVariantType(FileVariant.ORIGINAL).value is FileVariant.ORIGINAL
+    assert FileVariantType(FileVariant.THUMBNAIL).value is FileVariant.THUMBNAIL
+    assert FileVariantType(FileVariant.COMPRESSED).value is FileVariant.COMPRESSED
 
 
 def test_file_allowed_content_types_accept_comma_separated_env_value(

@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from enum import StrEnum
 from typing import ClassVar
 
 from app.core.domain.exceptions import ErrorDetail, ValidationError
@@ -22,47 +23,18 @@ class OriginalName(ValueObject[str]):
             )
 
 
-@dataclass(frozen=True, slots=True)
-class FilePurpose(ValueObject[str]):
-    ALLOWED: ClassVar[frozenset[str]] = frozenset({"profile_image"})
-
-    def validate(self) -> None:
-        if self.value not in self.ALLOWED:
-            raise ValidationError(
-                [ErrorDetail(field="purpose", message="파일 용도가 올바르지 않습니다.")]
-            )
+class FileVariant(StrEnum):
+    ORIGINAL = "original"
+    THUMBNAIL = "thumbnail"
+    COMPRESSED = "compressed"
 
 
 @dataclass(frozen=True, slots=True)
-class FileStatus(ValueObject[str]):
-    ALLOWED: ClassVar[frozenset[str]] = frozenset({"pending", "available", "deleted"})
-
+class FileVariantType(ValueObject[FileVariant]):
     def validate(self) -> None:
-        if self.value not in self.ALLOWED:
-            raise ValidationError(
-                [ErrorDetail(field="status", message="파일 상태가 올바르지 않습니다.")]
-            )
-
-
-@dataclass(frozen=True, slots=True)
-class FileVariantType(ValueObject[str]):
-    ALLOWED: ClassVar[frozenset[str]] = frozenset({"original"})
-
-    def validate(self) -> None:
-        if self.value not in self.ALLOWED:
+        if not isinstance(self.value, FileVariant):
             raise ValidationError(
                 [ErrorDetail(field="variantType", message="파일 변형 유형이 올바르지 않습니다.")]
-            )
-
-
-@dataclass(frozen=True, slots=True)
-class StorageBackend(ValueObject[str]):
-    ALLOWED: ClassVar[frozenset[str]] = frozenset({"local"})
-
-    def validate(self) -> None:
-        if self.value not in self.ALLOWED:
-            raise ValidationError(
-                [ErrorDetail(field="storageBackend", message="파일 저장소가 올바르지 않습니다.")]
             )
 
 

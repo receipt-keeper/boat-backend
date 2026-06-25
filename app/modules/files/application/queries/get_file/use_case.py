@@ -18,8 +18,6 @@ class GetFileQueryUseCase:
         return GetFileResult(
             file_id=stored_file.file.id,
             original_name=stored_file.file.original_name.value,
-            purpose=stored_file.file.purpose.value,
-            status=stored_file.file.status.value,
             content_type=stored_file.file_object.content_type.value,
             size=stored_file.file_object.size.value,
             content_path=f"/files/{stored_file.file.id}/content",

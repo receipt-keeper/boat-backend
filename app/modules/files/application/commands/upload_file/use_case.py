@@ -6,6 +6,7 @@ from app.modules.files.application.commands.upload_file.result import UploadFile
 from app.modules.files.application.ports.file_repository import FileRepository
 from app.modules.files.application.ports.object_storage import ObjectStorage
 from app.modules.files.domain.model import File, FileObject
+from app.modules.files.domain.value_objects import FileVariant
 
 
 class UploadFileCommandUseCase:
@@ -29,7 +30,6 @@ class UploadFileCommandUseCase:
             file_id=file_id,
             user_id=command.user_id,
             original_name=command.original_name,
-            purpose=command.purpose,
         )
         file_object = FileObject.create(
             file_id=file.id,
@@ -45,7 +45,6 @@ class UploadFileCommandUseCase:
             )
             file_object = FileObject.create(
                 file_id=file.id,
-                storage_backend=stored_object.storage_backend,
                 storage_key=stored_object.storage_key,
                 content_type=command.content_type,
                 size=stored_object.size,
@@ -63,4 +62,4 @@ class UploadFileCommandUseCase:
 
 
 def _build_storage_key(*, user_id: UUID, file_id: UUID) -> str:
-    return f"users/{user_id}/files/{file_id}/original"
+    return f"users/{user_id}/files/{file_id}/{FileVariant.ORIGINAL.value}"

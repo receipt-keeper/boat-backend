@@ -2,13 +2,11 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import Depends, Request
-from sqlalchemy import column, select, table
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.application.unit_of_work import UnitOfWork
 from app.core.db.session import AsyncSessionDep
 from app.core.db.unit_of_work import SqlAlchemyUnitOfWork
-from app.core.domain.exceptions import ConflictError
 from app.modules.files.application.commands.delete_file.use_case import (
     DeleteFileCommandUseCase,
 )
@@ -26,16 +24,9 @@ from app.modules.files.infrastructure.persistence.repository import SqlAlchemyFi
 from app.modules.files.infrastructure.storage.local import LocalObjectStorage
 
 
-class UserProfileImageReferenceGuard(FileReferenceGuard):
-    def __init__(self, session: AsyncSession) -> None:
-        self._session = session
-
+class AllowFileDeleteReferenceGuard(FileReferenceGuard):
     async def ensure_not_referenced(self, *, file_id: UUID) -> None:
-        profile_image_url = f"/files/{file_id}/content"
-        users = table("users", column("id"), column("profile_image_url"))
-        statement = select(users.c.id).where(users.c.profile_image_url == profile_image_url)
-        if await self._session.scalar(statement) is not None:
-            raise ConflictError("프로필 이미지로 사용 중인 파일은 삭제할 수 없습니다.")
+        return None
 
 
 def build_file_repository(session: AsyncSession) -> FileRepository:
@@ -56,8 +47,8 @@ async def get_unit_of_work(session: AsyncSessionDep) -> UnitOfWork:
     return SqlAlchemyUnitOfWork(session)
 
 
-async def get_file_reference_guard(session: AsyncSessionDep) -> FileReferenceGuard:
-    return UserProfileImageReferenceGuard(session)
+async def get_file_reference_guard() -> FileReferenceGuard:
+    return AllowFileDeleteReferenceGuard()
 
 
 def get_local_file_storage_root(request: Request) -> str:
