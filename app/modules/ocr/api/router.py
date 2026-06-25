@@ -97,10 +97,12 @@ async def extract_receipt_ocr(
         status=status.HTTP_200_OK,
         data=ReceiptOcrResultResponse(
             item_name=result.item_name.value,
-            brand_name=result.brand_name,
-            payment_location=result.payment_location,
+            brand_name=result.brand_name.value if result.brand_name is not None else None,
+            payment_location=(
+                result.payment_location.value if result.payment_location is not None else None
+            ),
             payment_date=result.payment_date.value,
-            total_amount=result.total_amount,
+            total_amount=result.total_amount.value if result.total_amount is not None else None,
             period_months=result.period_months.value,
             expires_on=result.expires_on,
             needs_review=bool(result.warnings),

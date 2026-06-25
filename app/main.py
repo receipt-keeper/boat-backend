@@ -9,7 +9,6 @@ from app.core.config.settings import Settings
 from app.core.db.session import build_engine, build_session_factory
 from app.core.domain.exceptions import (
     DomainError,
-    ExternalServiceError,
     NotFoundError,
     ValidationError,
 )
@@ -20,7 +19,9 @@ from app.modules.auth.api.router import router as auth_router
 from app.modules.auth.api.security import authenticate_current_principal
 from app.modules.auth.domain.exceptions import AuthenticationError, AuthorizationError
 from app.modules.examples.api.router import router as examples_router
+from app.modules.ocr.api import exception_handlers as ocr_exception_handlers
 from app.modules.ocr.api.router import router as ocr_router
+from app.modules.ocr.domain.exceptions import ReceiptOcrProviderUnavailableError
 from app.modules.receipts.api.router import router as receipts_router
 from app.modules.users.api.router import router as users_router
 
@@ -30,16 +31,16 @@ def _register_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(ValidationError, exception_handlers.handle_domain_validation_error)
     app.add_exception_handler(NotFoundError, exception_handlers.handle_not_found_error)
     app.add_exception_handler(
-        ExternalServiceError,
-        exception_handlers.handle_external_service_error,
-    )
-    app.add_exception_handler(
         AuthenticationError,
         auth_exception_handlers.handle_authentication_error,
     )
     app.add_exception_handler(
         AuthorizationError,
         auth_exception_handlers.handle_authorization_error,
+    )
+    app.add_exception_handler(
+        ReceiptOcrProviderUnavailableError,
+        ocr_exception_handlers.handle_receipt_ocr_provider_unavailable_error,
     )
     app.add_exception_handler(DomainError, exception_handlers.handle_domain_error)
     app.add_exception_handler(
