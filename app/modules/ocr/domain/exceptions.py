@@ -1,4 +1,4 @@
-from app.core.domain.exceptions import ErrorDetail, ExternalServiceError, ValidationError
+from app.core.domain.exceptions import DomainError, ErrorDetail, ValidationError
 
 
 class ReceiptImageUnreadableError(ValidationError):
@@ -14,6 +14,6 @@ class ReceiptImageUnreadableError(ValidationError):
         )
 
 
-class ReceiptOcrProviderUnavailableError(ExternalServiceError):
+class ReceiptOcrProviderUnavailableError(DomainError):
     def __init__(self) -> None:
         super().__init__("OCR 서비스를 일시적으로 사용할 수 없습니다. 잠시 후 다시 시도해 주세요.")

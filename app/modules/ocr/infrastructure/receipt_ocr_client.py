@@ -18,22 +18,16 @@ from pydantic import ValidationError as PydanticValidationError
 from app.modules.ocr.domain.exceptions import ReceiptOcrProviderUnavailableError
 
 _RECEIPT_OCR_PROMPT = """
-You are an OCR extraction engine for Korean receipts.
+You are an information extraction specialist for receipts.
 
-Extract only the fields defined in the response schema.
-Return null for unknown fields.
-Do not include raw OCR text.
+Extract only information that is clearly supported by the receipt image.
+Do not guess missing or ambiguous values.
+If a field is not visible or uncertain, return null.
+Normalize dates to YYYY-MM-DD when clearly readable.
+Normalize total_amount as an integer number only when clearly readable.
 Do not extract serial numbers. Serial number support is out of scope for MVP.
-
-Field rules:
-- item_name: representative purchased item, product, or service name.
-  For medical receipts, use values such as "진료비" or the most representative
-  treatment/service line. If no line item or paid service can be read, return null.
-- brand_name: brand/manufacturer if visible.
-- payment_location: merchant/store name if visible.
-- payment_date: purchase date in YYYY-MM-DD if visible.
-- total_amount: integer amount paid, without commas or currency symbols. Return null if unclear.
-- period_months: free warranty period in months if explicitly visible. Return null if unclear.
+Respond only with the configured structured output.
+Write text values in Korean when applicable.
 """
 _DEFAULT_IMAGE_MIME_TYPE = "image/jpeg"
 _HTTP_TIMEOUT_SECONDS = 10.0
@@ -56,12 +50,30 @@ class ExtractedReceiptOcrFields:
 
 
 class ReceiptOcrStructuredOutput(BaseModel):
-    item_name: str | None = Field(description="영수증에서 추출한 대표 결제 항목명")
-    brand_name: str | None = Field(default=None, description="브랜드명")
-    payment_location: str | None = Field(default=None, description="구매처")
-    payment_date: date | None = Field(default=None, description="구매일")
-    total_amount: int | None = Field(default=None, description="총 결제 금액")
-    period_months: int | None = Field(default=None, description="무상 AS 기간")
+    item_name: str | None = Field(
+        default=None,
+        description="구매/진료/수리 대상이 되는 제품명 또는 항목명. 명확하지 않으면 null.",
+    )
+    brand_name: str | None = Field(
+        default=None,
+        description="제조사 또는 브랜드명. 영수증에서 확인되지 않으면 null.",
+    )
+    payment_location: str | None = Field(
+        default=None,
+        description="구매처, 결제처, 병원명, 매장명 또는 온라인몰 이름. 명확하지 않으면 null.",
+    )
+    payment_date: date | None = Field(
+        default=None,
+        description="구매일 또는 결제일. YYYY-MM-DD 형식으로 변환 가능할 때만 입력.",
+    )
+    total_amount: int | None = Field(
+        default=None,
+        description="총 결제 금액. 숫자로 명확히 확인될 때만 입력하고 통화기호/쉼표는 제거.",
+    )
+    period_months: int | None = Field(
+        default=None,
+        description="무상 AS/보증 기간 개월 수. 영수증에서 명확히 확인되지 않으면 null.",
+    )
 
     def to_extracted_fields(self) -> ExtractedReceiptOcrFields:
         return ExtractedReceiptOcrFields(

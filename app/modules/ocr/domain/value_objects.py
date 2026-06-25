@@ -14,6 +14,24 @@ class ItemName(ValueObject[str]):
 
 
 @dataclass(frozen=True)
+class BrandName(ValueObject[str]):
+    def validate(self) -> None:
+        if not self.value.strip():
+            raise ValidationError(
+                [ErrorDetail(field="brand_name", message="브랜드명은 비어 있을 수 없습니다.")]
+            )
+
+
+@dataclass(frozen=True)
+class PaymentLocation(ValueObject[str]):
+    def validate(self) -> None:
+        if not self.value.strip():
+            raise ValidationError(
+                [ErrorDetail(field="payment_location", message="구매처는 비어 있을 수 없습니다.")]
+            )
+
+
+@dataclass(frozen=True)
 class PaymentDate(ValueObject[date]):
     def validate(self) -> None:
         if self.value > date.today():
@@ -33,3 +51,12 @@ class WarrantyPeriodMonths(ValueObject[int]):
                 f"무상 AS 기간은 {self.MIN_MONTHS}개월 이상 {self.MAX_MONTHS}개월 이하여야 합니다."
             )
             raise ValidationError([ErrorDetail(field="period_months", message=message)])
+
+
+@dataclass(frozen=True)
+class TotalAmount(ValueObject[int]):
+    def validate(self) -> None:
+        if self.value < 0:
+            raise ValidationError(
+                [ErrorDetail(field="total_amount", message="총 금액은 음수일 수 없습니다.")]
+            )
