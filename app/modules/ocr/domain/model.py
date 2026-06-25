@@ -24,6 +24,7 @@ class ReceiptOcrResult:
     total_amount: TotalAmount | None
     period_months: WarrantyPeriodMonths
     expires_on: date
+    category: str | None
     warnings: tuple[str, ...]
 
     @classmethod
@@ -36,6 +37,7 @@ class ReceiptOcrResult:
         payment_date: date | None,
         total_amount: int | None,
         period_months: int | None,
+        category: str | None,
     ) -> "ReceiptOcrResult":
         warnings: list[str] = []
         resolved_payment_date = payment_date
@@ -56,6 +58,7 @@ class ReceiptOcrResult:
         )
         normalized_brand_name = _blank_to_none(brand_name)
         normalized_payment_location = _blank_to_none(payment_location)
+        normalized_category = _blank_to_none(category)
         new_brand_name = (
             notification.collect(lambda: BrandName(normalized_brand_name))
             if normalized_brand_name is not None
@@ -81,6 +84,7 @@ class ReceiptOcrResult:
             total_amount=new_total_amount,
             period_months=new_period_months,
             expires_on=_add_months(new_payment_date.value, new_period_months.value),
+            category=normalized_category,
             warnings=tuple(warnings),
         )
 
