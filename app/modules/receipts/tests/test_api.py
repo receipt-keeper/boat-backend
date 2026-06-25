@@ -1,6 +1,8 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from datetime import date, timedelta
+from typing import Protocol
 from uuid import UUID
 
 import pytest
@@ -14,6 +16,7 @@ from app.core.http.auth import set_current_principal
 from app.core.security.principal import AuthenticatedPrincipal
 from app.main import create_app
 from app.modules.auth.api.security import authenticate_current_principal
+from app.modules.ocr.dependencies import get_receipt_ocr_client
 from app.modules.receipts.infrastructure.persistence import orm as receipt_orm
 
 TEST_USER_ID = UUID("00000000-0000-0000-0000-000000000101")
@@ -26,6 +29,32 @@ TEST_SETTINGS = Settings(
     jwt_issuer="boat-backend-test",
     jwt_audience="boat-api-test",
 )
+
+
+@dataclass(frozen=True)
+class _ExtractedReceiptOcrFields:
+    item_name: str
+    brand_name: str | None
+    payment_location: str | None
+    payment_date: date | None
+    total_amount: int | None
+    period_months: int | None
+
+
+class _ReceiptOcrClientStub(Protocol):
+    async def extract(self, *, image_uri: str) -> _ExtractedReceiptOcrFields: ...
+
+
+class UnreadableReceiptOcrClient:
+    async def extract(self, *, image_uri: str) -> _ExtractedReceiptOcrFields:
+        return _ExtractedReceiptOcrFields(
+            item_name="",
+            brand_name=None,
+            payment_location=None,
+            payment_date=None,
+            total_amount=None,
+            period_months=None,
+        )
 
 
 async def _fake_authenticate_current_principal(request: Request) -> AuthenticatedPrincipal:
@@ -44,6 +73,7 @@ async def _client(
     session_factory: async_sessionmaker[AsyncSession],
     *,
     authenticated: bool = True,
+    receipt_ocr_client: _ReceiptOcrClientStub | None = None,
 ) -> AsyncIterator[AsyncClient]:
     test_app = create_app(TEST_SETTINGS)
     test_app.state.session_factory = session_factory
@@ -51,6 +81,8 @@ async def _client(
         test_app.dependency_overrides[authenticate_current_principal] = (
             _fake_authenticate_current_principal
         )
+    if receipt_ocr_client is not None:
+        test_app.dependency_overrides[get_receipt_ocr_client] = lambda: receipt_ocr_client
 
     try:
         async with AsyncClient(
@@ -139,6 +171,43 @@ async def test_create_receipt_accepts_nullable_fields_and_manual_registration(
     assert data["expires_on"] == "2025-06-01"
     assert data["requires_physical_receipt"] is False
     assert data["receipt_file_ids"] == []
+
+
+async def test_ocr_failure_can_fall_back_to_manual_receipt_save(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with _client(
+        postgres_session_factory,
+        receipt_ocr_client=UnreadableReceiptOcrClient(),
+    ) as client:
+        ocr_response = await client.post(
+            "/api/v1/ocr/receipt",
+            json={"image_uri": "https://storage.example.com/receipts/unreadable.png"},
+        )
+        save_response = await client.post(
+            "/api/v1/receipts",
+            json={
+                "item_name": "수동 입력 제품",
+                "payment_date": "2024-06-01",
+                "payment_location": None,
+                "total_amount": None,
+            },
+        )
+
+    ocr_body = ocr_response.json()
+    assert ocr_response.status_code == 422
+    assert ocr_body["data"]["errors"] == [
+        {
+            "field": "image_uri",
+            "message": "영수증 이미지를 인식하지 못했습니다. 다시 촬영하거나 수동 입력해 주세요.",
+        }
+    ]
+
+    save_body = save_response.json()
+    assert save_response.status_code == 201
+    assert save_body["data"]["item_name"] == "수동 입력 제품"
+    assert save_body["data"]["period_months"] == 12
+    assert save_body["data"]["expires_on"] == "2025-06-01"
 
 
 async def test_create_receipt_calculates_expiration_on_month_end(
