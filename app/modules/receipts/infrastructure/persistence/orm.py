@@ -2,6 +2,7 @@ from datetime import date, datetime
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     CheckConstraint,
     Date,
@@ -45,7 +46,7 @@ class Receipt(Base):
     brand_name: Mapped[str | None] = mapped_column(type_=String(255), nullable=True)
     payment_location: Mapped[str | None] = mapped_column(type_=String(500), nullable=True)
     payment_date: Mapped[date] = mapped_column(type_=Date, nullable=False)
-    total_amount: Mapped[int | None] = mapped_column(type_=Integer, nullable=True)
+    total_amount: Mapped[int | None] = mapped_column(type_=BigInteger, nullable=True)
     period_months: Mapped[int] = mapped_column(
         type_=Integer,
         nullable=False,

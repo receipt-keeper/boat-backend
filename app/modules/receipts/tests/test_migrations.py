@@ -52,5 +52,17 @@ async def _assert_tables_exist(database_url: str) -> None:
                     {"table_name": table_name},
                 )
                 assert result.scalar_one() is True
+            column_type = await connection.scalar(
+                text(
+                    """
+                    SELECT data_type
+                    FROM information_schema.columns
+                    WHERE table_schema = 'public'
+                      AND table_name = 'receipts'
+                      AND column_name = 'total_amount'
+                    """
+                )
+            )
+            assert column_type == "bigint"
     finally:
         await engine.dispose()

@@ -27,7 +27,7 @@ def upgrade() -> None:
         sa.Column("brand_name", sa.String(length=255), nullable=True),
         sa.Column("payment_location", sa.String(length=500), nullable=True),
         sa.Column("payment_date", sa.Date(), nullable=False),
-        sa.Column("total_amount", sa.Integer(), nullable=True),
+        sa.Column("total_amount", sa.BigInteger(), nullable=True),
         sa.Column("period_months", sa.Integer(), server_default="12", nullable=False),
         sa.Column("expires_on", sa.Date(), nullable=False),
         sa.Column("category", sa.String(length=100), nullable=True),

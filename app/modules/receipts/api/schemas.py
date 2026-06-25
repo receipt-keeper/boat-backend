@@ -59,7 +59,6 @@ class CreateReceiptRequest(AppBaseModel):
     total_amount: int | None = Field(
         default=None,
         description="총 결제 금액.",
-        ge=0,
     )
     period_months: int | None = Field(
         default=None,

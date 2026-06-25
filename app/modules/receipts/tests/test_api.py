@@ -255,6 +255,30 @@ async def test_create_receipt_returns_domain_validation_errors(
     assert body["data"]["errors"][0]["field"] == field
 
 
+async def test_create_receipt_aggregates_total_amount_domain_error(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    payload = {
+        "item_name": "   ",
+        "payment_date": "2024-06-01",
+        "total_amount": -1,
+    }
+
+    async with _client(postgres_session_factory) as client:
+        response = await client.post("/api/v1/receipts", json=payload)
+
+    body = response.json()
+    errors = body["data"]["errors"]
+    assert response.status_code == 422
+    assert body["data"]["message"] == "입력값이 올바르지 않습니다."
+    assert {error["field"] for error in errors} == {"item_name", "total_amount"}
+    assert any(
+        error["field"] == "total_amount"
+        and error["message"] == "총 결제 금액은 0 이상이어야 합니다."
+        for error in errors
+    )
+
+
 async def test_create_receipt_rejects_ocr_only_fields(
     postgres_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
