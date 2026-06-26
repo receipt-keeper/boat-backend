@@ -18,5 +18,14 @@ class FileRepository(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    async def find_all_by_id_for_user(
+        self,
+        *,
+        file_id: UUID,
+        user_id: UUID,
+    ) -> tuple[StoredFile, ...]:
+        raise NotImplementedError
+
+    @abstractmethod
     async def delete_by_id(self, *, file_id: UUID) -> None:
         raise NotImplementedError

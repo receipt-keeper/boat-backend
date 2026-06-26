@@ -22,11 +22,13 @@ from app.modules.auth.api.security import authenticate_current_principal
 from app.modules.auth.domain.exceptions import AuthenticationError, AuthorizationError
 from app.modules.examples.api.router import router as examples_router
 from app.modules.files.api.router import router as files_router
+from app.modules.files.dependencies import get_file_reference_guard
 from app.modules.ocr.api import exception_handlers as ocr_exception_handlers
 from app.modules.ocr.api.router import router as ocr_router
 from app.modules.ocr.domain.exceptions import ReceiptOcrProviderUnavailableError
 from app.modules.receipts.api.router import router as receipts_router
 from app.modules.users.api.router import router as users_router
+from app.modules.users.dependencies import get_profile_image_file_reference_guard
 
 
 def _register_exception_handlers(app: FastAPI) -> None:
@@ -83,6 +85,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         lifespan=lifespan,
     )
     app.state.settings = resolved_settings
+    app.dependency_overrides[get_file_reference_guard] = get_profile_image_file_reference_guard
     app.include_router(auth_router, prefix=resolved_settings.api_prefix)
     app.include_router(
         users_router,

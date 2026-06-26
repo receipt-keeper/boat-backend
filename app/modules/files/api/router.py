@@ -163,7 +163,7 @@ async def get_file_content(
         BytesIO(result.content),
         media_type=result.content_type,
         headers={
-            "Content-Length": str(result.size),
+            "Content-Length": str(len(result.content)),
             "X-Content-Type-Options": "nosniff",
         },
     )
@@ -225,8 +225,13 @@ def _detect_image_content_type(content: bytes) -> str | None:
         return "image/png"
     if content.startswith(_JPEG_SIGNATURE):
         return "image/jpeg"
-    if len(content) >= 12 and content[4:8] == b"ftyp":
-        brands = {content[index : index + 4] for index in range(8, len(content) - 3, 4)}
+    if len(content) >= 16 and content[4:8] == b"ftyp":
+        box_size = int.from_bytes(content[0:4], "big")
+        if not 16 <= box_size <= len(content):
+            return None
+        brands = {content[8:12]} | {
+            content[index : index + 4] for index in range(16, box_size - 3, 4)
+        }
         if brands & _HEIF_COMPATIBLE_BRANDS:
             return "image/heif"
     return None

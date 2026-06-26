@@ -8,6 +8,7 @@ Create Date: 2026-06-26 00:07:00.000000
 from collections.abc import Sequence
 
 import sqlalchemy as sa
+from alembic.util import CommandError
 
 from alembic import op
 
@@ -26,38 +27,38 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    connection = op.get_bind()
+    files_count = connection.execute(sa.text("SELECT COUNT(*) FROM files")).scalar_one()
+    file_objects_count = connection.execute(
+        sa.text("SELECT COUNT(*) FROM file_objects")
+    ).scalar_one()
+    if files_count > 0 or file_objects_count > 0:
+        raise CommandError(
+            "20260626_0007 dropped file metadata columns. "
+            "Downgrade is only safe before file data exists."
+        )
+
     op.add_column(
         "file_objects",
         sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.func.now(),
-            nullable=False,
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
         ),
     )
     op.add_column(
         "file_objects",
-        sa.Column(
-            "storage_backend",
-            sa.String(length=50),
-            server_default="local",
-            nullable=False,
-        ),
+        sa.Column("storage_backend", sa.String(length=50), server_default="local", nullable=False),
     )
     op.add_column(
         "files",
         sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.func.now(),
-            nullable=False,
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
         ),
     )
     op.add_column(
         "files",
-        sa.Column("status", sa.String(length=50), server_default="available", nullable=False),
+        sa.Column("status", sa.String(length=50), server_default="uploaded", nullable=False),
     )
     op.add_column(
         "files",
-        sa.Column("purpose", sa.String(length=50), server_default="profile_image", nullable=False),
+        sa.Column("purpose", sa.String(length=50), server_default="general", nullable=False),
     )

@@ -2,12 +2,14 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import Depends
+from sqlalchemy import column, select, table
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.application.unit_of_work import UnitOfWork
 from app.core.db.session import AsyncSessionDep
 from app.core.db.unit_of_work import SqlAlchemyUnitOfWork
-from app.core.domain.exceptions import NotFoundError
+from app.core.domain.exceptions import ConflictError, NotFoundError
+from app.modules.files.application.ports.file_reference_guard import FileReferenceGuard
 from app.modules.files.application.ports.file_repository import FileRepository
 from app.modules.files.dependencies import get_file_repository
 from app.modules.users.application.commands.delete.use_case import DeleteUserCommandUseCase
@@ -51,6 +53,18 @@ class FileRepositoryProfileImageFileValidator(ProfileImageFileValidator):
         )
         if stored_file is None:
             raise NotFoundError("파일을 찾을 수 없습니다.")
+
+
+class UserProfileImageFileReferenceGuard(FileReferenceGuard):
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def ensure_not_referenced(self, *, file_id: UUID) -> None:
+        profile_image_url = f"/files/{file_id}/content"
+        users = table("users", column("id"), column("profile_image_url"))
+        statement = select(users.c.id).where(users.c.profile_image_url == profile_image_url)
+        if await self._session.scalar(statement) is not None:
+            raise ConflictError("프로필 이미지로 사용 중인 파일은 삭제할 수 없습니다.")
 
 
 def build_provision_user_command_use_case(
@@ -155,6 +169,10 @@ async def get_profile_image_file_validator(
     file_repository: Annotated[FileRepository, Depends(get_file_repository)],
 ) -> ProfileImageFileValidator:
     return FileRepositoryProfileImageFileValidator(file_repository)
+
+
+async def get_profile_image_file_reference_guard(session: AsyncSessionDep) -> FileReferenceGuard:
+    return UserProfileImageFileReferenceGuard(session)
 
 
 async def get_provision_user_command_use_case(

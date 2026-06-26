@@ -223,5 +223,13 @@ class RecordingFileRepository(FileRepository):
     async def find_by_id_for_user(self, *, file_id: UUID, user_id: UUID) -> StoredFile | None:
         return None
 
+    async def find_all_by_id_for_user(
+        self,
+        *,
+        file_id: UUID,
+        user_id: UUID,
+    ) -> tuple[StoredFile, ...]:
+        return ()
+
     async def delete_by_id(self, *, file_id: UUID) -> None:
         return None

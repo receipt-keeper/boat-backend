@@ -37,6 +37,31 @@ class SqlAlchemyFileRepository(FileRepository):
             return None
         return await self._stored_file(file_record=file_record)
 
+    async def find_all_by_id_for_user(
+        self,
+        *,
+        file_id: UUID,
+        user_id: UUID,
+    ) -> tuple[StoredFile, ...]:
+        statement = select(orm.File).where(
+            orm.File.id == file_id,
+            orm.File.user_id == user_id,
+        )
+        file_record = await self._session.scalar(statement)
+        if file_record is None:
+            return ()
+        file_object_statement = select(orm.FileObject).where(
+            orm.FileObject.file_id == file_record.id
+        )
+        file_object_records = await self._session.scalars(file_object_statement)
+        return tuple(
+            mapper.stored_file_to_domain(
+                file_record=file_record,
+                file_object_record=file_object_record,
+            )
+            for file_object_record in file_object_records
+        )
+
     async def delete_by_id(self, *, file_id: UUID) -> None:
         await self._session.execute(delete(orm.File).where(orm.File.id == file_id))
 
