@@ -1,8 +1,8 @@
 from io import BytesIO
-from typing import Annotated, Any
+from typing import Annotated, Any, Final
 from uuid import UUID
 
-from fastapi import APIRouter, File, Form, Request, Response, UploadFile, status
+from fastapi import APIRouter, File, Request, Response, UploadFile, status
 from fastapi.responses import StreamingResponse
 
 from app.core.domain.exceptions import ErrorDetail, ValidationError
@@ -34,6 +34,19 @@ _ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
         "description": "검증 실패 - 요청 형식 오류 또는 도메인 검증 실패",
     },
 }
+_PNG_SIGNATURE: Final = b"\x89PNG\r\n\x1a\n"
+_JPEG_SIGNATURE: Final = b"\xff\xd8\xff"
+_HEIF_COMPATIBLE_BRANDS: Final = frozenset(
+    {
+        b"heic",
+        b"heix",
+        b"hevc",
+        b"hevx",
+        b"mif1",
+        b"msf1",
+    }
+)
+_HEIF_CONTENT_TYPES: Final = frozenset({"image/heic", "image/heif"})
 
 router = APIRouter(
     prefix="/files",
@@ -55,11 +68,10 @@ router = APIRouter(
             "content": {
                 "multipart/form-data": {
                     "examples": {
-                        "profile_image": {
-                            "summary": "프로필 이미지 업로드",
+                        "image": {
+                            "summary": "이미지 업로드",
                             "value": {
-                                "file": "profile.png",
-                                "purpose": "profile_image",
+                                "file": "image.png",
                             },
                         }
                     }
@@ -74,20 +86,14 @@ async def upload_file(
     command_use_case: UploadFileCommandUseCaseDep,
     file: Annotated[
         UploadFile,
-        File(description="업로드할 이미지 파일.", examples=["profile.png"]),
+        File(description="업로드할 이미지 파일.", examples=["image.png"]),
     ],
-    purpose: Annotated[
-        str,
-        Form(
-            description="파일 사용 목적. 프로필 이미지는 profile_image를 사용한다.",
-            examples=["profile_image"],
-        ),
-    ] = "profile_image",
 ) -> CommonResponse[UploadedFileResponse]:
     settings = request.app.state.settings
     content = await file.read(settings.file_max_upload_bytes + 1)
     _validate_upload(
         content_type=file.content_type,
+        content=content,
         size=len(content),
         allowed_content_types=tuple(settings.file_allowed_content_types),
         max_upload_bytes=settings.file_max_upload_bytes,
@@ -99,7 +105,6 @@ async def upload_file(
             content_type=file.content_type or "",
             size=len(content),
             content=content,
-            purpose=purpose,
         )
     )
     return CommonResponse(
@@ -119,7 +124,7 @@ async def upload_file(
     "/{file_id}",
     response_model=CommonResponse[FileMetadataResponse],
     summary="파일 정보 조회",
-    description="파일 ID에 해당하는 업로드 파일의 이름, 용도, 상태, 다운로드 경로를 조회한다.",
+    description="파일 ID에 해당하는 업로드 파일의 이름, 형식, 크기, 다운로드 경로를 조회한다.",
 )
 async def get_file(
     request: Request,
@@ -134,8 +139,6 @@ async def get_file(
         data=FileMetadataResponse(
             fileId=result.file_id,
             originalName=result.original_name,
-            purpose=result.purpose,
-            status=result.status,
             contentType=result.content_type,
             size=result.size,
             contentPath=_with_api_prefix(request, result.content_path),
@@ -159,24 +162,18 @@ async def get_file_content(
     return StreamingResponse(
         BytesIO(result.content),
         media_type=result.content_type,
-        headers={"Content-Length": str(result.size)},
+        headers={
+            "Content-Length": str(len(result.content)),
+            "X-Content-Type-Options": "nosniff",
+        },
     )
 
 
 @router.delete(
     "/{file_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    responses={
-        status.HTTP_409_CONFLICT: {
-            "model": CommonResponse[ApiErrorData],
-            "description": "프로필 이미지로 사용 중인 파일은 삭제할 수 없음",
-        },
-    },
     summary="파일 삭제",
-    description=(
-        "파일 ID에 해당하는 업로드 파일을 삭제한다. 현재 프로필 이미지로 설정된 파일은 "
-        "먼저 프로필 이미지에서 해제해야 한다."
-    ),
+    description="파일 ID에 해당하는 업로드 파일을 삭제한다.",
 )
 async def delete_file(
     file_id: UUID,
@@ -190,6 +187,7 @@ async def delete_file(
 def _validate_upload(
     *,
     content_type: str | None,
+    content: bytes,
     size: int,
     allowed_content_types: tuple[str, ...],
     max_upload_bytes: int,
@@ -204,8 +202,39 @@ def _validate_upload(
                 message=f"파일 크기는 {_format_bytes(max_upload_bytes)} 이하여야 합니다.",
             )
         )
+    if content_type in allowed_content_types and not _matches_image_content_type(
+        content_type=content_type,
+        content=content,
+    ):
+        details.append(ErrorDetail(field="contentType", message="지원하지 않는 이미지 형식입니다."))
     if details:
         raise ValidationError(details)
+
+
+def _matches_image_content_type(*, content_type: str, content: bytes) -> bool:
+    detected_content_type = _detect_image_content_type(content)
+    if detected_content_type is None:
+        return False
+    if detected_content_type in _HEIF_CONTENT_TYPES and content_type in _HEIF_CONTENT_TYPES:
+        return True
+    return detected_content_type == content_type
+
+
+def _detect_image_content_type(content: bytes) -> str | None:
+    if content.startswith(_PNG_SIGNATURE):
+        return "image/png"
+    if content.startswith(_JPEG_SIGNATURE):
+        return "image/jpeg"
+    if len(content) >= 16 and content[4:8] == b"ftyp":
+        box_size = int.from_bytes(content[0:4], "big")
+        if not 16 <= box_size <= len(content):
+            return None
+        brands = {content[8:12]} | {
+            content[index : index + 4] for index in range(16, box_size - 3, 4)
+        }
+        if brands & _HEIF_COMPATIBLE_BRANDS:
+            return "image/heif"
+    return None
 
 
 def _format_bytes(size: int) -> str:

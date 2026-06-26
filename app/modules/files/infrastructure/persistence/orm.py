@@ -19,18 +19,10 @@ class File(Base):
     )
     user_id: Mapped[UUID] = mapped_column(type_=PostgreSQLUUID(as_uuid=True), nullable=False)
     original_name: Mapped[str] = mapped_column(type_=String(255), nullable=False)
-    purpose: Mapped[str] = mapped_column(type_=String(50), nullable=False)
-    status: Mapped[str] = mapped_column(type_=String(50), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         type_=DateTime(timezone=True),
         nullable=False,
         server_default=func.now(),
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        type_=DateTime(timezone=True),
-        nullable=False,
-        server_default=func.now(),
-        onupdate=func.now(),
     )
 
 
@@ -52,7 +44,6 @@ class FileObject(Base):
         nullable=False,
     )
     variant_type: Mapped[str] = mapped_column(type_=String(50), nullable=False)
-    storage_backend: Mapped[str] = mapped_column(type_=String(50), nullable=False)
     storage_key: Mapped[str] = mapped_column(type_=String(500), nullable=False)
     content_type: Mapped[str] = mapped_column(type_=String(100), nullable=False)
     size: Mapped[int] = mapped_column(type_=BigInteger, nullable=False)
@@ -61,10 +52,4 @@ class FileObject(Base):
         type_=DateTime(timezone=True),
         nullable=False,
         server_default=func.now(),
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        type_=DateTime(timezone=True),
-        nullable=False,
-        server_default=func.now(),
-        onupdate=func.now(),
     )

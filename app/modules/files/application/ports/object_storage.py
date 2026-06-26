@@ -4,7 +4,6 @@ from typing import Protocol
 
 @dataclass(frozen=True, slots=True)
 class StoredObject:
-    storage_backend: str
     storage_key: str
     size: int
     checksum: str

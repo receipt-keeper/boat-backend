@@ -53,7 +53,6 @@ async def test_upload_download_and_delete_file_through_api(
         upload_response = await client.post(
             "/api/v1/files",
             headers=auth_headers(seeded),
-            data={"purpose": "profile_image"},
             files={"file": ("profile.png", IMAGE_BYTES, "image/png")},
         )
         upload_body = upload_response.json()
@@ -97,8 +96,6 @@ async def test_upload_download_and_delete_file_through_api(
     assert metadata_body["data"] == {
         "fileId": file_id,
         "originalName": "profile.png",
-        "purpose": "profile_image",
-        "status": "available",
         "contentType": "image/png",
         "size": len(IMAGE_BYTES),
         "contentPath": f"/api/v1/files/{file_id}/content",
@@ -108,6 +105,7 @@ async def test_upload_download_and_delete_file_through_api(
 
     assert content_response.status_code == 200
     assert content_response.headers["content-type"] == "image/png"
+    assert content_response.headers["x-content-type-options"] == "nosniff"
     assert content_response.content == IMAGE_BYTES
     assert delete_response.status_code == 204
     assert delete_response.content == b""
@@ -264,61 +262,3 @@ async def test_other_user_cannot_read_or_delete_file(
             select(files_orm.File).where(files_orm.File.id == UUID(file_id))
         )
     assert remaining_file is not None
-
-
-async def test_delete_blocks_profile_image_reference_until_profile_is_cleared(
-    postgres_session_factory: async_sessionmaker[AsyncSession],
-    tmp_path: Path,
-) -> None:
-    storage_root = tmp_path / "files"
-    settings = make_test_settings(storage_root)
-    async with postgres_session_factory() as session, session.begin():
-        seeded = await seed_user(
-            session,
-            subject="files-profile-reference",
-            email="files-profile-reference@example.com",
-            name="프로필 참조 사용자",
-            settings=settings,
-        )
-
-    async with api_client(postgres_session_factory, settings) as client:
-        upload_response = await client.post(
-            "/api/v1/files",
-            headers=auth_headers(seeded),
-            files={"file": ("profile.png", IMAGE_BYTES, "image/png")},
-        )
-        file_id = upload_response.json()["data"]["fileId"]
-        set_response = await client.put(
-            "/api/v1/users/me/profile-image",
-            headers=auth_headers(seeded),
-            json={"fileId": file_id},
-        )
-        blocked_delete_response = await client.delete(
-            f"/api/v1/files/{file_id}",
-            headers=auth_headers(seeded),
-        )
-        content_after_block_response = await client.get(
-            f"/api/v1/files/{file_id}/content",
-            headers=auth_headers(seeded),
-        )
-        files_after_block = stored_local_files(storage_root)
-        clear_response = await client.delete(
-            "/api/v1/users/me/profile-image",
-            headers=auth_headers(seeded),
-        )
-        delete_response = await client.delete(
-            f"/api/v1/files/{file_id}",
-            headers=auth_headers(seeded),
-        )
-
-    blocked_body = blocked_delete_response.json()
-    assert set_response.status_code == 200
-    assert blocked_delete_response.status_code == 409
-    assert blocked_body["success"] is False
-    assert blocked_body["status"] == 409
-    assert content_after_block_response.status_code == 200
-    assert content_after_block_response.content == IMAGE_BYTES
-    assert files_after_block != []
-    assert clear_response.status_code == 204
-    assert delete_response.status_code == 204
-    assert stored_local_files(storage_root) == []

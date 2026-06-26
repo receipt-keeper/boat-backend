@@ -9,6 +9,5 @@ class UploadFileCommand:
     content_type: str
     size: int
     content: bytes = b""
-    purpose: str = "profile_image"
     storage_key: str | None = None
     checksum: str | None = None

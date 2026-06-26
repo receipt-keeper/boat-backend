@@ -20,7 +20,7 @@ def test_openapi_exposes_file_and_profile_image_paths_without_signed_url_contrac
     assert {"post"}.issubset(paths["/api/v1/files"])
     assert {"get", "delete"}.issubset(paths["/api/v1/files/{file_id}"])
     assert {"get"}.issubset(paths["/api/v1/files/{file_id}/content"])
-    assert "409" in paths["/api/v1/files/{file_id}"]["delete"]["responses"]
+    assert "409" not in paths["/api/v1/files/{file_id}"]["delete"]["responses"]
     assert {"put", "delete"}.issubset(paths["/api/v1/users/me/profile-image"])
     assert not any("signed" in path or "ticket" in path or "presign" in path for path in paths)
 
@@ -72,6 +72,7 @@ def test_openapi_descriptions_are_app_developer_friendly() -> None:
     assert not [
         term for description in descriptions for term in forbidden_terms if term in description
     ]
+    assert "프로필 이미지" not in paths["/api/v1/files/{file_id}"]["delete"]["description"]
 
 
 def test_openapi_response_schemas_include_examples() -> None:
@@ -121,4 +122,4 @@ def test_openapi_request_schemas_include_examples() -> None:
 
     upload_body_schema = schemas["Body_upload_file_api_v1_files_post"]
     assert upload_body_schema["properties"]["file"]["examples"]
-    assert upload_body_schema["properties"]["purpose"]["examples"]
+    assert set(upload_body_schema["properties"]) == {"file"}
