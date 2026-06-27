@@ -7,6 +7,9 @@ from app.modules.receipts.api.schemas import ReceiptResponse
 SAMPLE_RECEIPT_ID: Final = UUID("00000000-0000-0000-0000-000000000301")
 SAMPLE_FILE_ID: Final = UUID("00000000-0000-0000-0000-000000000201")
 SECOND_SAMPLE_FILE_ID: Final = UUID("00000000-0000-0000-0000-000000000202")
+SAMPLE_IMAGE_URL_LARGE: Final = "https://picsum.photos/id/1060/960/640"
+SAMPLE_IMAGE_URL_SQUARE: Final = "https://picsum.photos/id/180/512/512"
+SAMPLE_IMAGE_URL_PORTRAIT: Final = "https://picsum.photos/id/160/480/720"
 
 SAMPLE_RECEIPTS: Final[tuple[ReceiptResponse, ...]] = (
     ReceiptResponse(
@@ -22,7 +25,7 @@ SAMPLE_RECEIPTS: Final[tuple[ReceiptResponse, ...]] = (
         memo="주방 냉장고",
         requires_physical_receipt=True,
         receipt_file_ids=[SAMPLE_FILE_ID],
-        image_url="/api/v1/files/00000000-0000-0000-0000-000000000201/content",
+        image_url=SAMPLE_IMAGE_URL_LARGE,
         warranty_d_day=14,
         serial_number="SN-20240526-001",
         support_url="https://www.samsungsvc.co.kr",
@@ -41,7 +44,7 @@ SAMPLE_RECEIPTS: Final[tuple[ReceiptResponse, ...]] = (
         memo=None,
         requires_physical_receipt=True,
         receipt_file_ids=[SECOND_SAMPLE_FILE_ID],
-        image_url="/api/v1/files/00000000-0000-0000-0000-000000000202/content",
+        image_url=SAMPLE_IMAGE_URL_SQUARE,
         warranty_d_day=-6,
         serial_number=None,
         support_url="https://www.lge.co.kr/support",
@@ -60,7 +63,7 @@ SAMPLE_RECEIPTS: Final[tuple[ReceiptResponse, ...]] = (
         memo="거실 청소용",
         requires_physical_receipt=True,
         receipt_file_ids=[UUID("00000000-0000-0000-0000-000000000203")],
-        image_url="/api/v1/files/00000000-0000-0000-0000-000000000203/content",
+        image_url=SAMPLE_IMAGE_URL_PORTRAIT,
         warranty_d_day=615,
         serial_number=None,
         support_url="https://www.dyson.co.kr/support",
@@ -96,7 +99,7 @@ def sample_receipt(
         memo=memo,
         requires_physical_receipt=requires_physical_receipt,
         receipt_file_ids=receipt_file_ids or [SAMPLE_FILE_ID],
-        image_url="/api/v1/files/00000000-0000-0000-0000-000000000201/content",
+        image_url=SAMPLE_IMAGE_URL_LARGE,
         warranty_d_day=14,
         serial_number="SN-20240526-001",
         support_url="https://www.samsungsvc.co.kr",

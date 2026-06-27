@@ -1,8 +1,12 @@
-from fastapi import APIRouter, status
+from typing import Annotated
 
+from fastapi import APIRouter, Query, status
+
+from app.core.http.pagination import paginate_by_cursor
 from app.core.http.responses import ApiErrorData, CommonResponse
 from app.modules.credits.api.schemas import (
     CreditsResponse,
+    CreditTransactionListQuery,
     CreditTransactionResponse,
     CreditTransactionsResponse,
 )
@@ -48,14 +52,24 @@ async def get_credits() -> CommonResponse[CreditsResponse]:
     summary="크레딧 지급/사용 내역 조회",
     description="퀴즈 보상처럼 크레딧이 추가되거나 사용된 내역을 반환한다.",
 )
-async def list_credit_transactions() -> CommonResponse[CreditTransactionsResponse]:
+async def list_credit_transactions(
+    query: Annotated[CreditTransactionListQuery, Query()],
+) -> CommonResponse[CreditTransactionsResponse]:
+    transaction_responses = [
+        CreditTransactionResponse.from_domain(transaction)
+        for transaction in SAMPLE_CREDIT_TRANSACTIONS
+    ]
+    page = paginate_by_cursor(
+        transaction_responses,
+        cursor=query.cursor,
+        limit=query.limit,
+        total_count=len(transaction_responses),
+    )
     return CommonResponse(
         success=True,
         status=status.HTTP_200_OK,
         data=CreditTransactionsResponse(
-            transactions=[
-                CreditTransactionResponse.from_domain(transaction)
-                for transaction in SAMPLE_CREDIT_TRANSACTIONS
-            ],
+            transactions=page.items,
+            pagination=page.pagination,
         ),
     )

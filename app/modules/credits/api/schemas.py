@@ -1,6 +1,6 @@
 from pydantic import ConfigDict, Field
 
-from app.core.http.responses import AppBaseModel
+from app.core.http.responses import AppBaseModel, CursorPaginationResponse
 from app.modules.credits.domain import (
     CreditAction,
     CreditBalance,
@@ -51,6 +51,18 @@ class CreditTransactionResponse(AppBaseModel):
         )
 
 
+class CreditTransactionListQuery(AppBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    cursor: str | None = Field(
+        default=None,
+        description="다음 목록 조회용 커서. 첫 조회에서는 보내지 않는다.",
+        min_length=1,
+        max_length=200,
+    )
+    limit: int = Field(default=20, description="응답할 최대 내역 수.", ge=1, le=50)
+
+
 class CreditTransactionsResponse(AppBaseModel):
     model_config = ConfigDict(
         json_schema_extra={
@@ -63,10 +75,17 @@ class CreditTransactionsResponse(AppBaseModel):
                             "amount": 10,
                             "createdAt": "2026-06-26T00:00:00",
                         }
-                    ]
+                    ],
+                    "pagination": {
+                        "nextCursor": None,
+                        "hasNext": False,
+                        "limit": 20,
+                        "totalCount": 1,
+                    },
                 }
             ]
         },
     )
 
     transactions: list[CreditTransactionResponse] = Field(description="크레딧 지급/사용 내역.")
+    pagination: CursorPaginationResponse = Field(description="커서 기반 목록 정보.")

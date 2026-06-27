@@ -3,7 +3,7 @@ from uuid import UUID
 
 from pydantic import ConfigDict, Field
 
-from app.core.http.responses import AppBaseModel
+from app.core.http.responses import AppBaseModel, CursorPaginationResponse
 from app.modules.receipts.domain.value_objects import ReceiptSort, ReceiptStatusFilter
 
 
@@ -25,6 +25,12 @@ class ReceiptListQuery(AppBaseModel):
         ),
     )
     limit: int = Field(default=20, description="응답할 최대 영수증 수.", ge=1, le=50)
+    cursor: str | None = Field(
+        default=None,
+        description="다음 목록 조회용 커서. 첫 조회에서는 보내지 않는다.",
+        min_length=1,
+        max_length=200,
+    )
     category: str | None = Field(
         default=None,
         description="카테고리 완전 일치 필터.",
@@ -110,26 +116,41 @@ class CreateReceiptRequest(AppBaseModel):
 
 
 class ReceiptResponse(AppBaseModel):
-    receipt_id: UUID = Field(description="등록된 영수증 ID.")
-    item_name: str = Field(description="저장된 제품명 또는 대표 결제 항목명.")
-    brand_name: str | None = Field(description="저장된 브랜드명.")
-    payment_location: str | None = Field(description="저장된 구매처 또는 결제처.")
-    payment_date: date = Field(description="저장된 구매일 또는 결제일.")
-    total_amount: int | None = Field(description="저장된 총 결제 금액.")
-    period_months: int = Field(description="저장된 무상 AS 기간.")
-    expires_on: date = Field(description="서버가 계산한 무상 AS 만료일.")
+    model_config = ConfigDict(populate_by_name=True)
+
+    receipt_id: UUID = Field(alias="receiptId", description="등록된 영수증 ID.")
+    item_name: str = Field(alias="itemName", description="저장된 제품명 또는 대표 결제 항목명.")
+    brand_name: str | None = Field(alias="brandName", description="저장된 브랜드명.")
+    payment_location: str | None = Field(
+        alias="paymentLocation", description="저장된 구매처 또는 결제처."
+    )
+    payment_date: date = Field(alias="paymentDate", description="저장된 구매일 또는 결제일.")
+    total_amount: int | None = Field(alias="totalAmount", description="저장된 총 결제 금액.")
+    period_months: int = Field(alias="periodMonths", description="저장된 무상 AS 기간.")
+    expires_on: date = Field(alias="expiresOn", description="서버가 계산한 무상 AS 만료일.")
     category: str | None = Field(description="저장된 대분류 카테고리.")
     memo: str | None = Field(description="저장된 사용자 메모.")
-    requires_physical_receipt: bool = Field(description="실물 영수증 보관 필요 여부.")
-    receipt_file_ids: list[UUID] = Field(description="연결된 영수증 파일 ID 목록.")
-    image_url: str | None = Field(default=None, description="대표 이미지 URL.")
+    requires_physical_receipt: bool = Field(
+        alias="requiresPhysicalReceipt", description="실물 영수증 보관 필요 여부."
+    )
+    receipt_file_ids: list[UUID] = Field(
+        alias="receiptFileIds", description="연결된 영수증 파일 ID 목록."
+    )
+    image_url: str | None = Field(default=None, alias="imageUrl", description="대표 이미지 URL.")
     warranty_d_day: int | None = Field(
         default=None,
+        alias="warrantyDDay",
         description="무상 AS 만료일까지 남은 일수. 만료된 경우 음수.",
     )
-    serial_number: str | None = Field(default=None, description="시리얼 넘버.")
-    support_url: str | None = Field(default=None, description="제조사 고객지원 링크.")
-    registered_at: datetime | None = Field(default=None, description="등록 시각.")
+    serial_number: str | None = Field(
+        default=None, alias="serialNumber", description="시리얼 넘버."
+    )
+    support_url: str | None = Field(
+        default=None, alias="supportUrl", description="제조사 고객지원 링크."
+    )
+    registered_at: datetime | None = Field(
+        default=None, alias="registeredAt", description="등록 시각."
+    )
 
 
 class CreateReceiptResponse(ReceiptResponse):
@@ -137,8 +158,11 @@ class CreateReceiptResponse(ReceiptResponse):
 
 
 class ReceiptListResponse(AppBaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     receipts: list[ReceiptResponse] = Field(description="영수증 목록.")
-    total_count: int = Field(description="필터 조건에 맞는 전체 영수증 수.")
+    total_count: int = Field(alias="totalCount", description="필터 조건에 맞는 전체 영수증 수.")
+    pagination: CursorPaginationResponse = Field(description="커서 기반 목록 정보.")
 
 
 class UpdateReceiptRequest(AppBaseModel):

@@ -5,6 +5,7 @@ from uuid import UUID
 from fastapi import APIRouter, Query, Response, status
 
 from app.core.http.auth import CurrentPrincipalDep
+from app.core.http.pagination import paginate_by_cursor
 from app.core.http.responses import ApiErrorData, CommonResponse
 from app.modules.receipts.api.schemas import (
     CreateReceiptRequest,
@@ -52,11 +53,20 @@ async def list_receipts(
     query: Annotated[ReceiptListQuery, Query()],
 ) -> CommonResponse[ReceiptListResponse]:
     filtered_receipts = _sort_receipts(_filter_receipts(SAMPLE_RECEIPTS, query), query.sort)
-    receipts = filtered_receipts[: query.limit]
+    page = paginate_by_cursor(
+        filtered_receipts,
+        cursor=query.cursor,
+        limit=query.limit,
+        total_count=len(filtered_receipts),
+    )
     return CommonResponse(
         success=True,
         status=status.HTTP_200_OK,
-        data=ReceiptListResponse(receipts=receipts, total_count=len(filtered_receipts)),
+        data=ReceiptListResponse(
+            receipts=page.items,
+            total_count=len(filtered_receipts),
+            pagination=page.pagination,
+        ),
     )
 
 

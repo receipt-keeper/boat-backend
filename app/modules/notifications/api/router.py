@@ -1,10 +1,13 @@
 from datetime import UTC, datetime
+from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Query, status
 
+from app.core.http.pagination import paginate_by_cursor
 from app.core.http.responses import ApiErrorData, CommonResponse
 from app.modules.notifications.api.schemas import (
+    NotificationListQuery,
     NotificationListResponse,
     NotificationResponse,
     NotificationSettingsResponse,
@@ -36,11 +39,22 @@ router = APIRouter(
     summary="알림 목록 조회",
     description="보증 만료, 영수증 등록 안내, 혜택 안내 등 앱 알림을 반환한다.",
 )
-async def list_notifications() -> CommonResponse[NotificationListResponse]:
+async def list_notifications(
+    query: Annotated[NotificationListQuery, Query()],
+) -> CommonResponse[NotificationListResponse]:
+    page = paginate_by_cursor(
+        SAMPLE_NOTIFICATIONS,
+        cursor=query.cursor,
+        limit=query.limit,
+        total_count=len(SAMPLE_NOTIFICATIONS),
+    )
     return CommonResponse(
         success=True,
         status=status.HTTP_200_OK,
-        data=NotificationListResponse(notifications=list(SAMPLE_NOTIFICATIONS)),
+        data=NotificationListResponse(
+            notifications=page.items,
+            pagination=page.pagination,
+        ),
     )
 
 

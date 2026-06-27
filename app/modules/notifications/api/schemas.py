@@ -3,7 +3,7 @@ from uuid import UUID
 
 from pydantic import ConfigDict, Field
 
-from app.core.http.responses import AppBaseModel
+from app.core.http.responses import AppBaseModel, CursorPaginationResponse
 from app.modules.notifications.domain.value_objects import NotificationTargetType
 
 
@@ -23,8 +23,21 @@ class NotificationResponse(AppBaseModel):
     read_at: datetime | None = Field(alias="readAt", description="알림 읽음 시각.")
 
 
+class NotificationListQuery(AppBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    cursor: str | None = Field(
+        default=None,
+        description="다음 목록 조회용 커서. 첫 조회에서는 보내지 않는다.",
+        min_length=1,
+        max_length=200,
+    )
+    limit: int = Field(default=20, description="응답할 최대 알림 수.", ge=1, le=50)
+
+
 class NotificationListResponse(AppBaseModel):
     notifications: list[NotificationResponse] = Field(description="알림 목록.")
+    pagination: CursorPaginationResponse = Field(description="커서 기반 목록 정보.")
 
 
 class NotificationSettingsResponse(AppBaseModel):

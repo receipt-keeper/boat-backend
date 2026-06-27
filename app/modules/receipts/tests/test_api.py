@@ -133,19 +133,19 @@ async def test_create_receipt_persists_final_values(
     assert body["success"] is True
     assert body["status"] == 201
     data = body["data"]
-    assert data["item_name"] == "삼성 냉장고 875L"
-    assert data["payment_date"] == "2024-05-26"
-    assert data["total_amount"] == 5137000
-    assert data["period_months"] == 24
-    assert data["expires_on"] == "2026-05-26"
-    assert data["requires_physical_receipt"] is True
-    assert data["receipt_file_ids"] == [str(TEST_FILE_ID), str(SECOND_TEST_FILE_ID)]
+    assert data["itemName"] == "삼성 냉장고 875L"
+    assert data["paymentDate"] == "2024-05-26"
+    assert data["totalAmount"] == 5137000
+    assert data["periodMonths"] == 24
+    assert data["expiresOn"] == "2026-05-26"
+    assert data["requiresPhysicalReceipt"] is True
+    assert data["receiptFileIds"] == [str(TEST_FILE_ID), str(SECOND_TEST_FILE_ID)]
 
     async with postgres_session_factory() as session:
-        record = await session.get(receipt_orm.Receipt, UUID(data["receipt_id"]))
+        record = await session.get(receipt_orm.Receipt, UUID(data["receiptId"]))
         attachment_records = await session.scalars(
             select(receipt_orm.ReceiptAttachment).where(
-                receipt_orm.ReceiptAttachment.receipt_id == UUID(data["receipt_id"])
+                receipt_orm.ReceiptAttachment.receipt_id == UUID(data["receiptId"])
             )
         )
         attachments = tuple(attachment_records)
@@ -177,7 +177,8 @@ async def test_list_receipts_supports_home_list_and_search_contract(
     postgres_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     async with _client(postgres_session_factory) as client:
-        recent_response = await client.get("/api/v1/receipts?sort=recent&limit=5")
+        recent_response = await client.get("/api/v1/receipts?sort=recent&limit=2")
+        next_response = await client.get("/api/v1/receipts?sort=recent&limit=2&cursor=2")
         expiring_response = await client.get(
             "/api/v1/receipts?status=expiring&sort=expiresOn&limit=5"
         )
@@ -185,18 +186,38 @@ async def test_list_receipts_supports_home_list_and_search_contract(
         search_response = await client.get("/api/v1/receipts?q=주방")
 
     recent_body = recent_response.json()
+    next_body = next_response.json()
     expiring_body = expiring_response.json()
     active_body = active_response.json()
     search_body = search_response.json()
 
     assert recent_response.status_code == 200
-    assert recent_body["data"]["total_count"] == 3
-    assert recent_body["data"]["receipts"][0]["item_name"] == "삼성 냉장고 875L"
+    assert recent_body["data"]["totalCount"] == 3
+    assert recent_body["data"]["pagination"] == {
+        "nextCursor": "2",
+        "hasNext": True,
+        "limit": 2,
+        "totalCount": 3,
+    }
+    assert recent_body["data"]["receipts"][0]["itemName"] == "삼성 냉장고 875L"
+    assert recent_body["data"]["receipts"][0]["imageUrl"] == (
+        "https://picsum.photos/id/1060/960/640"
+    )
+    assert next_response.status_code == 200
+    assert next_body["data"]["pagination"] == {
+        "nextCursor": None,
+        "hasNext": False,
+        "limit": 2,
+        "totalCount": 3,
+    }
+    assert len(next_body["data"]["receipts"]) == 1
+    assert next_body["data"]["receipts"][0]["imageUrl"] == ("https://picsum.photos/id/160/480/720")
     assert expiring_response.status_code == 200
-    assert expiring_body["data"]["receipts"][0]["warranty_d_day"] == 14
+    assert expiring_body["data"]["receipts"][0]["warrantyDDay"] == 14
     assert active_response.status_code == 200
-    assert active_body["data"]["receipts"][0]["item_name"] == "다이슨 청소기"
+    assert active_body["data"]["receipts"][0]["itemName"] == "다이슨 청소기"
     assert search_response.status_code == 200
+    assert search_body["data"]["pagination"]["totalCount"] == 1
     assert search_body["data"]["receipts"][0]["memo"] == "주방 냉장고"
 
 
@@ -236,13 +257,13 @@ async def test_create_receipt_accepts_nullable_fields_and_manual_registration(
     assert response.status_code == 201
     assert body["success"] is True
     data = body["data"]
-    assert data["brand_name"] is None
-    assert data["payment_location"] is None
-    assert data["total_amount"] is None
-    assert data["period_months"] == 12
-    assert data["expires_on"] == "2025-06-01"
-    assert data["requires_physical_receipt"] is False
-    assert data["receipt_file_ids"] == [str(TEST_FILE_ID)]
+    assert data["brandName"] is None
+    assert data["paymentLocation"] is None
+    assert data["totalAmount"] is None
+    assert data["periodMonths"] == 12
+    assert data["expiresOn"] == "2025-06-01"
+    assert data["requiresPhysicalReceipt"] is False
+    assert data["receiptFileIds"] == [str(TEST_FILE_ID)]
 
 
 async def test_ocr_failure_can_fall_back_to_manual_receipt_save(
@@ -278,9 +299,9 @@ async def test_ocr_failure_can_fall_back_to_manual_receipt_save(
 
     save_body = save_response.json()
     assert save_response.status_code == 201
-    assert save_body["data"]["item_name"] == "수동 입력 제품"
-    assert save_body["data"]["period_months"] == 12
-    assert save_body["data"]["expires_on"] == "2025-06-01"
+    assert save_body["data"]["itemName"] == "수동 입력 제품"
+    assert save_body["data"]["periodMonths"] == 12
+    assert save_body["data"]["expiresOn"] == "2025-06-01"
 
 
 async def test_ocr_auto_fill_category_can_be_saved(
@@ -331,7 +352,7 @@ async def test_create_receipt_calculates_expiration_on_month_end(
 
     body = response.json()
     assert response.status_code == 201
-    assert body["data"]["expires_on"] == "2024-02-29"
+    assert body["data"]["expiresOn"] == "2024-02-29"
 
 
 @pytest.mark.parametrize(

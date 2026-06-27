@@ -21,7 +21,7 @@ class UsageResponse(AppBaseModel):
         json_schema_extra={
             "examples": [
                 {
-                    "receiptAnalysis": {
+                    "ocr": {
                         "remainingCount": 3,
                         "canAnalyze": True,
                     }
@@ -31,10 +31,10 @@ class UsageResponse(AppBaseModel):
     )
 
     receipt_analysis: ReceiptAnalysisUsageResponse = Field(
-        alias="receiptAnalysis",
+        alias="ocr",
         description="영수증 분석 횟수와 사용 가능 여부.",
     )
 
     @classmethod
     def from_domain(cls, usage: UsageSnapshot) -> "UsageResponse":
-        return cls(receiptAnalysis=ReceiptAnalysisUsageResponse.from_domain(usage.receipt_analysis))
+        return cls(ocr=ReceiptAnalysisUsageResponse.from_domain(usage.receipt_analysis))
