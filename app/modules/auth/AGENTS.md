@@ -2,15 +2,15 @@
 
 ## OVERVIEW
 
-Auth module for external identity verification, backend-issued access JWTs, opaque refresh tokens, and bearer principal restoration.
+Auth는 외부 identity 검증, backend-issued access JWT, opaque refresh token, bearer principal 복원을 소유한다.
 
 ## STRUCTURE
 
 ```text
 auth/
 ├── api/              # /auth routes, transport schemas, auth-specific exception handlers, security deps
-├── application/      # commands, queries, principal model, and provider-neutral ports
-├── domain/           # credential, external identity, refresh token entities and value objects
+├── application/      # commands, queries, provider-neutral ports
+├── domain/           # credential, external identity, refresh token entities/value objects
 ├── infrastructure/   # Firebase, JWT, opaque refresh token, SQLAlchemy adapters
 ├── dependencies.py   # shared transaction session and cross-module users provisioning wiring
 └── tests/            # API, service, dependency, security, architecture guards
@@ -20,54 +20,51 @@ auth/
 
 | Task | Location | Notes |
 |---|---|---|
-| Routes | `api/router.py` | `POST /login`, `POST /refresh`, `POST /logout`. |
-| Principal deps | `api/security.py` | Bearer extraction and role guard. |
-| Auth errors | `api/exception_handlers.py` | 401/403 failure envelopes. |
-| Login command | `application/commands/login/use_case.py` | Verify identity, provision user, create credentials, issue tokens. |
-| Refresh command | `application/commands/refresh/use_case.py` | Rotate refresh token and issue a new access token pair. |
-| Logout command | `application/commands/logout/use_case.py` | Revoke the presented refresh token. |
-| Withdraw command | `application/commands/withdraw/use_case.py` | Delete auth credentials and request user deletion/cleanup; the public `DELETE /api/v1/users/me` route lives in the users BC and delegates here. |
-| Current principal query | `application/queries/current_principal/use_case.py` | Restore bearer principal and verify active credentials without side effects. |
-| Token contracts | `application/ports/token_issuer.py` | Provider-neutral access/refresh token ports. |
-| Runtime wiring | `dependencies.py` | One transaction session shared across credential and user provisioning. |
-| Persistence | `infrastructure/persistence/` | ORM, mapper, credential repository. |
-| Provider adapter | `infrastructure/identity_providers/firebase.py` | Firebase SDK is isolated here. |
-| Regression guard | `tests/test_architecture.py` | File layout and forbidden import rules. |
+| Routes | `api/router.py` | `POST /login`, `POST /refresh`, `POST /logout`. users endpoint를 여기 mount하지 않는다. |
+| Principal deps | `api/security.py` | Bearer extraction과 role guard. 복원된 principal model은 core-owned. |
+| Auth errors | `api/exception_handlers.py` | 401/403 failure envelope. |
+| Login command | `application/commands/login/use_case.py` | identity 검증, user resolve/provision, credential 생성, token 발급. |
+| Refresh command | `application/commands/refresh/use_case.py` | refresh token rotate와 새 access token pair 발급. |
+| Logout command | `application/commands/logout/use_case.py` | 제출된 refresh token revoke. |
+| Withdraw command | `application/commands/withdraw/use_case.py` | auth credential 삭제와 user deletion/cleanup 요청. public route는 users BC의 `DELETE /api/v1/users/me`. |
+| Current principal query | `application/queries/current_principal/use_case.py` | side effect 없이 bearer principal을 복원하고 active credential을 검증한다. |
+| Token contracts | `application/ports/token_issuer.py` | provider-neutral access/refresh token ports. |
+| Principal model | `app/core/security/principal.py` | `AuthenticatedPrincipal`의 SSOT. |
+| Runtime wiring | `dependencies.py` | credential repository와 user provisioning이 하나의 transaction session을 공유한다. |
+| Persistence | `infrastructure/persistence/` | ORM, mapper, credential repository, login synchronizer. |
+| Provider adapter | `infrastructure/identity_providers/firebase.py` | Firebase SDK 격리 지점. |
+| Regression guard | `tests/test_architecture.py` | file layout, forbidden import, router surface, token port contract. |
 
 ## CONVENTIONS
 
-- Keep auth application command packages under `application/commands/<business_task>/`.
-- Keep internal side-effect-free auth read flows under `application/queries/<read_task>/`.
-- Application DTO files are named by role (`command.py`, `query.py`, `result.py`), not generic `schemas.py`; API transport schemas may remain in `api/schemas.py`.
-- Migrated flow use cases use `*CommandUseCase` or `*QueryUseCase`, not generic `*UseCase`.
-- `read_models` is reserved for public optimized read API/read model surfaces; it is not required for internal auth queries.
-- Auth uses the primary application database by default. A separate read DB,
-  read-store, projection worker, or materialized view is forbidden without an
-  explicitly approved infrastructure plan.
-- Command bus/query bus is forbidden unless explicitly approved later.
-- Same-process domain event dispatch is allowed only for concrete side effects
-  through `app.core.domain.events.DomainEvent` and
-  `app.core.application.event_dispatcher.EventDispatcher`.
-- Application code depends on ports and domain objects only; it must not import Firebase, JWT, SQLAlchemy, auth infrastructure, or users infrastructure.
-- Token ports stay provider-neutral: issuer/verifier/hasher interfaces, no JWT-specific names in the contract.
-- `dependencies.py` is the only place that bridges auth to users provisioning.
-- `get_auth_transaction_session()` commits after success and rolls back on any `BaseException`; preserve this when changing signup/login wiring.
-- Firebase verification runs through `asyncio.to_thread()` because the SDK call is synchronous.
-- Auth domain messages are Korean and domain exceptions remain HTTP-agnostic.
-- Access tokens are backend-issued JWTs; refresh tokens are opaque and persisted only by hash.
+- Auth application command package는 `application/commands/<business_task>/` 아래에 둔다.
+- Auth internal side-effect-free read flow는 `application/queries/<read_task>/` 아래에 둔다.
+- Application DTO file은 `command.py`, `query.py`, `result.py`처럼 역할명으로 둔다. API transport schema는 `api/schemas.py` 가능.
+- Migrated flow use case는 `*CommandUseCase` 또는 `*QueryUseCase`를 쓴다.
+- `read_models`는 public optimized read API/read model surface용이다. 내부 auth query에는 요구하지 않는다.
+- Auth는 기본 application DB를 쓴다. 별도 read DB/read-store/projection worker/materialized view는 명시 승인 없이는 금지다.
+- Command bus/query bus는 명시 승인 없이는 금지다.
+- Same-process domain event dispatch는 실제 emitted event와 synchronous in-process handler가 있을 때만 허용한다.
+- Application code는 port와 domain object에만 의존한다. Firebase, JWT, SQLAlchemy, auth infrastructure, users infrastructure import 금지.
+- Token port는 provider-neutral이어야 한다. contract 이름에 JWT-specific naming을 넣지 않는다.
+- `dependencies.py`만 auth와 users provisioning을 연결한다.
+- `get_auth_transaction_session()`은 성공 시 commit, `BaseException` 발생 시 rollback한다. signup/login wiring 변경 시 보존한다.
+- Firebase verification은 SDK call이 sync라 `asyncio.to_thread()`를 통해 실행한다.
+- Auth domain message는 한글이고 domain exception은 HTTP를 모른다.
+- Access token은 backend-issued JWT다. Refresh token은 opaque이고 hash만 저장한다.
+- Command result는 HTTP `token_type`을 소유하지 않는다. `token_type`은 API response shaping 영역이다.
 
 ## ANTI-PATTERNS
 
-- Do not add `logout-all`.
-- Do not add Firebase custom-token issuance or direct Apple OIDC verification unless the scope is explicitly reopened.
-- users public API belongs to the users BC. Do not mount users endpoints in the auth router.
-- Do not import `app.modules.users.infrastructure` from auth.
-- Do not create `app/composition` for auth/users wiring.
-- Do not reintroduce old file names blocked by `tests/test_architecture.py`.
-- Do not move business decisions into Firebase, JWT, or SQLAlchemy adapters.
+- `/logout-all`을 추가하지 않는다.
+- scope가 명시적으로 다시 열리기 전까지 Firebase custom-token issuance나 direct Apple OIDC verification을 추가하지 않는다.
+- users public API belongs to the users BC.
+- Do not mount users endpoints in the auth router.
+- `app.modules.users.infrastructure`를 auth에서 import하지 않는다.
+- auth/users wiring을 위해 `app/composition`을 만들지 않는다.
+- `tests/test_architecture.py`가 막는 old file name을 되살리지 않는다.
+- `AuthenticatedPrincipal`을 auth application package로 되돌리지 않는다.
+- business decision을 Firebase, JWT, SQLAlchemy adapter로 옮기지 않는다.
 - NoOpPushCleanup cannot satisfy PRD-complete withdrawal; it must not be used to claim PRD-complete withdrawal cleanup, and missing BC cleanup must remain unclaimed until the real owning BC and cleanup contract exist.
-- Do not introduce event sourcing, durable event stores, outbox, retry, replay,
-  external message bus, Kafka/RabbitMQ/Celery, cross-process delivery, or
-  durability semantics in auth.
-- Do not add empty event scaffolding; auth events need a real emitted event and a
-  synchronous in-process handler.
+- event sourcing, durable event store, outbox, retry, replay, external message bus, Kafka/RabbitMQ/Celery, cross-process delivery, durability semantics를 auth에 도입하지 않는다.
+- 빈 event scaffolding을 추가하지 않는다. Auth event는 실제 emitted event와 synchronous in-process handler가 필요하다.
