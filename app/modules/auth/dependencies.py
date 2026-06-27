@@ -67,11 +67,9 @@ class _ProvisionUserPortAdapter(UserProvisioner):
         self,
         command_use_case: ResolveUserForLoginCommandUseCase,
         *,
-        initial_free_analysis_tokens: int = 0,
         default_profile_image_url: str | None = None,
     ) -> None:
         self._command_use_case = command_use_case
-        self._initial_free_analysis_tokens = initial_free_analysis_tokens
         self._default_profile_image_url = default_profile_image_url
 
     async def provision(self, *, request: UserProvisioningRequest) -> ProvisionedUser:
@@ -80,12 +78,10 @@ class _ProvisionUserPortAdapter(UserProvisioner):
                 name=request.name,
                 email=request.email,
                 profile_image_url=request.profile_image_url or self._default_profile_image_url,
-                initial_free_analysis_tokens=self._initial_free_analysis_tokens,
                 terms_version=request.terms_version,
                 privacy_version=request.privacy_version,
                 terms_accepted=request.terms_accepted,
                 privacy_accepted=request.privacy_accepted,
-                marketing_consent=request.marketing_consent,
             )
         )
         return ProvisionedUser(user_id=result.user_id)
@@ -131,7 +127,6 @@ async def get_user_provisioner(session: AsyncSessionDep, settings: SettingsDep) 
     )
     return _ProvisionUserPortAdapter(
         command_use_case,
-        initial_free_analysis_tokens=settings.initial_free_analysis_tokens,
         default_profile_image_url=settings.default_profile_image_url,
     )
 

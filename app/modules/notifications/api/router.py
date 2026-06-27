@@ -1,15 +1,13 @@
 from datetime import UTC, datetime
 from uuid import UUID
 
-from fastapi import APIRouter, Response, status
+from fastapi import APIRouter, status
 
 from app.core.http.responses import ApiErrorData, CommonResponse
 from app.modules.notifications.api.schemas import (
     NotificationListResponse,
     NotificationResponse,
     NotificationSettingsResponse,
-    PushDeviceResponse,
-    RegisterPushDeviceRequest,
     UpdateNotificationSettingsRequest,
 )
 from app.modules.notifications.mock import SAMPLE_NOTIFICATIONS, notification_with_read_state
@@ -65,34 +63,6 @@ async def update_notification_settings(
             ),
         ),
     )
-
-
-@router.put(
-    "/notifications/devices/{device_id}",
-    response_model=CommonResponse[PushDeviceResponse],
-    summary="푸시 기기 등록",
-    description="앱에서 발급받은 FCM 토큰을 기기별로 등록하거나 갱신한다.",
-)
-async def upsert_push_device(
-    device_id: str,
-    request: RegisterPushDeviceRequest,
-) -> CommonResponse[PushDeviceResponse]:
-    return CommonResponse(
-        success=True,
-        status=status.HTTP_200_OK,
-        data=PushDeviceResponse(deviceId=device_id, registered=True, platform=request.platform),
-    )
-
-
-@router.delete(
-    "/notifications/devices/{device_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
-    summary="푸시 기기 삭제",
-    description="해당 기기를 푸시 알림 발송 대상에서 제거한다.",
-)
-async def delete_push_device(device_id: str) -> Response:
-    _ = device_id
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get(

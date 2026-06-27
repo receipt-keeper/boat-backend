@@ -14,7 +14,6 @@ class LoginRequest(AppBaseModel):
                     "privacyVersion": "1.0",
                     "termsAccepted": True,
                     "privacyAccepted": True,
-                    "marketingConsent": False,
                 }
             ]
         },
@@ -46,11 +45,6 @@ class LoginRequest(AppBaseModel):
         default=False,
         alias="privacyAccepted",
         description="개인정보 처리방침 동의 여부. 신규 가입 시 true가 필요하다.",
-    )
-    marketing_consent: bool = Field(
-        default=False,
-        alias="marketingConsent",
-        description="마케팅 수신 선택 동의.",
     )
 
 

@@ -34,9 +34,9 @@ async def test_file_metadata_reads_original_variant_when_derivatives_exist(
         upload_response = await client.post(
             "/api/v1/files",
             headers=auth_headers(seeded),
-            files={"file": ("profile.png", IMAGE_BYTES, "image/png")},
+            files=[("files", ("profile.png", IMAGE_BYTES, "image/png"))],
         )
-        file_id = upload_response.json()["data"]["fileId"]
+        file_id = upload_response.json()["data"]["files"][0]["fileId"]
 
     async with postgres_session_factory() as session, session.begin():
         session.add(

@@ -39,7 +39,6 @@ def test_openapi_descriptions_are_app_developer_friendly() -> None:
         paths["/api/v1/auth/refresh"]["post"]["description"],
         paths["/api/v1/auth/logout"]["post"]["description"],
         paths["/api/v1/users/me"]["get"]["description"],
-        paths["/api/v1/users/me"]["patch"]["description"],
         paths["/api/v1/users/me/profile-image"]["put"]["description"],
         paths["/api/v1/users/me/profile-image"]["delete"]["description"],
         paths["/api/v1/users/me"]["delete"]["description"],
@@ -86,9 +85,9 @@ def test_openapi_response_schemas_include_examples() -> None:
     for schema_name in (
         "AuthTokenResponse",
         "CurrentUserResponse",
-        "UpdateCurrentUserResponse",
         "ProfileImageResponse",
         "UploadedFileResponse",
+        "UploadedFilesResponse",
         "FileMetadataResponse",
     ):
         assert schemas[schema_name]["examples"]
@@ -107,7 +106,6 @@ def test_openapi_request_schemas_include_examples() -> None:
     for schema_name in (
         "LoginRequest",
         "RefreshTokenRequest",
-        "UpdateCurrentUserRequest",
         "SetProfileImageRequest",
     ):
         assert schemas[schema_name]["examples"]
@@ -117,5 +115,8 @@ def test_openapi_request_schemas_include_examples() -> None:
     assert multipart["examples"]
 
     upload_body_schema = schemas["Body_upload_file_api_v1_files_post"]
-    assert upload_body_schema["properties"]["file"]["examples"]
-    assert set(upload_body_schema["properties"]) == {"file"}
+    assert (
+        upload_body_schema["properties"]["files"]["items"]["contentMediaType"]
+        == "application/octet-stream"
+    )
+    assert set(upload_body_schema["properties"]) == {"files"}

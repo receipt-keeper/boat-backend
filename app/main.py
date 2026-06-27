@@ -16,7 +16,6 @@ from app.core.domain.exceptions import (
 )
 from app.core.http import exception_handlers
 from app.core.observability.health import router as observability_router
-from app.modules.assets.api.router import router as assets_router
 from app.modules.auth.api import exception_handlers as auth_exception_handlers
 from app.modules.auth.api.router import router as auth_router
 from app.modules.auth.api.security import authenticate_current_principal
@@ -103,11 +102,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(ocr_router, prefix=resolved_settings.api_prefix)
     app.include_router(
         receipts_router,
-        prefix=resolved_settings.api_prefix,
-        dependencies=[Depends(authenticate_current_principal)],
-    )
-    app.include_router(
-        assets_router,
         prefix=resolved_settings.api_prefix,
         dependencies=[Depends(authenticate_current_principal)],
     )

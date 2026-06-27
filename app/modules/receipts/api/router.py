@@ -1,22 +1,27 @@
 from datetime import date
-from typing import Any
+from typing import Annotated, Any, assert_never
 from uuid import UUID
 
-from fastapi import APIRouter, Response, status
+from fastapi import APIRouter, Query, Response, status
 
 from app.core.http.auth import CurrentPrincipalDep
 from app.core.http.responses import ApiErrorData, CommonResponse
 from app.modules.receipts.api.schemas import (
     CreateReceiptRequest,
     CreateReceiptResponse,
+    ReceiptListQuery,
+    ReceiptListResponse,
     ReceiptResponse,
     UpdateReceiptRequest,
 )
 from app.modules.receipts.application.commands.create_receipt.command import CreateReceiptCommand
 from app.modules.receipts.dependencies import CreateReceiptCommandUseCaseDep
+from app.modules.receipts.domain.value_objects import ReceiptSort, ReceiptStatusFilter
 from app.modules.receipts.mock import (
     SAMPLE_FILE_ID,
+    SAMPLE_RECEIPTS,
     SECOND_SAMPLE_FILE_ID,
+    receipt_with_id,
     sample_receipt,
 )
 
@@ -35,6 +40,24 @@ router = APIRouter(
     tags=["receipts"],
     responses=_ERROR_RESPONSES,
 )
+
+
+@router.get(
+    "",
+    response_model=CommonResponse[ReceiptListResponse],
+    summary="영수증 목록 조회",
+    description="등록된 영수증을 무상 AS 상태, 카테고리, 검색어 조건에 맞춰 반환한다.",
+)
+async def list_receipts(
+    query: Annotated[ReceiptListQuery, Query()],
+) -> CommonResponse[ReceiptListResponse]:
+    filtered_receipts = _sort_receipts(_filter_receipts(SAMPLE_RECEIPTS, query), query.sort)
+    receipts = filtered_receipts[: query.limit]
+    return CommonResponse(
+        success=True,
+        status=status.HTTP_200_OK,
+        data=ReceiptListResponse(receipts=receipts, total_count=len(filtered_receipts)),
+    )
 
 
 @router.post(
@@ -94,7 +117,7 @@ async def get_receipt(receipt_id: UUID) -> CommonResponse[ReceiptResponse]:
     return CommonResponse(
         success=True,
         status=status.HTTP_200_OK,
-        data=sample_receipt(receipt_id=receipt_id),
+        data=receipt_with_id(receipt_id),
     )
 
 
@@ -146,3 +169,63 @@ async def update_receipt(
 )
 async def delete_receipt(_receipt_id: UUID) -> Response:
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+def _filter_receipts(
+    receipts: tuple[ReceiptResponse, ...],
+    query: ReceiptListQuery,
+) -> list[ReceiptResponse]:
+    filtered = [receipt for receipt in receipts if _matches_status(receipt, query.status)]
+    if query.category is not None:
+        filtered = [receipt for receipt in filtered if receipt.category == query.category]
+    if query.q is not None:
+        keyword = query.q.casefold()
+        filtered = [receipt for receipt in filtered if _contains_keyword(receipt, keyword)]
+    return filtered
+
+
+def _matches_status(
+    receipt: ReceiptResponse,
+    status_filter: ReceiptStatusFilter,
+) -> bool:
+    d_day = receipt.warranty_d_day
+    match status_filter:
+        case ReceiptStatusFilter.ALL:
+            return True
+        case ReceiptStatusFilter.ACTIVE:
+            return d_day is not None and d_day > 30
+        case ReceiptStatusFilter.EXPIRING:
+            return d_day is not None and 0 <= d_day <= 30
+        case ReceiptStatusFilter.EXPIRED:
+            return d_day is not None and d_day < 0
+        case unreachable:
+            assert_never(unreachable)
+
+
+def _contains_keyword(receipt: ReceiptResponse, keyword: str) -> bool:
+    searchable_values = (
+        receipt.item_name,
+        receipt.brand_name,
+        receipt.payment_location,
+        receipt.memo,
+    )
+    return any(value is not None and keyword in value.casefold() for value in searchable_values)
+
+
+def _sort_receipts(
+    receipts: list[ReceiptResponse],
+    sort: ReceiptSort,
+) -> list[ReceiptResponse]:
+    match sort:
+        case ReceiptSort.RECENT:
+            return sorted(
+                receipts,
+                key=lambda receipt: receipt.registered_at or date.min,
+                reverse=True,
+            )
+        case ReceiptSort.EXPIRES_ON:
+            return sorted(receipts, key=lambda receipt: receipt.expires_on)
+        case ReceiptSort.PURCHASE_DATE:
+            return sorted(receipts, key=lambda receipt: receipt.payment_date, reverse=True)
+        case unreachable:
+            assert_never(unreachable)

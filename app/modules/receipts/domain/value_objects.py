@@ -1,10 +1,24 @@
 from dataclasses import dataclass
 from datetime import date
+from enum import StrEnum
 from typing import ClassVar
 from uuid import UUID
 
 from app.core.domain.exceptions import ErrorDetail, ValidationError
 from app.core.domain.value_object import ValueObject
+
+
+class ReceiptStatusFilter(StrEnum):
+    ALL = "all"
+    ACTIVE = "active"
+    EXPIRING = "expiring"
+    EXPIRED = "expired"
+
+
+class ReceiptSort(StrEnum):
+    RECENT = "recent"
+    EXPIRES_ON = "expiresOn"
+    PURCHASE_DATE = "purchaseDate"
 
 
 @dataclass(frozen=True, slots=True)

@@ -30,7 +30,7 @@ async def test_upload_rejects_spoofed_image_content(
         response = await client.post(
             "/api/v1/files",
             headers=auth_headers(seeded),
-            files={"file": ("profile.png", b"not-a-real-png", "image/png")},
+            files=[("files", ("profile.png", b"not-a-real-png", "image/png"))],
         )
 
     body = response.json()
@@ -62,13 +62,7 @@ async def test_upload_rejects_malformed_heif_content(
         response = await client.post(
             "/api/v1/files",
             headers=auth_headers(seeded),
-            files={
-                "file": (
-                    "profile.heif",
-                    b"\x00\x00\x00\x0cftypheic",
-                    "image/heif",
-                )
-            },
+            files={"files": ("profile.heif", b"\x00\x00\x00\x0cftypheic", "image/heif")},
         )
 
     body = response.json()

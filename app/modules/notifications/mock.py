@@ -6,7 +6,7 @@ from app.modules.notifications.api.schemas import NotificationResponse
 from app.modules.notifications.domain.value_objects import NotificationTargetType
 
 MOCK_NOTIFICATION_ID: Final = UUID("00000000-0000-0000-0000-000000000601")
-MOCK_ASSET_ID: Final = UUID("00000000-0000-0000-0000-000000000401")
+MOCK_RECEIPT_ID: Final = UUID("00000000-0000-0000-0000-000000000301")
 
 SAMPLE_NOTIFICATIONS: Final[tuple[NotificationResponse, ...]] = (
     NotificationResponse(
@@ -15,8 +15,8 @@ SAMPLE_NOTIFICATIONS: Final[tuple[NotificationResponse, ...]] = (
         message=(
             "삼성 냉장고 875L 무상 AS 14일 남았어요! 기간이 지나기 전 영수증 증빙 서류를 챙기세요."
         ),
-        targetType=NotificationTargetType.ASSET,
-        targetId=MOCK_ASSET_ID,
+        targetType=NotificationTargetType.RECEIPT,
+        targetId=MOCK_RECEIPT_ID,
         createdAt=datetime(2026, 5, 12, 9, 0, tzinfo=UTC),
         readAt=None,
     ),

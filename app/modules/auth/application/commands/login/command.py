@@ -8,4 +8,3 @@ class LoginCommand:
     privacy_version: str | None = None
     terms_accepted: bool = False
     privacy_accepted: bool = False
-    marketing_consent: bool = False

@@ -114,7 +114,6 @@ async def test_login_with_consent_succeeds(client: AsyncClient) -> None:
             "privacyVersion": "v1",
             "termsAccepted": True,
             "privacyAccepted": True,
-            "marketingConsent": True,
         },
     )
 
@@ -123,7 +122,6 @@ async def test_login_with_consent_succeeds(client: AsyncClient) -> None:
     assert command_use_case.command is not None
     assert command_use_case.command.terms_accepted is True
     assert command_use_case.command.privacy_accepted is True
-    assert command_use_case.command.marketing_consent is True
     assert command_use_case.command.terms_version == "v1"
     assert body["success"] is True
     assert body["data"]["accessToken"] == "access-token"

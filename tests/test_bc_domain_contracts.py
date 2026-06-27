@@ -7,16 +7,17 @@ EXPECTED_DOMAIN_MODELS: Final[dict[str, frozenset[str]]] = {
     ),
     "app.modules.usage.domain": frozenset({"UsageSnapshot", "ReceiptAnalysisUsage"}),
     "app.modules.notifications.domain.model": frozenset(
-        {"NotificationDevice", "NotificationPreference", "UserNotification"}
+        {"NotificationPreference", "UserNotification"}
     ),
 }
 EXPECTED_MOCK_DATA: Final[dict[str, frozenset[str]]] = {
-    "app.modules.assets.mock": frozenset({"SAMPLE_ASSETS", "asset_with_id"}),
     "app.modules.credits.mock": frozenset({"SAMPLE_CREDIT_BALANCE", "SAMPLE_CREDIT_TRANSACTIONS"}),
     "app.modules.notifications.mock": frozenset(
         {"SAMPLE_NOTIFICATIONS", "notification_with_read_state"}
     ),
-    "app.modules.receipts.mock": frozenset({"SAMPLE_FILE_ID", "sample_receipt"}),
+    "app.modules.receipts.mock": frozenset(
+        {"SAMPLE_FILE_ID", "SAMPLE_RECEIPTS", "receipt_with_id", "sample_receipt"}
+    ),
     "app.modules.usage.mock": frozenset({"SAMPLE_USAGE"}),
 }
 

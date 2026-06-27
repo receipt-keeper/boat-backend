@@ -35,9 +35,9 @@ async def test_delete_blocks_active_profile_image_reference(
         upload_response = await client.post(
             "/api/v1/files",
             headers=auth_headers(seeded),
-            files={"file": ("profile.png", IMAGE_BYTES, "image/png")},
+            files=[("files", ("profile.png", IMAGE_BYTES, "image/png"))],
         )
-        file_id = upload_response.json()["data"]["fileId"]
+        file_id = upload_response.json()["data"]["files"][0]["fileId"]
         set_response = await client.put(
             "/api/v1/users/me/profile-image",
             headers=auth_headers(seeded),
@@ -79,9 +79,9 @@ async def test_delete_removes_all_variant_storage_objects(
         upload_response = await client.post(
             "/api/v1/files",
             headers=auth_headers(seeded),
-            files={"file": ("profile.png", IMAGE_BYTES, "image/png")},
+            files=[("files", ("profile.png", IMAGE_BYTES, "image/png"))],
         )
-        file_id = upload_response.json()["data"]["fileId"]
+        file_id = upload_response.json()["data"]["files"][0]["fileId"]
 
     thumbnail_key = f"test/{seeded.user_id}/{file_id}/thumbnail"
     storage = LocalObjectStorage(root=str(storage_root))

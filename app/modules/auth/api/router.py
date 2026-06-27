@@ -62,7 +62,6 @@ async def login(
             privacy_version=request.privacy_version,
             terms_accepted=request.terms_accepted,
             privacy_accepted=request.privacy_accepted,
-            marketing_consent=request.marketing_consent,
         )
     )
     return CommonResponse(

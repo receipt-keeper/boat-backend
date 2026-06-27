@@ -17,7 +17,6 @@ class UserProvisioningRequest:
     privacy_version: str | None
     terms_accepted: bool
     privacy_accepted: bool
-    marketing_consent: bool
 
 
 class UserProvisioner(ABC):

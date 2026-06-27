@@ -9,7 +9,3 @@ class CurrentUserProfileResult:
     name: str | None
     nickname: str | None
     profile_image_url: str | None
-    notification_enabled: bool
-    marketing_consent: bool
-    free_analysis_tokens_remaining: int
-    push_token_count: int

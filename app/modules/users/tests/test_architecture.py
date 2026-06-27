@@ -29,12 +29,11 @@ FORBIDDEN_USERS_FILES = {
 
 PRD_USERS_PUBLIC_ENDPOINTS = (
     "GET /api/v1/users/me",
-    "PATCH /api/v1/users/me",
     "DELETE /api/v1/users/me",
 )
 
-# 앱 공개 계약에서 제거된(설정 분리/푸시 알림) 엔드포인트. guidance·OpenAPI에 남으면 안 된다.
 RETIRED_USERS_PUBLIC_ENDPOINTS = (
+    "PATCH /api/v1/users/me",
     "PATCH /api/v1/users/me/settings",
     "POST /api/v1/users/me/push-tokens",
     "DELETE /api/v1/users/me/push-tokens/{deviceId}",
@@ -84,9 +83,8 @@ def test_users_guidance_reserves_prd_public_api_scope() -> None:
 
     assert "provision-only" not in guidance
     assert "no public `api/` surface" not in guidance
-    assert "Users owns the PRD public mypage API scope" in guidance
+    assert "Users owns the PRD public mypage profile scope" in guidance
     assert all(endpoint in guidance for endpoint in PRD_USERS_PUBLIC_ENDPOINTS)
-    # 앱 공개 계약에서 제외된 설정/푸시 엔드포인트는 guidance에 남기지 않는다.
     assert all(endpoint not in guidance for endpoint in RETIRED_USERS_PUBLIC_ENDPOINTS)
 
 
@@ -96,9 +94,9 @@ def test_users_openapi_exposes_only_app_public_contract() -> None:
     components = schema["components"]["schemas"]
 
     me_operations = paths["/api/v1/users/me"]
-    assert {"get", "patch", "delete"}.issubset(set(me_operations))
+    assert {"get", "delete"}.issubset(set(me_operations))
+    assert "patch" not in me_operations
 
-    # 앱 공개 계약에서 제외/이동한 경로는 OpenAPI에 노출되지 않는다.
     assert "/api/v1/users/me/settings" not in paths
     assert "/api/v1/users/me/push-tokens" not in paths
     assert "/api/v1/users/me/push-tokens/{deviceId}" not in paths

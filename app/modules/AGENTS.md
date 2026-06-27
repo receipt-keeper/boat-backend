@@ -13,7 +13,6 @@ modules/
 ├── files/           # file metadata/content boundary
 ├── ocr/             # OCR analysis boundary
 ├── receipts/        # receipt domain
-├── assets/          # registered asset domain
 ├── credits/         # user-owned usage allowance balance
 ├── usage/           # usage event history
 └── notifications/   # user notification delivery/settings

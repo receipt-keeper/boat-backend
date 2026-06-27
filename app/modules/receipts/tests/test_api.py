@@ -166,10 +166,38 @@ def test_receipts_expose_final_registration_route_only() -> None:
     schema = create_app(TEST_SETTINGS).openapi()
     paths = schema["paths"]
 
-    assert set(paths["/api/v1/receipts"]) == {"post"}
+    assert set(paths["/api/v1/receipts"]) == {"get", "post"}
     assert set(paths["/api/v1/receipts/{receipt_id}"]) == {"get", "patch", "delete"}
     assert "/api/v1/receipts/recent" not in paths
     assert "/api/v1/receipts/warranty-expirations" not in paths
+    assert "/api/v1/assets" not in paths
+
+
+async def test_list_receipts_supports_home_list_and_search_contract(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with _client(postgres_session_factory) as client:
+        recent_response = await client.get("/api/v1/receipts?sort=recent&limit=5")
+        expiring_response = await client.get(
+            "/api/v1/receipts?status=expiring&sort=expiresOn&limit=5"
+        )
+        active_response = await client.get("/api/v1/receipts?status=active")
+        search_response = await client.get("/api/v1/receipts?q=주방")
+
+    recent_body = recent_response.json()
+    expiring_body = expiring_response.json()
+    active_body = active_response.json()
+    search_body = search_response.json()
+
+    assert recent_response.status_code == 200
+    assert recent_body["data"]["total_count"] == 3
+    assert recent_body["data"]["receipts"][0]["item_name"] == "삼성 냉장고 875L"
+    assert expiring_response.status_code == 200
+    assert expiring_body["data"]["receipts"][0]["warranty_d_day"] == 14
+    assert active_response.status_code == 200
+    assert active_body["data"]["receipts"][0]["item_name"] == "다이슨 청소기"
+    assert search_response.status_code == 200
+    assert search_body["data"]["receipts"][0]["memo"] == "주방 냉장고"
 
 
 async def test_create_receipt_requires_at_least_one_file(

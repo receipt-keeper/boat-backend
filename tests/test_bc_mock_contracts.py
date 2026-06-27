@@ -23,15 +23,13 @@ TEST_SETTINGS: Final = Settings(app_name="Boat Backend")
 
 EXPECTED_PUBLIC_PATHS: Final[frozenset[str]] = frozenset(
     {
-        "/api/v1/assets",
-        "/api/v1/assets/{asset_id}",
         "/api/v1/credits",
         "/api/v1/credits/transactions",
+        "/api/v1/receipts",
         "/api/v1/receipts/{receipt_id}",
         "/api/v1/ocr",
         "/api/v1/usage",
         "/api/v1/notifications",
-        "/api/v1/notifications/devices/{device_id}",
         "/api/v1/notifications/{notification_id}",
         "/api/v1/notifications/settings",
     }
@@ -54,6 +52,9 @@ FORBIDDEN_PUBLIC_PATHS: Final[frozenset[str]] = frozenset(
         "/api/v1/warranties/{warranty_id}",
         "/api/v1/registered-products",
         "/api/v1/products",
+        "/api/v1/assets",
+        "/api/v1/assets/{asset_id}",
+        "/api/v1/notifications/devices/{device_id}",
     }
 )
 
@@ -77,11 +78,13 @@ FORBIDDEN_OPENAPI_PUBLIC_TERMS: Final[frozenset[str]] = frozenset(
 FORBIDDEN_ME_FIELDS: Final[frozenset[str]] = frozenset(
     {
         "notificationSettings",
+        "notificationEnabled",
+        "marketingConsent",
         "pushEnabled",
         "warrantyReminderEnabled",
         "pushToken",
+        "pushTokenCount",
         "deviceToken",
-        "freeAnalysisTokensRemaining",
         "credits",
         "usage",
         "allowance",
@@ -97,10 +100,6 @@ class CurrentUserProfileQueryUseCaseStub:
             name="계약 사용자",
             nickname="계약",
             profile_image_url=None,
-            notification_enabled=True,
-            marketing_consent=False,
-            free_analysis_tokens_remaining=3,
-            push_token_count=1,
         )
 
 
@@ -218,7 +217,7 @@ async def test_credits_usage_response_bodies_match_app_contract() -> None:
     }
 
 
-async def test_assets_and_receipts_match_app_contract() -> None:
+async def test_receipts_match_app_contract() -> None:
     test_app = _contract_app()
     receipt_id = "00000000-0000-0000-0000-000000000301"
 
@@ -226,53 +225,29 @@ async def test_assets_and_receipts_match_app_contract() -> None:
         transport=ASGITransport(app=test_app, raise_app_exceptions=False),
         base_url="http://test",
     ) as test_client:
-        assets_response = await test_client.get("/api/v1/assets")
-        asset_response = await test_client.get(
-            "/api/v1/assets/00000000-0000-0000-0000-000000000501"
+        receipts_response = await test_client.get("/api/v1/receipts")
+        expiring_response = await test_client.get(
+            "/api/v1/receipts?status=expiring&sort=expiresOn&limit=5"
         )
+        search_response = await test_client.get("/api/v1/receipts?q=냉장고")
         receipt_response = await test_client.get(f"/api/v1/receipts/{receipt_id}")
 
-    assets_body = assets_response.json()
-    asset_body = asset_response.json()
+    receipts_body = receipts_response.json()
+    expiring_body = expiring_response.json()
+    search_body = search_response.json()
     receipt_body = receipt_response.json()
 
-    assert assets_response.status_code == 200
-    assert assets_body["data"]["totalCount"] >= 1
-    assert assets_body["data"]["assets"][0]["evidenceType"] == "receipt"
-    assert "receiptFileIds" in assets_body["data"]["assets"][0]
-
-    assert asset_response.status_code == 200
-    assert asset_body["data"]["supportUrl"]
-    assert asset_body["data"]["receiptFileIds"]
+    assert receipts_response.status_code == 200
+    assert receipts_body["data"]["total_count"] >= 1
+    assert "receipt_file_ids" in receipts_body["data"]["receipts"][0]
+    assert "support_url" in receipts_body["data"]["receipts"][0]
+    assert expiring_response.status_code == 200
+    assert expiring_body["data"]["receipts"][0]["warranty_d_day"] == 14
+    assert search_response.status_code == 200
+    assert search_body["data"]["receipts"][0]["item_name"] == "삼성 냉장고 875L"
 
     assert receipt_response.status_code == 200
     assert receipt_body["data"]["receipt_file_ids"]
-
-
-async def test_notification_device_token_contract() -> None:
-    test_app = _contract_app()
-    payload = {"fcmToken": "fcm-token-sample", "platform": "ios"}
-
-    async with AsyncClient(
-        transport=ASGITransport(app=test_app, raise_app_exceptions=False),
-        base_url="http://test",
-    ) as test_client:
-        register_response = await test_client.put(
-            "/api/v1/notifications/devices/device-1",
-            json=payload,
-        )
-        delete_response = await test_client.request(
-            "DELETE",
-            "/api/v1/notifications/devices/device-1",
-        )
-
-    assert register_response.status_code == 200
-    assert register_response.json()["data"] == {
-        "deviceId": "device-1",
-        "registered": True,
-        "platform": "ios",
-    }
-    assert delete_response.status_code == 204
 
 
 async def test_users_me_response_does_not_leak_split_bc_fields() -> None:
@@ -297,6 +272,5 @@ async def test_users_me_response_does_not_leak_split_bc_fields() -> None:
         "name",
         "nickname",
         "profileImageUrl",
-        "marketingConsent",
     }
     assert leaked_fields == frozenset()

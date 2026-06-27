@@ -71,7 +71,6 @@ class Settings(BaseSettings):
         description="Server-side pepper used when hashing opaque refresh tokens.",
     )
 
-    initial_free_analysis_tokens: int = 0
     default_profile_image_url: str | None = None
     file_storage_backend: Literal["local"] = "local"
     file_storage_root: str = "./storage/files"

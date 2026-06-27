@@ -1,14 +1,18 @@
 from io import BytesIO
-from typing import Annotated, Any, Final
+from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, File, Request, Response, UploadFile, status
 from fastapi.responses import StreamingResponse
 
-from app.core.domain.exceptions import ErrorDetail, ValidationError
 from app.core.http.auth import CurrentPrincipalDep
 from app.core.http.responses import ApiErrorData, CommonResponse
-from app.modules.files.api.schemas import FileMetadataResponse, UploadedFileResponse
+from app.modules.files.api.schemas import (
+    FileMetadataResponse,
+    UploadedFileResponse,
+    UploadedFilesResponse,
+)
+from app.modules.files.api.upload_validation import read_and_validate_uploads
 from app.modules.files.application.commands.delete_file.command import DeleteFileCommand
 from app.modules.files.application.commands.upload_file.command import UploadFileCommand
 from app.modules.files.application.queries.get_file.query import GetFileQuery
@@ -34,20 +38,6 @@ _ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
         "description": "검증 실패 - 요청 형식 오류 또는 도메인 검증 실패",
     },
 }
-_PNG_SIGNATURE: Final = b"\x89PNG\r\n\x1a\n"
-_JPEG_SIGNATURE: Final = b"\xff\xd8\xff"
-_HEIF_COMPATIBLE_BRANDS: Final = frozenset(
-    {
-        b"heic",
-        b"heix",
-        b"hevc",
-        b"hevx",
-        b"mif1",
-        b"msf1",
-    }
-)
-_HEIF_CONTENT_TYPES: Final = frozenset({"image/heic", "image/heif"})
-
 router = APIRouter(
     prefix="/files",
     tags=["files"],
@@ -57,11 +47,12 @@ router = APIRouter(
 
 @router.post(
     "",
-    response_model=CommonResponse[UploadedFileResponse],
+    response_model=CommonResponse[UploadedFilesResponse],
     status_code=status.HTTP_201_CREATED,
     summary="파일 업로드",
     description=(
-        "이미지 파일을 업로드하고 파일 ID, 파일명, 파일 형식, 크기, 다운로드 경로를 반환한다."
+        "이미지 파일을 하나 이상 업로드하고 각 파일의 ID, 파일명, "
+        "파일 형식, 크기, 다운로드 경로를 반환한다."
     ),
     openapi_extra={
         "requestBody": {
@@ -71,7 +62,7 @@ router = APIRouter(
                         "image": {
                             "summary": "이미지 업로드",
                             "value": {
-                                "file": "image.png",
+                                "files": ["receipt-1.png", "receipt-2.png"],
                             },
                         }
                     }
@@ -84,39 +75,41 @@ async def upload_file(
     request: Request,
     principal: CurrentPrincipalDep,
     command_use_case: UploadFileCommandUseCaseDep,
-    file: Annotated[
-        UploadFile,
-        File(description="업로드할 이미지 파일.", examples=["image.png"]),
+    files: Annotated[
+        list[UploadFile],
+        File(description="업로드할 이미지 파일 목록.", examples=["receipt-1.png", "receipt-2.png"]),
     ],
-) -> CommonResponse[UploadedFileResponse]:
+) -> CommonResponse[UploadedFilesResponse]:
     settings = request.app.state.settings
-    content = await file.read(settings.file_max_upload_bytes + 1)
-    _validate_upload(
-        content_type=file.content_type,
-        content=content,
-        size=len(content),
+    validated_uploads = await read_and_validate_uploads(
+        files=files,
         allowed_content_types=tuple(settings.file_allowed_content_types),
         max_upload_bytes=settings.file_max_upload_bytes,
     )
-    result = await command_use_case.execute(
-        UploadFileCommand(
-            user_id=principal.user_id,
-            original_name=file.filename or "upload",
-            content_type=file.content_type or "",
-            size=len(content),
-            content=content,
+    uploaded_files: list[UploadedFileResponse] = []
+    for upload in validated_uploads:
+        result = await command_use_case.execute(
+            UploadFileCommand(
+                user_id=principal.user_id,
+                original_name=upload.original_name,
+                content_type=upload.content_type,
+                size=len(upload.content),
+                content=upload.content,
+            )
         )
-    )
+        uploaded_files.append(
+            UploadedFileResponse(
+                fileId=result.file_id,
+                originalName=result.original_name,
+                contentType=result.content_type,
+                size=result.size,
+                contentPath=_with_api_prefix(request, result.content_path),
+            )
+        )
     return CommonResponse(
         success=True,
         status=status.HTTP_201_CREATED,
-        data=UploadedFileResponse(
-            fileId=result.file_id,
-            originalName=result.original_name,
-            contentType=result.content_type,
-            size=result.size,
-            contentPath=_with_api_prefix(request, result.content_path),
-        ),
+        data=UploadedFilesResponse(files=uploaded_files),
     )
 
 
@@ -182,69 +175,6 @@ async def delete_file(
 ) -> Response:
     await command_use_case.execute(DeleteFileCommand(file_id=file_id, user_id=principal.user_id))
     return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-
-def _validate_upload(
-    *,
-    content_type: str | None,
-    content: bytes,
-    size: int,
-    allowed_content_types: tuple[str, ...],
-    max_upload_bytes: int,
-) -> None:
-    details: list[ErrorDetail] = []
-    if content_type not in allowed_content_types:
-        details.append(ErrorDetail(field="contentType", message="지원하지 않는 이미지 형식입니다."))
-    if size <= 0 or size > max_upload_bytes:
-        details.append(
-            ErrorDetail(
-                field="size",
-                message=f"파일 크기는 {_format_bytes(max_upload_bytes)} 이하여야 합니다.",
-            )
-        )
-    if content_type in allowed_content_types and not _matches_image_content_type(
-        content_type=content_type,
-        content=content,
-    ):
-        details.append(ErrorDetail(field="contentType", message="지원하지 않는 이미지 형식입니다."))
-    if details:
-        raise ValidationError(details)
-
-
-def _matches_image_content_type(*, content_type: str, content: bytes) -> bool:
-    detected_content_type = _detect_image_content_type(content)
-    if detected_content_type is None:
-        return False
-    if detected_content_type in _HEIF_CONTENT_TYPES and content_type in _HEIF_CONTENT_TYPES:
-        return True
-    return detected_content_type == content_type
-
-
-def _detect_image_content_type(content: bytes) -> str | None:
-    if content.startswith(_PNG_SIGNATURE):
-        return "image/png"
-    if content.startswith(_JPEG_SIGNATURE):
-        return "image/jpeg"
-    if len(content) >= 16 and content[4:8] == b"ftyp":
-        box_size = int.from_bytes(content[0:4], "big")
-        if not 16 <= box_size <= len(content):
-            return None
-        brands = {content[8:12]} | {
-            content[index : index + 4] for index in range(16, box_size - 3, 4)
-        }
-        if brands & _HEIF_COMPATIBLE_BRANDS:
-            return "image/heif"
-    return None
-
-
-def _format_bytes(size: int) -> str:
-    if size < 1024:
-        return f"{size}B"
-    if size % 1_048_576 == 0:
-        return f"{size // 1_048_576}MB"
-    if size % 1024 == 0:
-        return f"{size // 1024}KB"
-    return f"{size}B"
 
 
 def _with_api_prefix(request: Request, path: str) -> str:

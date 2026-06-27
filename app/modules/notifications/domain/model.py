@@ -5,11 +5,9 @@ from uuid import UUID, uuid4
 from app.core.domain.entity import Entity
 from app.core.domain.validation import Notification as ValidationNotification
 from app.modules.notifications.domain.value_objects import (
-    FcmToken,
     NotificationKind,
     NotificationMessage,
     NotificationTargetType,
-    PushPlatform,
 )
 
 
@@ -81,34 +79,4 @@ class NotificationPreference(Entity[UUID]):
             id=user_id,
             push_enabled=push_enabled,
             marketing_consent=marketing_consent,
-        )
-
-
-@dataclass(eq=False)
-class NotificationDevice(Entity[UUID]):
-    user_id: UUID
-    device_id: str
-    fcm_token: FcmToken
-    platform: PushPlatform
-
-    @classmethod
-    def create(
-        cls,
-        *,
-        user_id: UUID,
-        device_id: str,
-        fcm_token: str,
-        platform: PushPlatform,
-        notification_device_id: UUID | None = None,
-    ) -> "NotificationDevice":
-        notification = ValidationNotification()
-        token = notification.collect(lambda: FcmToken(fcm_token))
-        notification.raise_if_any()
-
-        return cls(
-            id=notification_device_id or uuid4(),
-            user_id=user_id,
-            device_id=device_id,
-            fcm_token=token,
-            platform=platform,
         )

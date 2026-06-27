@@ -1,9 +1,42 @@
-from datetime import date
+from datetime import date, datetime
 from uuid import UUID
 
 from pydantic import ConfigDict, Field
 
 from app.core.http.responses import AppBaseModel
+from app.modules.receipts.domain.value_objects import ReceiptSort, ReceiptStatusFilter
+
+
+class ReceiptListQuery(AppBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    status: ReceiptStatusFilter = Field(
+        default=ReceiptStatusFilter.ALL,
+        description=(
+            "무상 AS 상태 필터. all은 전체, active는 서비스 가능, "
+            "expiring은 만료 임박, expired는 만료된 영수증이다."
+        ),
+    )
+    sort: ReceiptSort = Field(
+        default=ReceiptSort.RECENT,
+        description=(
+            "정렬 기준. recent는 등록일 내림차순, expiresOn은 무상 AS 만료일 오름차순, "
+            "purchaseDate는 구매일 내림차순이다."
+        ),
+    )
+    limit: int = Field(default=20, description="응답할 최대 영수증 수.", ge=1, le=50)
+    category: str | None = Field(
+        default=None,
+        description="카테고리 완전 일치 필터.",
+        min_length=1,
+        max_length=100,
+    )
+    q: str | None = Field(
+        default=None,
+        description="제품명, 브랜드명, 구매처, 메모에서 찾을 검색어.",
+        min_length=1,
+        max_length=30,
+    )
 
 
 class CreateReceiptRequest(AppBaseModel):
@@ -89,10 +122,23 @@ class ReceiptResponse(AppBaseModel):
     memo: str | None = Field(description="저장된 사용자 메모.")
     requires_physical_receipt: bool = Field(description="실물 영수증 보관 필요 여부.")
     receipt_file_ids: list[UUID] = Field(description="연결된 영수증 파일 ID 목록.")
+    image_url: str | None = Field(default=None, description="대표 이미지 URL.")
+    warranty_d_day: int | None = Field(
+        default=None,
+        description="무상 AS 만료일까지 남은 일수. 만료된 경우 음수.",
+    )
+    serial_number: str | None = Field(default=None, description="시리얼 넘버.")
+    support_url: str | None = Field(default=None, description="제조사 고객지원 링크.")
+    registered_at: datetime | None = Field(default=None, description="등록 시각.")
 
 
 class CreateReceiptResponse(ReceiptResponse):
     pass
+
+
+class ReceiptListResponse(AppBaseModel):
+    receipts: list[ReceiptResponse] = Field(description="영수증 목록.")
+    total_count: int = Field(description="필터 조건에 맞는 전체 영수증 수.")
 
 
 class UpdateReceiptRequest(AppBaseModel):

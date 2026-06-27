@@ -1,7 +1,5 @@
-from uuid import uuid4
-
 import pytest
-from sqlalchemy import CheckConstraint, Index, UniqueConstraint
+from sqlalchemy import Index
 
 from app.core.db.base import Base
 from app.core.domain.exceptions import ValidationError
@@ -13,14 +11,14 @@ from app.modules.users.infrastructure.persistence import orm as users_orm
 def test_prd_account_schema_tables_columns_and_constraints_are_declared() -> None:
     assert auth_orm.AuthSession.__tablename__ == "auth_sessions"
     assert users_orm.UserSettings.__tablename__ == "user_settings"
-    assert users_orm.UserEntitlement.__tablename__ == "user_entitlements"
-    assert users_orm.UserPushToken.__tablename__ == "user_push_tokens"
 
     metadata = Base.metadata
 
-    assert {"auth_sessions", "user_settings", "user_entitlements", "user_push_tokens"}.issubset(
-        metadata.tables
-    )
+    assert {"auth_sessions", "user_settings"}.issubset(metadata.tables)
+    assert "user_entitlements" not in metadata.tables
+    assert "user_push_tokens" not in metadata.tables
+    assert "notification_enabled" not in metadata.tables["user_settings"].columns
+    assert "marketing_consent" not in metadata.tables["user_settings"].columns
     assert "profile_image_url" in metadata.tables["users"].columns
     assert "normalized_email" not in metadata.tables["users"].columns
     assert {"email", "normalized_email", "email_verified"}.issubset(
@@ -36,31 +34,14 @@ def test_prd_account_schema_tables_columns_and_constraints_are_declared() -> Non
         _is_verified_external_identity_email_index(index) for index in external_identity_indexes
     )
 
-    entitlement_checks = [
-        constraint
-        for constraint in metadata.tables["user_entitlements"].constraints
-        if isinstance(constraint, CheckConstraint)
-    ]
-    assert any(
-        "free_analysis_tokens_remaining >= 0" in str(check.sqltext) for check in entitlement_checks
-    )
-
-    push_constraints = metadata.tables["user_push_tokens"].constraints
-    assert any(_unique_columns(constraint) == ("fcm_token",) for constraint in push_constraints)
-    assert any(
-        _unique_columns(constraint) == ("user_id", "device_id") for constraint in push_constraints
-    )
-
 
 def test_prd_schema_has_no_future_bc_foreign_keys() -> None:
-    future_bc_tables = {"devices", "receipts", "files"}
+    future_bc_tables = {"receipts", "files"}
     discovered_targets = {
         foreign_key.column.table.name
         for table_name in (
             "users",
             "user_settings",
-            "user_entitlements",
-            "user_push_tokens",
             "user_credentials",
             "external_identities",
             "auth_sessions",
@@ -102,16 +83,6 @@ def test_user_domain_rejects_invalid_email() -> None:
     assert [detail.field for detail in error.value.details] == ["email"]
 
 
-def test_user_entitlement_rejects_negative_free_analysis_tokens() -> None:
-    with pytest.raises(ValidationError) as error:
-        user_model.UserEntitlement.create(
-            user_id=uuid4(),
-            free_analysis_tokens_remaining=-1,
-        )
-
-    assert [detail.field for detail in error.value.details] == ["freeAnalysisTokensRemaining"]
-
-
 def _is_partial_unique_normalized_email_index(index: Index) -> bool:
     dialect_options = index.dialect_options["postgresql"]
     return (
@@ -130,9 +101,3 @@ def _is_verified_external_identity_email_index(index: Index) -> bool:
         and str(dialect_options["where"])
         == "email_verified IS TRUE AND normalized_email IS NOT NULL"
     )
-
-
-def _unique_columns(constraint: object) -> tuple[str, ...]:
-    if not isinstance(constraint, UniqueConstraint):
-        return ()
-    return tuple(column.name for column in constraint.columns)

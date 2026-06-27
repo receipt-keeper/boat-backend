@@ -15,7 +15,6 @@ class CurrentUserResponse(AppBaseModel):
                     "name": "홍길동",
                     "nickname": "길동",
                     "profileImageUrl": "/api/v1/files/00000000-0000-0000-0000-000000000301/content",
-                    "marketingConsent": False,
                 }
             ]
         },
@@ -36,48 +35,6 @@ class CurrentUserResponse(AppBaseModel):
     profile_image_url: str | None = Field(
         alias="profileImageUrl",
         description="프로필 이미지 경로.",
-    )
-    marketing_consent: bool = Field(
-        alias="marketingConsent",
-        description="마케팅 수신 동의 여부.",
-    )
-
-
-class UpdateCurrentUserRequest(AppBaseModel):
-    model_config = ConfigDict(
-        populate_by_name=True,
-        extra="forbid",
-        json_schema_extra={
-            "examples": [
-                {
-                    "marketingConsent": True,
-                }
-            ]
-        },
-    )
-
-    marketing_consent: bool | None = Field(
-        default=None,
-        alias="marketingConsent",
-        description="마케팅 수신 동의 여부. 보내지 않으면 기존 값을 유지한다.",
-    )
-
-
-class UpdateCurrentUserResponse(AppBaseModel):
-    model_config = ConfigDict(
-        populate_by_name=True,
-        json_schema_extra={
-            "examples": [
-                {
-                    "marketingConsent": True,
-                }
-            ]
-        },
-    )
-
-    marketing_consent: bool = Field(
-        alias="marketingConsent",
-        description="반영된 마케팅 수신 동의.",
     )
 
 
