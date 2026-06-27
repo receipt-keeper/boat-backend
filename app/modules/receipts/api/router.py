@@ -64,7 +64,7 @@ async def list_receipts(
         status=status.HTTP_200_OK,
         data=ReceiptListResponse(
             receipts=page.items,
-            total_count=len(filtered_receipts),
+            totalCount=len(filtered_receipts),
             pagination=page.pagination,
         ),
     )
@@ -101,18 +101,18 @@ async def create_receipt(
         success=True,
         status=status.HTTP_201_CREATED,
         data=CreateReceiptResponse(
-            receipt_id=result.receipt_id,
-            item_name=result.item_name,
-            brand_name=result.brand_name,
-            payment_location=result.payment_location,
-            payment_date=result.payment_date,
-            total_amount=result.total_amount,
-            period_months=result.period_months,
-            expires_on=result.expires_on,
+            receiptId=result.receipt_id,
+            itemName=result.item_name,
+            brandName=result.brand_name,
+            paymentLocation=result.payment_location,
+            paymentDate=result.payment_date,
+            totalAmount=result.total_amount,
+            periodMonths=result.period_months,
+            expiresOn=result.expires_on,
             category=result.category,
             memo=result.memo,
-            requires_physical_receipt=result.requires_physical_receipt,
-            receipt_file_ids=list(result.receipt_file_ids),
+            requiresPhysicalReceipt=result.requires_physical_receipt,
+            receiptFileIds=list(result.receipt_file_ids),
         ),
     )
 
