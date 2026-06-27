@@ -146,20 +146,15 @@ async def test_get_me_returns_profile_envelope(
         "name",
         "nickname",
         "profileImageUrl",
-        "notificationEnabled",
         "marketingConsent",
-        "freeAnalysisTokensRemaining",
     }
     assert data["email"] == "profile@example.com"
     assert data["name"] == "프로필 사용자"
-    assert data["notificationEnabled"] is True
     assert data["marketingConsent"] is False
-    assert data["freeAnalysisTokensRemaining"] == 5
-    assert "normalizedEmail" not in data
-    assert "pushTokenCount" not in data
+    assert _forbidden_me_fields().isdisjoint(data)
 
 
-async def test_patch_me_updates_notification_and_marketing_settings(
+async def test_patch_me_updates_marketing_settings(
     postgres_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     async with postgres_session_factory() as session, session.begin():
@@ -176,20 +171,19 @@ async def test_patch_me_updates_notification_and_marketing_settings(
         patch_response = await client.patch(
             "/api/v1/users/me",
             headers=_auth_headers(seeded),
-            json={"notificationEnabled": False, "marketingConsent": True},
+            json={"marketingConsent": True},
         )
         get_response = await client.get("/api/v1/users/me", headers=_auth_headers(seeded))
 
     patch_body = patch_response.json()
     assert patch_response.status_code == 200
     assert patch_body["success"] is True
-    assert set(patch_body["data"].keys()) == {"notificationEnabled", "marketingConsent"}
-    assert patch_body["data"]["notificationEnabled"] is False
+    assert set(patch_body["data"].keys()) == {"marketingConsent"}
     assert patch_body["data"]["marketingConsent"] is True
 
     get_body = get_response.json()
-    assert get_body["data"]["notificationEnabled"] is False
     assert get_body["data"]["marketingConsent"] is True
+    assert _forbidden_me_fields().isdisjoint(get_body["data"])
 
 
 async def test_patch_me_rejects_unknown_fields(
@@ -268,11 +262,10 @@ async def test_put_profile_image_uses_uploaded_file_content_path(
         "name",
         "nickname",
         "profileImageUrl",
-        "notificationEnabled",
         "marketingConsent",
-        "freeAnalysisTokensRemaining",
     }
     assert "profileImageFileId" not in profile_data
+    assert _forbidden_me_fields().isdisjoint(profile_data)
     assert profile_data["profileImageUrl"] == expected_profile_image_url
     assert content_response.status_code == 200
     assert content_response.headers["content-type"] == "image/png"
@@ -362,7 +355,7 @@ async def test_endpoints_require_bearer_token(
     bad_token = {"Authorization": "Bearer invalid-token"}
     requests = [
         ("GET", "/api/v1/users/me", None),
-        ("PATCH", "/api/v1/users/me", {"notificationEnabled": False}),
+        ("PATCH", "/api/v1/users/me", {"marketingConsent": False}),
         ("PUT", "/api/v1/users/me/profile-image", {"fileId": str(UUID(int=1))}),
         ("DELETE", "/api/v1/users/me/profile-image", None),
     ]
@@ -376,3 +369,23 @@ async def test_endpoints_require_bearer_token(
                 assert body["success"] is False, (method, path, headers)
                 assert body["status"] == 401, (method, path, headers)
                 assert body["data"]["path"] == path, (method, path, headers)
+
+
+def _forbidden_me_fields() -> frozenset[str]:
+    return frozenset(
+        {
+            "normalizedEmail",
+            "notificationSettings",
+            "notificationEnabled",
+            "pushEnabled",
+            "warrantyReminderEnabled",
+            "pushToken",
+            "pushTokenCount",
+            "deviceToken",
+            "freeAnalysisTokensRemaining",
+            "credits",
+            "usage",
+            "allowance",
+            "receiptAnalysisAllowance",
+        }
+    )

@@ -75,7 +75,7 @@ async def test_receipt_ocr_endpoint_returns_contract_response(client: AsyncClien
     expected_expires_on = date(today.year + 1, today.month, min(today.day, last_day))
 
     response = await client.post(
-        "/api/v1/ocr/receipt",
+        "/api/v1/ocr",
         json={"image_uri": "https://storage.example.com/receipts/sample.png"},
     )
 
@@ -94,6 +94,8 @@ async def test_receipt_ocr_endpoint_returns_contract_response(client: AsyncClien
         "expires_on": expected_expires_on.isoformat(),
         "category": "가전",
         "needs_review": True,
+        "charged": True,
+        "remaining_count": 2,
         "warnings": ["무상 AS 기간을 찾지 못해 12개월 기본값을 적용했습니다."],
     }
 
@@ -105,7 +107,7 @@ async def test_receipt_ocr_endpoint_keeps_zero_total_amount(
     override_receipt_ocr_client(ZeroTotalAmountReceiptOcrClient())
 
     response = await client.post(
-        "/api/v1/ocr/receipt",
+        "/api/v1/ocr",
         json={"image_uri": "https://storage.example.com/receipts/free-replacement.png"},
     )
 
@@ -118,7 +120,7 @@ async def test_receipt_ocr_endpoint_keeps_zero_total_amount(
 async def test_receipt_ocr_endpoint_uses_request_validation_envelope(
     client: AsyncClient,
 ) -> None:
-    response = await client.post("/api/v1/ocr/receipt", json={})
+    response = await client.post("/api/v1/ocr", json={})
 
     body = response.json()
 
@@ -126,7 +128,7 @@ async def test_receipt_ocr_endpoint_uses_request_validation_envelope(
     assert body["success"] is False
     assert body["status"] == 422
     assert body["data"]["message"] == "요청 값이 올바르지 않습니다."
-    assert body["data"]["path"] == "/api/v1/ocr/receipt"
+    assert body["data"]["path"] == "/api/v1/ocr"
     assert body["data"]["errors"] == [{"field": "image_uri", "message": "Field required"}]
 
 
@@ -137,7 +139,7 @@ async def test_receipt_ocr_endpoint_returns_unreadable_image_failure(
     override_receipt_ocr_client(UnreadableReceiptOcrClient())
 
     response = await client.post(
-        "/api/v1/ocr/receipt",
+        "/api/v1/ocr",
         json={"image_uri": "https://storage.example.com/receipts/unreadable.png"},
     )
 
@@ -147,7 +149,7 @@ async def test_receipt_ocr_endpoint_returns_unreadable_image_failure(
     assert body["success"] is False
     assert body["status"] == 422
     assert body["data"]["message"] == "입력값이 올바르지 않습니다."
-    assert body["data"]["path"] == "/api/v1/ocr/receipt"
+    assert body["data"]["path"] == "/api/v1/ocr"
     assert body["data"]["errors"] == [
         {
             "field": "image_uri",
@@ -163,7 +165,7 @@ async def test_receipt_ocr_endpoint_returns_provider_unavailable_failure(
     override_receipt_ocr_client(ProviderUnavailableReceiptOcrClient())
 
     response = await client.post(
-        "/api/v1/ocr/receipt",
+        "/api/v1/ocr",
         json={"image_uri": "https://storage.example.com/receipts/sample.png"},
     )
 
@@ -176,14 +178,14 @@ async def test_receipt_ocr_endpoint_returns_provider_unavailable_failure(
         body["data"]["message"]
         == "OCR 서비스를 일시적으로 사용할 수 없습니다. 잠시 후 다시 시도해 주세요."
     )
-    assert body["data"]["path"] == "/api/v1/ocr/receipt"
+    assert body["data"]["path"] == "/api/v1/ocr"
     assert body["data"]["errors"] == []
 
 
 async def test_receipt_ocr_endpoint_openapi_examples(client: AsyncClient) -> None:
     response = await client.get("/openapi.json")
 
-    operation = response.json()["paths"]["/api/v1/ocr/receipt"]["post"]
+    operation = response.json()["paths"]["/api/v1/ocr"]["post"]
     success_example = operation["responses"]["200"]["content"]["application/json"]["example"]
     unreadable_example = operation["responses"]["422"]["content"]["application/json"]["example"]
     provider_unavailable_example = operation["responses"]["503"]["content"]["application/json"][
@@ -194,5 +196,7 @@ async def test_receipt_ocr_endpoint_openapi_examples(client: AsyncClient) -> Non
     assert success_example["data"]["item_name"] == "삼성 냉장고 875L"
     assert success_example["data"]["category"] == "가전"
     assert success_example["data"]["needs_review"] is True
+    assert success_example["data"]["charged"] is True
+    assert success_example["data"]["remaining_count"] == 2
     assert unreadable_example["data"]["errors"][0]["field"] == "image_uri"
     assert provider_unavailable_example["status"] == 503

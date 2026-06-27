@@ -15,9 +15,7 @@ class CurrentUserResponse(AppBaseModel):
                     "name": "홍길동",
                     "nickname": "길동",
                     "profileImageUrl": "/api/v1/files/00000000-0000-0000-0000-000000000301/content",
-                    "notificationEnabled": True,
                     "marketingConsent": False,
-                    "freeAnalysisTokensRemaining": 3,
                 }
             ]
         },
@@ -39,18 +37,9 @@ class CurrentUserResponse(AppBaseModel):
         alias="profileImageUrl",
         description="프로필 이미지 경로.",
     )
-    notification_enabled: bool = Field(
-        alias="notificationEnabled",
-        description="알림 수신 여부.",
-    )
     marketing_consent: bool = Field(
         alias="marketingConsent",
         description="마케팅 수신 동의 여부.",
-    )
-    free_analysis_tokens_remaining: int = Field(
-        alias="freeAnalysisTokensRemaining",
-        description="영수증 분석에 사용할 수 있는 남은 무료 횟수.",
-        examples=[3],
     )
 
 
@@ -62,7 +51,6 @@ class UpdateCurrentUserRequest(AppBaseModel):
             "examples": [
                 {
                     "marketingConsent": True,
-                    "notificationEnabled": False,
                 }
             ]
         },
@@ -73,11 +61,6 @@ class UpdateCurrentUserRequest(AppBaseModel):
         alias="marketingConsent",
         description="마케팅 수신 동의 여부. 보내지 않으면 기존 값을 유지한다.",
     )
-    notification_enabled: bool | None = Field(
-        default=None,
-        alias="notificationEnabled",
-        description="알림 수신 여부. 보내지 않으면 기존 값을 유지한다.",
-    )
 
 
 class UpdateCurrentUserResponse(AppBaseModel):
@@ -87,7 +70,6 @@ class UpdateCurrentUserResponse(AppBaseModel):
             "examples": [
                 {
                     "marketingConsent": True,
-                    "notificationEnabled": False,
                 }
             ]
         },
@@ -96,10 +78,6 @@ class UpdateCurrentUserResponse(AppBaseModel):
     marketing_consent: bool = Field(
         alias="marketingConsent",
         description="반영된 마케팅 수신 동의.",
-    )
-    notification_enabled: bool = Field(
-        alias="notificationEnabled",
-        description="반영된 알림 수신 여부.",
     )
 
 

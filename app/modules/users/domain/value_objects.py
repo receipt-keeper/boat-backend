@@ -34,7 +34,7 @@ class FreeAnalysisTokensRemaining(ValueObject[int]):
                 [
                     ErrorDetail(
                         field="freeAnalysisTokensRemaining",
-                        message="무료 분석 토큰 수는 0 이상이어야 합니다.",
+                        message="무료 영수증 분석 잔여 횟수는 0 이상이어야 합니다.",
                     )
                 ]
             )

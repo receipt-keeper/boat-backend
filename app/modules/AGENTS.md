@@ -8,9 +8,15 @@ Domain modules are vertical slices. Each module owns its API, application comman
 
 ```text
 modules/
-├── auth/       # Firebase identity -> backend access/refresh tokens
-├── users/      # user provisioning contract, no public API today
-└── examples/   # reference/demo module
+├── auth/            # Firebase identity -> backend access/refresh tokens
+├── users/           # user profile and provisioning contract
+├── files/           # file metadata/content boundary
+├── ocr/             # OCR analysis boundary
+├── receipts/        # receipt domain
+├── assets/          # registered asset domain
+├── credits/         # user-owned usage allowance balance
+├── usage/           # usage event history
+└── notifications/   # user notification delivery/settings
 ```
 
 ## WHERE TO LOOK
@@ -41,7 +47,6 @@ modules/
 - Cross-module runtime composition happens only through module `dependencies.py`.
 - Module tests should include envelope assertions for endpoints and architecture guards for import boundaries when a boundary is important.
 - If a module adds ORM models, add an Alembic migration and keep same-BC FKs only.
-- The `examples` module remains demo/reference code and is not the production repository or package pattern source.
 
 ## ANTI-PATTERNS
 

@@ -162,6 +162,34 @@ async def test_create_receipt_persists_final_values(
     }
 
 
+def test_receipts_expose_final_registration_route_only() -> None:
+    schema = create_app(TEST_SETTINGS).openapi()
+    paths = schema["paths"]
+
+    assert set(paths["/api/v1/receipts"]) == {"post"}
+    assert set(paths["/api/v1/receipts/{receipt_id}"]) == {"get", "patch", "delete"}
+    assert "/api/v1/receipts/recent" not in paths
+    assert "/api/v1/receipts/warranty-expirations" not in paths
+
+
+async def test_create_receipt_requires_at_least_one_file(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    payload = {
+        "item_name": "파일 없는 영수증",
+        "payment_date": "2024-06-01",
+        "receipt_file_ids": [],
+    }
+
+    async with _client(postgres_session_factory) as client:
+        response = await client.post("/api/v1/receipts", json=payload)
+
+    body = response.json()
+    assert response.status_code == 422
+    assert body["success"] is False
+    assert body["data"]["errors"][0]["field"] == "receipt_file_ids"
+
+
 async def test_create_receipt_accepts_nullable_fields_and_manual_registration(
     postgres_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
@@ -170,6 +198,7 @@ async def test_create_receipt_accepts_nullable_fields_and_manual_registration(
         "payment_date": "2024-06-01",
         "payment_location": None,
         "total_amount": None,
+        "receipt_file_ids": [str(TEST_FILE_ID)],
     }
 
     async with _client(postgres_session_factory) as client:
@@ -185,7 +214,7 @@ async def test_create_receipt_accepts_nullable_fields_and_manual_registration(
     assert data["period_months"] == 12
     assert data["expires_on"] == "2025-06-01"
     assert data["requires_physical_receipt"] is False
-    assert data["receipt_file_ids"] == []
+    assert data["receipt_file_ids"] == [str(TEST_FILE_ID)]
 
 
 async def test_ocr_failure_can_fall_back_to_manual_receipt_save(
@@ -196,7 +225,7 @@ async def test_ocr_failure_can_fall_back_to_manual_receipt_save(
         receipt_ocr_client=UnreadableReceiptOcrClient(),
     ) as client:
         ocr_response = await client.post(
-            "/api/v1/ocr/receipt",
+            "/api/v1/ocr",
             json={"image_uri": "https://storage.example.com/receipts/unreadable.png"},
         )
         save_response = await client.post(
@@ -206,6 +235,7 @@ async def test_ocr_failure_can_fall_back_to_manual_receipt_save(
                 "payment_date": "2024-06-01",
                 "payment_location": None,
                 "total_amount": None,
+                "receipt_file_ids": [str(TEST_FILE_ID)],
             },
         )
 
@@ -233,7 +263,7 @@ async def test_ocr_auto_fill_category_can_be_saved(
         receipt_ocr_client=CategoryReceiptOcrClient(),
     ) as client:
         ocr_response = await client.post(
-            "/api/v1/ocr/receipt",
+            "/api/v1/ocr",
             json={"image_uri": "https://storage.example.com/receipts/category.png"},
         )
         ocr_data = ocr_response.json()["data"]
@@ -247,6 +277,7 @@ async def test_ocr_auto_fill_category_can_be_saved(
                 "total_amount": ocr_data["total_amount"],
                 "period_months": ocr_data["period_months"],
                 "category": ocr_data["category"],
+                "receipt_file_ids": [str(TEST_FILE_ID)],
             },
         )
 
@@ -264,6 +295,7 @@ async def test_create_receipt_calculates_expiration_on_month_end(
         "item_name": "월말 구매 제품",
         "payment_date": "2024-01-31",
         "period_months": 1,
+        "receipt_file_ids": [str(TEST_FILE_ID)],
     }
 
     async with _client(postgres_session_factory) as client:
@@ -281,6 +313,7 @@ async def test_create_receipt_calculates_expiration_on_month_end(
             {
                 "item_name": "   ",
                 "payment_date": "2024-06-01",
+                "receipt_file_ids": [str(TEST_FILE_ID)],
             },
             "item_name",
         ),
@@ -288,6 +321,7 @@ async def test_create_receipt_calculates_expiration_on_month_end(
             {
                 "item_name": "미래 구매",
                 "payment_date": (date.today() + timedelta(days=1)).isoformat(),
+                "receipt_file_ids": [str(TEST_FILE_ID)],
             },
             "payment_date",
         ),
@@ -296,6 +330,7 @@ async def test_create_receipt_calculates_expiration_on_month_end(
                 "item_name": "기간 오류",
                 "payment_date": "2024-06-01",
                 "period_months": 0,
+                "receipt_file_ids": [str(TEST_FILE_ID)],
             },
             "period_months",
         ),
@@ -304,6 +339,7 @@ async def test_create_receipt_calculates_expiration_on_month_end(
                 "item_name": "기간 오류",
                 "payment_date": "2024-06-01",
                 "period_months": 61,
+                "receipt_file_ids": [str(TEST_FILE_ID)],
             },
             "period_months",
         ),
@@ -312,6 +348,7 @@ async def test_create_receipt_calculates_expiration_on_month_end(
                 "item_name": "금액 오류",
                 "payment_date": "2024-06-01",
                 "total_amount": -1,
+                "receipt_file_ids": [str(TEST_FILE_ID)],
             },
             "total_amount",
         ),
@@ -320,6 +357,7 @@ async def test_create_receipt_calculates_expiration_on_month_end(
                 "item_name": "브랜드 길이 오류",
                 "payment_date": "2024-06-01",
                 "brand_name": "가" * 256,
+                "receipt_file_ids": [str(TEST_FILE_ID)],
             },
             "brand_name",
         ),
@@ -378,6 +416,7 @@ async def test_create_receipt_aggregates_total_amount_domain_error(
         "item_name": "   ",
         "payment_date": "2024-06-01",
         "total_amount": -1,
+        "receipt_file_ids": [str(TEST_FILE_ID)],
     }
 
     async with _client(postgres_session_factory) as client:
@@ -402,6 +441,7 @@ async def test_create_receipt_rejects_ocr_only_fields(
         "item_name": "삼성 냉장고 875L",
         "payment_date": "2024-05-26",
         "image_uri": "local://receipt.png",
+        "receipt_file_ids": [str(TEST_FILE_ID)],
     }
 
     async with _client(postgres_session_factory) as client:
@@ -427,7 +467,11 @@ async def test_create_receipt_requires_bearer_token(
             response = await client.post(
                 "/api/v1/receipts",
                 headers=headers,
-                json={"item_name": "삼성 냉장고", "payment_date": "2024-05-26"},
+                json={
+                    "item_name": "삼성 냉장고",
+                    "payment_date": "2024-05-26",
+                    "receipt_file_ids": [str(TEST_FILE_ID)],
+                },
             )
             body = response.json()
             assert response.status_code == 401

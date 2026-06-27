@@ -59,9 +59,19 @@ class WarrantyPeriodMonths(ValueObject[int]):
 
 @dataclass(frozen=True, slots=True)
 class ReceiptFileReferences(ValueObject[tuple[UUID, ...]]):
+    MIN_COUNT: ClassVar[int] = 1
     MAX_COUNT: ClassVar[int] = 5
 
     def validate(self) -> None:
+        if len(self.value) < self.MIN_COUNT:
+            raise ValidationError(
+                [
+                    ErrorDetail(
+                        field="receipt_file_ids",
+                        message="영수증 파일은 최소 1개 이상 연결해야 합니다.",
+                    )
+                ]
+            )
         if len(self.value) > self.MAX_COUNT:
             raise ValidationError(
                 [
