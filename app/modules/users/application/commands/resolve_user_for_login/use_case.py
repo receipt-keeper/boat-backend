@@ -10,10 +10,9 @@ from app.modules.users.application.commands.resolve_user_for_login.result import
 )
 from app.modules.users.application.ports.user_repository import (
     CreateUserAccountState,
-    UserAccountState,
     UserRepository,
 )
-from app.modules.users.domain.model import User, UserEntitlement, UserSettings
+from app.modules.users.domain.model import User, UserSettings
 
 
 class ResolveUserForLoginCommandUseCase:
@@ -34,23 +33,15 @@ class ResolveUserForLoginCommandUseCase:
                 user=user,
                 settings=UserSettings.create(
                     user_id=user.id,
-                    marketing_consent=command.marketing_consent,
                     terms_version=command.terms_version,
                     privacy_version=command.privacy_version,
                     terms_accepted_at=accepted_at if command.terms_accepted else None,
                     privacy_accepted_at=accepted_at if command.privacy_accepted else None,
-                    marketing_consent_updated_at=(
-                        accepted_at if command.marketing_consent else None
-                    ),
-                ),
-                entitlement=UserEntitlement.create(
-                    user_id=user.id,
-                    free_analysis_tokens_remaining=command.initial_free_analysis_tokens,
                 ),
             )
         )
         await self._unit_of_work.commit()
-        return _resolve_result(state)
+        return ResolveUserForLoginResult(user_id=state.user.id)
 
 
 def _require_consent(command: ResolveUserForLoginCommand) -> None:
@@ -59,6 +50,10 @@ def _require_consent(command: ResolveUserForLoginCommand) -> None:
         details.append(
             ErrorDetail(field="termsAccepted", message="이용약관에 동의해야 가입할 수 있습니다.")
         )
+    if command.terms_accepted and command.terms_version is None:
+        details.append(
+            ErrorDetail(field="termsVersion", message="동의한 이용약관 버전이 필요합니다.")
+        )
     if not command.privacy_accepted:
         details.append(
             ErrorDetail(
@@ -66,14 +61,11 @@ def _require_consent(command: ResolveUserForLoginCommand) -> None:
                 message="개인정보 처리방침에 동의해야 가입할 수 있습니다.",
             )
         )
+    if command.privacy_accepted and command.privacy_version is None:
+        details.append(
+            ErrorDetail(
+                field="privacyVersion", message="동의한 개인정보 처리방침 버전이 필요합니다."
+            )
+        )
     if details:
         raise ValidationError(details)
-
-
-def _resolve_result(state: UserAccountState) -> ResolveUserForLoginResult:
-    return ResolveUserForLoginResult(
-        user_id=state.user.id,
-        notification_enabled=state.settings.notification_enabled,
-        marketing_consent=state.settings.marketing_consent,
-        free_analysis_tokens_remaining=state.entitlement.free_analysis_tokens_remaining.value,
-    )

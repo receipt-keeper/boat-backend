@@ -17,7 +17,7 @@ from app.modules.auth.infrastructure.persistence.credential_repository import (
 )
 from app.modules.auth.infrastructure.tokens.jwt import JwtAccessTokenService
 from app.modules.users.application.ports.user_repository import CreateUserAccountState
-from app.modules.users.domain.model import User, UserEntitlement, UserSettings
+from app.modules.users.domain.model import User, UserSettings
 from app.modules.users.infrastructure.persistence.repository import SqlAlchemyUserRepository
 
 TEST_SETTINGS = Settings(
@@ -41,23 +41,12 @@ async def _seed_user(
     subject: str,
     email: str,
     name: str,
-    free_analysis_tokens: int = 0,
-    notification_enabled: bool = True,
-    marketing_consent: bool = False,
 ) -> SeededUser:
     user = User.create(name=name, email=email)
     await SqlAlchemyUserRepository(session).create_account_state(
         state=CreateUserAccountState(
             user=user,
-            settings=UserSettings.create(
-                user_id=user.id,
-                notification_enabled=notification_enabled,
-                marketing_consent=marketing_consent,
-            ),
-            entitlement=UserEntitlement.create(
-                user_id=user.id,
-                free_analysis_tokens_remaining=free_analysis_tokens,
-            ),
+            settings=UserSettings.create(user_id=user.id),
         )
     )
     credentials = await SqlAlchemyCredentialRepository(session).create_for_external_identity(
@@ -128,9 +117,6 @@ async def test_get_me_returns_profile_envelope(
             subject="profile-user",
             email="profile@example.com",
             name="프로필 사용자",
-            free_analysis_tokens=5,
-            notification_enabled=True,
-            marketing_consent=False,
         )
 
     async with _client(postgres_session_factory) as client:
@@ -146,53 +132,13 @@ async def test_get_me_returns_profile_envelope(
         "name",
         "nickname",
         "profileImageUrl",
-        "notificationEnabled",
-        "marketingConsent",
-        "freeAnalysisTokensRemaining",
     }
     assert data["email"] == "profile@example.com"
     assert data["name"] == "프로필 사용자"
-    assert data["notificationEnabled"] is True
-    assert data["marketingConsent"] is False
-    assert data["freeAnalysisTokensRemaining"] == 5
-    assert "normalizedEmail" not in data
-    assert "pushTokenCount" not in data
+    assert _forbidden_me_fields().isdisjoint(data)
 
 
-async def test_patch_me_updates_notification_and_marketing_settings(
-    postgres_session_factory: async_sessionmaker[AsyncSession],
-) -> None:
-    async with postgres_session_factory() as session, session.begin():
-        seeded = await _seed_user(
-            session,
-            subject="settings-user",
-            email="settings@example.com",
-            name="설정 사용자",
-            notification_enabled=True,
-            marketing_consent=False,
-        )
-
-    async with _client(postgres_session_factory) as client:
-        patch_response = await client.patch(
-            "/api/v1/users/me",
-            headers=_auth_headers(seeded),
-            json={"notificationEnabled": False, "marketingConsent": True},
-        )
-        get_response = await client.get("/api/v1/users/me", headers=_auth_headers(seeded))
-
-    patch_body = patch_response.json()
-    assert patch_response.status_code == 200
-    assert patch_body["success"] is True
-    assert set(patch_body["data"].keys()) == {"notificationEnabled", "marketingConsent"}
-    assert patch_body["data"]["notificationEnabled"] is False
-    assert patch_body["data"]["marketingConsent"] is True
-
-    get_body = get_response.json()
-    assert get_body["data"]["notificationEnabled"] is False
-    assert get_body["data"]["marketingConsent"] is True
-
-
-async def test_patch_me_rejects_unknown_fields(
+async def test_patch_me_is_not_users_contract(
     postgres_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     async with postgres_session_factory() as session, session.begin():
@@ -201,8 +147,6 @@ async def test_patch_me_rejects_unknown_fields(
             subject="unknown-field-user",
             email="unknown@example.com",
             name="알 수 없는 필드 사용자",
-            notification_enabled=True,
-            marketing_consent=False,
         )
 
     async with _client(postgres_session_factory) as client:
@@ -213,9 +157,9 @@ async def test_patch_me_rejects_unknown_fields(
         )
 
     body = response.json()
-    assert response.status_code == 422
+    assert response.status_code == 405
     assert body["success"] is False
-    assert body["status"] == 422
+    assert body["status"] == 405
     assert body["data"]["path"] == "/api/v1/users/me"
 
 
@@ -236,9 +180,9 @@ async def test_put_profile_image_uses_uploaded_file_content_path(
         upload_response = await client.post(
             "/api/v1/files",
             headers=_auth_headers(seeded),
-            files={"file": ("profile.png", IMAGE_BYTES, "image/png")},
+            files=[("files", ("profile.png", IMAGE_BYTES, "image/png"))],
         )
-        file_id = upload_response.json()["data"]["fileId"]
+        file_id = upload_response.json()["data"]["files"][0]["fileId"]
 
         put_response = await client.put(
             "/api/v1/users/me/profile-image",
@@ -268,11 +212,9 @@ async def test_put_profile_image_uses_uploaded_file_content_path(
         "name",
         "nickname",
         "profileImageUrl",
-        "notificationEnabled",
-        "marketingConsent",
-        "freeAnalysisTokensRemaining",
     }
     assert "profileImageFileId" not in profile_data
+    assert _forbidden_me_fields().isdisjoint(profile_data)
     assert profile_data["profileImageUrl"] == expected_profile_image_url
     assert content_response.status_code == 200
     assert content_response.headers["content-type"] == "image/png"
@@ -300,9 +242,9 @@ async def test_profile_image_response_path_follows_configured_api_prefix(
         upload_response = await client.post(
             "/backend/files",
             headers=_auth_headers(seeded),
-            files={"file": ("profile.png", IMAGE_BYTES, "image/png")},
+            files=[("files", ("profile.png", IMAGE_BYTES, "image/png"))],
         )
-        file_id = upload_response.json()["data"]["fileId"]
+        file_id = upload_response.json()["data"]["files"][0]["fileId"]
         put_response = await client.put(
             "/backend/users/me/profile-image",
             headers=_auth_headers(seeded),
@@ -338,9 +280,9 @@ async def test_put_profile_image_rejects_other_users_file(
         upload_response = await client.post(
             "/api/v1/files",
             headers=_auth_headers(other),
-            files={"file": ("profile.png", IMAGE_BYTES, "image/png")},
+            files=[("files", ("profile.png", IMAGE_BYTES, "image/png"))],
         )
-        other_file_id = upload_response.json()["data"]["fileId"]
+        other_file_id = upload_response.json()["data"]["files"][0]["fileId"]
         put_response = await client.put(
             "/api/v1/users/me/profile-image",
             headers=_auth_headers(owner),
@@ -357,12 +299,10 @@ async def test_put_profile_image_rejects_other_users_file(
 async def test_endpoints_require_bearer_token(
     postgres_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    # 푸시 토큰 API는 앱 공개 계약에 없으므로(알림 기능 착수 전) 내 정보 조회/수정만 검증한다.
     no_token: dict[str, str] = {}
     bad_token = {"Authorization": "Bearer invalid-token"}
     requests = [
         ("GET", "/api/v1/users/me", None),
-        ("PATCH", "/api/v1/users/me", {"notificationEnabled": False}),
         ("PUT", "/api/v1/users/me/profile-image", {"fileId": str(UUID(int=1))}),
         ("DELETE", "/api/v1/users/me/profile-image", None),
     ]
@@ -376,3 +316,23 @@ async def test_endpoints_require_bearer_token(
                 assert body["success"] is False, (method, path, headers)
                 assert body["status"] == 401, (method, path, headers)
                 assert body["data"]["path"] == path, (method, path, headers)
+
+
+def _forbidden_me_fields() -> frozenset[str]:
+    return frozenset(
+        {
+            "normalizedEmail",
+            "notificationSettings",
+            "notificationEnabled",
+            "marketingConsent",
+            "pushEnabled",
+            "warrantyReminderEnabled",
+            "pushToken",
+            "pushTokenCount",
+            "deviceToken",
+            "credits",
+            "usage",
+            "allowance",
+            "receiptAnalysisAllowance",
+        }
+    )

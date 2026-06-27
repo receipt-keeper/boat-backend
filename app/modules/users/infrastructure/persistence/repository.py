@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.domain.exceptions import NotFoundError
@@ -9,7 +9,7 @@ from app.modules.users.application.ports.user_repository import (
     UserAccountState,
     UserRepository,
 )
-from app.modules.users.domain.model import User, UserEntitlement, UserPushToken, UserSettings
+from app.modules.users.domain.model import User, UserSettings
 from app.modules.users.infrastructure.persistence import mapper, orm
 
 
@@ -37,13 +37,10 @@ class SqlAlchemyUserRepository(UserRepository):
         user_record = mapper.user_to_record(state.user)
         self._session.add(user_record)
         self._session.add(mapper.settings_to_record(state.settings))
-        self._session.add(mapper.entitlement_to_record(state.entitlement))
         await self._session.flush()
         return UserAccountState(
             user=state.user,
             settings=state.settings,
-            entitlement=state.entitlement,
-            push_tokens=(),
         )
 
     async def update_settings(self, *, settings: UserSettings) -> UserSettings:
@@ -54,13 +51,10 @@ class SqlAlchemyUserRepository(UserRepository):
             await self._session.flush()
             return settings
 
-        record.notification_enabled = settings.notification_enabled
-        record.marketing_consent = settings.marketing_consent
         record.terms_version = settings.terms_version
         record.privacy_version = settings.privacy_version
         record.terms_accepted_at = settings.terms_accepted_at
         record.privacy_accepted_at = settings.privacy_accepted_at
-        record.marketing_consent_updated_at = settings.marketing_consent_updated_at
         await self._session.flush()
         return mapper.settings_to_domain(record)
 
@@ -77,40 +71,9 @@ class SqlAlchemyUserRepository(UserRepository):
         await self._session.flush()
         return mapper.user_to_domain(record)
 
-    async def upsert_push_token(self, *, push_token: UserPushToken) -> UserPushToken:
-        statement = select(orm.UserPushToken).where(
-            orm.UserPushToken.user_id == push_token.user_id,
-            orm.UserPushToken.device_id == push_token.device_id,
-        )
-        record = await self._session.scalar(statement)
-        if record is None:
-            record = mapper.push_token_to_record(push_token)
-            self._session.add(record)
-            await self._session.flush()
-            return push_token
-
-        record.fcm_token = push_token.fcm_token
-        record.platform = push_token.platform.value
-        await self._session.flush()
-        return mapper.push_token_to_domain(record)
-
-    async def delete_push_token(self, *, user_id: UUID, device_id: str) -> None:
-        await self._session.execute(
-            delete(orm.UserPushToken).where(
-                orm.UserPushToken.user_id == user_id,
-                orm.UserPushToken.device_id == device_id,
-            )
-        )
-
     async def delete_account_state(self, *, user_id: UUID) -> None:
         await self._session.execute(
-            delete(orm.UserPushToken).where(orm.UserPushToken.user_id == user_id)
-        )
-        await self._session.execute(
             delete(orm.UserSettings).where(orm.UserSettings.user_id == user_id)
-        )
-        await self._session.execute(
-            delete(orm.UserEntitlement).where(orm.UserEntitlement.user_id == user_id)
         )
         await self._session.execute(delete(orm.User).where(orm.User.id == user_id))
 
@@ -120,23 +83,12 @@ class SqlAlchemyUserRepository(UserRepository):
         user_record: orm.User,
     ) -> UserAccountState:
         settings_record = await self._session.get(orm.UserSettings, user_record.id)
-        entitlement_record = await self._session.get(orm.UserEntitlement, user_record.id)
-        push_token_records = await self._session.scalars(
-            select(orm.UserPushToken).where(orm.UserPushToken.user_id == user_record.id)
-        )
         settings = (
             UserSettings.create(user_id=user_record.id)
             if settings_record is None
             else mapper.settings_to_domain(settings_record)
         )
-        entitlement = (
-            UserEntitlement.create(user_id=user_record.id)
-            if entitlement_record is None
-            else mapper.entitlement_to_domain(entitlement_record)
-        )
         return UserAccountState(
             user=mapper.user_to_domain(user_record),
             settings=settings,
-            entitlement=entitlement,
-            push_tokens=tuple(mapper.push_token_to_domain(record) for record in push_token_records),
         )

@@ -17,7 +17,7 @@ from app.modules.auth.infrastructure.persistence.credential_repository import (
 )
 from app.modules.auth.infrastructure.tokens.jwt import JwtAccessTokenService
 from app.modules.users.application.ports.user_repository import CreateUserAccountState
-from app.modules.users.domain.model import User, UserEntitlement, UserSettings
+from app.modules.users.domain.model import User, UserSettings
 from app.modules.users.infrastructure.persistence.repository import SqlAlchemyUserRepository
 
 IMAGE_BYTES = b"\x89PNG\r\n\x1a\nprofile-image"
@@ -43,7 +43,6 @@ async def seed_user(
         state=CreateUserAccountState(
             user=user,
             settings=UserSettings.create(user_id=user.id),
-            entitlement=UserEntitlement.create(user_id=user.id),
         )
     )
     credentials = await SqlAlchemyCredentialRepository(session).create_for_external_identity(
@@ -95,6 +94,7 @@ def make_test_settings(
     storage_root: Path,
     *,
     max_upload_bytes: int = 10_485_760,
+    max_upload_count: int = 5,
     api_prefix: str = "/api/v1",
 ) -> Settings:
     return Settings(
@@ -104,6 +104,7 @@ def make_test_settings(
         jwt_audience="boat-api-test",
         file_storage_root=str(storage_root),
         file_max_upload_bytes=max_upload_bytes,
+        file_max_upload_count=max_upload_count,
     )
 
 

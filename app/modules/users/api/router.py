@@ -10,19 +10,15 @@ from app.modules.users.api.schemas import (
     CurrentUserResponse,
     ProfileImageResponse,
     SetProfileImageRequest,
-    UpdateCurrentUserRequest,
-    UpdateCurrentUserResponse,
 )
 from app.modules.users.application.commands.update_profile_image.command import (
     ClearProfileImageCommand,
     SetProfileImageCommand,
 )
-from app.modules.users.application.commands.update_settings.command import UpdateSettingsCommand
 from app.modules.users.application.queries.current_user_profile.query import CurrentUserProfileQuery
 from app.modules.users.dependencies import (
     CurrentUserProfileQueryUseCaseDep,
     UpdateProfileImageCommandUseCaseDep,
-    UpdateSettingsCommandUseCaseDep,
 )
 
 # 모든 users 엔드포인트의 공통 에러 응답.
@@ -53,9 +49,7 @@ router = APIRouter(
     "/me",
     response_model=CommonResponse[CurrentUserResponse],
     summary="내 정보 조회",
-    description=(
-        "현재 로그인한 사용자의 프로필, 알림 설정, 마케팅 동의, 남은 무료 분석 토큰 수를 조회한다."
-    ),
+    description="로그인한 계정의 프로필 정보를 반환한다.",
 )
 async def get_me(
     request: Request,
@@ -71,39 +65,6 @@ async def get_me(
             name=profile.name,
             nickname=profile.nickname,
             profileImageUrl=_with_api_prefix(request, profile.profile_image_url),
-            notificationEnabled=profile.notification_enabled,
-            marketingConsent=profile.marketing_consent,
-            freeAnalysisTokensRemaining=profile.free_analysis_tokens_remaining,
-        ),
-    )
-
-
-@router.patch(
-    "/me",
-    response_model=CommonResponse[UpdateCurrentUserResponse],
-    summary="내 설정 수정",
-    description=(
-        "알림 수신 여부와 마케팅 수신 동의를 수정한다. 보내지 않은 필드는 기존 값을 유지한다."
-    ),
-)
-async def update_me(
-    request: UpdateCurrentUserRequest,
-    principal: CurrentPrincipalDep,
-    command_use_case: UpdateSettingsCommandUseCaseDep,
-) -> CommonResponse[UpdateCurrentUserResponse]:
-    settings = await command_use_case.execute(
-        UpdateSettingsCommand(
-            user_id=principal.user_id,
-            notification_enabled=request.notification_enabled,
-            marketing_consent=request.marketing_consent,
-        )
-    )
-    return CommonResponse(
-        success=True,
-        status=status.HTTP_200_OK,
-        data=UpdateCurrentUserResponse(
-            notificationEnabled=settings.notification_enabled,
-            marketingConsent=settings.marketing_consent,
         ),
     )
 
@@ -136,7 +97,7 @@ async def set_profile_image(
     "/me/profile-image",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="프로필 이미지 삭제",
-    description="현재 프로필 이미지를 제거한다. 성공하면 본문 없이 204를 반환한다.",
+    description="프로필 이미지를 제거한다. 성공하면 본문 없이 204를 반환한다.",
 )
 async def clear_profile_image(
     principal: CurrentPrincipalDep,
@@ -151,7 +112,7 @@ async def clear_profile_image(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="회원 탈퇴",
     description=(
-        "현재 계정을 탈퇴 처리하고 로그인 정보, 사용자 설정, 푸시 토큰 등 계정 데이터를 삭제한다. "
+        "로그인한 계정을 탈퇴 처리하고 로그인 정보와 사용자 계정 데이터를 삭제한다. "
         "성공하면 본문 없이 204를 반환한다."
     ),
 )

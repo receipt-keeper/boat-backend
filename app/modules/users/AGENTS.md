@@ -15,19 +15,19 @@ Users owns account state and the PRD public mypage API scope. Auth still consume
 | Domain entity | `domain/model.py` | Minimal `User` entity and factory. |
 | Persistence | `infrastructure/persistence/` | SQLAlchemy ORM, mapper, repository. |
 | Runtime wiring | `dependencies.py` | Command use case builders for shared-session auth wiring. |
-| Public app API | `api/router.py`, `api/schemas.py` | `GET/PATCH/DELETE /api/v1/users/me` (내 정보 조회/수정, 회원 탈퇴). |
-| Read/update flows | `application/queries/current_user_profile/`, `application/commands/update_settings/` | `GET`·`PATCH /me`가 사용하는 내부 흐름. |
+| Public app API | `api/router.py`, `api/schemas.py` | `GET/DELETE /api/v1/users/me` (내 정보 조회, 회원 탈퇴). |
+| Read flows | `application/queries/current_user_profile/` | `GET /me`가 사용하는 내부 흐름. |
 | Withdrawal route | `api/router.py` `DELETE /me` | auth `WithdrawAccountCommandUseCase`(auth.dependencies)에 위임해 한 트랜잭션으로 삭제/롤백. |
 | Tests | `tests/test_api.py`, `tests/test_architecture.py` | 공개 계약·아키텍처 가드. |
 
 ## CONVENTIONS
 
 - Users public API scope is reopened for this PRD and implemented in the users BC.
-- Users owns the PRD public mypage API scope:
-  `GET /api/v1/users/me`, `PATCH /api/v1/users/me`, and
-  `DELETE /api/v1/users/me`.
-- `GET /me` exposes only app-needed fields (email, name, nickname, profileImageUrl,
-  marketingConsent, freeAnalysisTokensRemaining); `PATCH /me` updates `marketingConsent` only.
+- Users owns the PRD public mypage profile scope:
+  `GET /api/v1/users/me` and `DELETE /api/v1/users/me`.
+- `GET /me` exposes only profile fields (email, name, nickname, profileImageUrl).
+- Notification settings, marketing notification consent, and push device tokens belong
+  to the notifications BC, not users.
 - `DELETE /me` is the app withdrawal route; it delegates to auth's
   `WithdrawAccountCommandUseCase` and must preserve full-account deletion with rollback.
 - Push-token endpoints and push/notification response fields stay out of the app contract

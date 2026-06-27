@@ -15,6 +15,16 @@ from app.modules.files.tests.api_support import (
 )
 
 
+def _first_uploaded_file(response_json: dict[str, object]) -> dict[str, object]:
+    data = response_json["data"]
+    assert isinstance(data, dict)
+    files = data["files"]
+    assert isinstance(files, list)
+    first_file = files[0]
+    assert isinstance(first_file, dict)
+    return first_file
+
+
 async def test_file_endpoints_require_bearer_token(
     postgres_session_factory: async_sessionmaker[AsyncSession],
     tmp_path: Path,
@@ -24,7 +34,7 @@ async def test_file_endpoints_require_bearer_token(
     async with api_client(postgres_session_factory, settings) as client:
         response = await client.post(
             "/api/v1/files",
-            files={"file": ("profile.png", IMAGE_BYTES, "image/png")},
+            files=[("files", ("profile.png", IMAGE_BYTES, "image/png"))],
         )
 
     body = response.json()
@@ -53,10 +63,12 @@ async def test_upload_download_and_delete_file_through_api(
         upload_response = await client.post(
             "/api/v1/files",
             headers=auth_headers(seeded),
-            files={"file": ("profile.png", IMAGE_BYTES, "image/png")},
+            files=[("files", ("profile.png", IMAGE_BYTES, "image/png"))],
         )
         upload_body = upload_response.json()
-        file_id = upload_body["data"]["fileId"]
+        uploaded_file = _first_uploaded_file(upload_body)
+        file_id = uploaded_file["fileId"]
+        assert isinstance(file_id, str)
         metadata_response = await client.get(
             f"/api/v1/files/{file_id}",
             headers=auth_headers(seeded),
@@ -77,17 +89,18 @@ async def test_upload_download_and_delete_file_through_api(
     assert upload_response.status_code == 201
     assert upload_body["success"] is True
     assert upload_body["status"] == 201
-    assert set(upload_body["data"]) == {
+    assert set(upload_body["data"]) == {"files"}
+    assert set(uploaded_file) == {
         "fileId",
         "originalName",
         "contentType",
         "size",
         "contentPath",
     }
-    assert upload_body["data"]["originalName"] == "profile.png"
-    assert upload_body["data"]["contentType"] == "image/png"
-    assert upload_body["data"]["size"] == len(IMAGE_BYTES)
-    assert upload_body["data"]["contentPath"] == f"/api/v1/files/{file_id}/content"
+    assert uploaded_file["originalName"] == "profile.png"
+    assert uploaded_file["contentType"] == "image/png"
+    assert uploaded_file["size"] == len(IMAGE_BYTES)
+    assert uploaded_file["contentPath"] == f"/api/v1/files/{file_id}/content"
     assert "storage_key" not in upload_response.text
     assert str(storage_root) not in upload_response.text
 
@@ -136,16 +149,53 @@ async def test_file_response_paths_follow_configured_api_prefix(
         upload_response = await client.post(
             "/backend/files",
             headers=auth_headers(seeded),
-            files={"file": ("profile.png", IMAGE_BYTES, "image/png")},
+            files=[("files", ("profile.png", IMAGE_BYTES, "image/png"))],
         )
-        file_id = upload_response.json()["data"]["fileId"]
+        uploaded_file = _first_uploaded_file(upload_response.json())
+        file_id = uploaded_file["fileId"]
         metadata_response = await client.get(
             f"/backend/files/{file_id}",
             headers=auth_headers(seeded),
         )
 
-    assert upload_response.json()["data"]["contentPath"] == f"/backend/files/{file_id}/content"
+    assert uploaded_file["contentPath"] == f"/backend/files/{file_id}/content"
     assert metadata_response.json()["data"]["contentPath"] == f"/backend/files/{file_id}/content"
+
+
+async def test_upload_accepts_multiple_files_through_single_request(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+    tmp_path: Path,
+) -> None:
+    storage_root = tmp_path / "files"
+    settings = make_test_settings(storage_root)
+    async with postgres_session_factory() as session, session.begin():
+        seeded = await seed_user(
+            session,
+            subject="files-multiple-owner",
+            email="files-multiple-owner@example.com",
+            name="다중 업로드 사용자",
+            settings=settings,
+        )
+
+    async with api_client(postgres_session_factory, settings) as client:
+        response = await client.post(
+            "/api/v1/files",
+            headers=auth_headers(seeded),
+            files=[
+                ("files", ("receipt-1.png", IMAGE_BYTES, "image/png")),
+                ("files", ("receipt-2.png", IMAGE_BYTES, "image/png")),
+            ],
+        )
+
+    body = response.json()
+    uploaded_files = body["data"]["files"]
+    assert response.status_code == 201
+    assert len(uploaded_files) == 2
+    assert [uploaded_file["originalName"] for uploaded_file in uploaded_files] == [
+        "receipt-1.png",
+        "receipt-2.png",
+    ]
+    assert len(stored_local_files(storage_root)) == 2
 
 
 async def test_upload_rejects_unsupported_content_type(
@@ -167,7 +217,7 @@ async def test_upload_rejects_unsupported_content_type(
         response = await client.post(
             "/api/v1/files",
             headers=auth_headers(seeded),
-            files={"file": ("profile.gif", b"gif-bytes", "image/gif")},
+            files=[("files", ("profile.gif", b"gif-bytes", "image/gif"))],
         )
 
     body = response.json()
@@ -199,7 +249,7 @@ async def test_upload_rejects_oversized_file(
         response = await client.post(
             "/api/v1/files",
             headers=auth_headers(seeded),
-            files={"file": ("profile.png", IMAGE_BYTES, "image/png")},
+            files=[("files", ("profile.png", IMAGE_BYTES, "image/png"))],
         )
 
     body = response.json()
@@ -237,9 +287,10 @@ async def test_other_user_cannot_read_or_delete_file(
         upload_response = await client.post(
             "/api/v1/files",
             headers=auth_headers(owner),
-            files={"file": ("profile.png", IMAGE_BYTES, "image/png")},
+            files=[("files", ("profile.png", IMAGE_BYTES, "image/png"))],
         )
-        file_id = upload_response.json()["data"]["fileId"]
+        file_id = _first_uploaded_file(upload_response.json())["fileId"]
+        assert isinstance(file_id, str)
         metadata_response = await client.get(
             f"/api/v1/files/{file_id}",
             headers=auth_headers(other),

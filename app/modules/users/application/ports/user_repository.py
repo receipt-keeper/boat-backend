@@ -2,22 +2,19 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from uuid import UUID
 
-from app.modules.users.domain.model import User, UserEntitlement, UserPushToken, UserSettings
+from app.modules.users.domain.model import User, UserSettings
 
 
 @dataclass(frozen=True, slots=True)
 class UserAccountState:
     user: User
     settings: UserSettings
-    entitlement: UserEntitlement
-    push_tokens: tuple[UserPushToken, ...]
 
 
 @dataclass(frozen=True, slots=True)
 class CreateUserAccountState:
     user: User
     settings: UserSettings
-    entitlement: UserEntitlement
 
 
 class UserRepository(ABC):
@@ -48,14 +45,6 @@ class UserRepository(ABC):
         user_id: UUID,
         profile_image_url: str | None,
     ) -> User:
-        raise NotImplementedError
-
-    @abstractmethod
-    async def upsert_push_token(self, *, push_token: UserPushToken) -> UserPushToken:
-        raise NotImplementedError
-
-    @abstractmethod
-    async def delete_push_token(self, *, user_id: UUID, device_id: str) -> None:
         raise NotImplementedError
 
     @abstractmethod

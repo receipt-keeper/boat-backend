@@ -121,7 +121,6 @@ def test_auth_runtime_settings_expose_provider_and_user_defaults() -> None:
         "apple.com": "apple",
     }
     assert settings.firebase_email_verified_claim == "email_verified"
-    assert settings.initial_free_analysis_tokens == 0
     assert settings.default_profile_image_url is None
 
 

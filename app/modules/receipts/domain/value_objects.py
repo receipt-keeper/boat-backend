@@ -1,10 +1,24 @@
 from dataclasses import dataclass
 from datetime import date
+from enum import StrEnum
 from typing import ClassVar
 from uuid import UUID
 
 from app.core.domain.exceptions import ErrorDetail, ValidationError
 from app.core.domain.value_object import ValueObject
+
+
+class ReceiptStatusFilter(StrEnum):
+    ALL = "all"
+    ACTIVE = "active"
+    EXPIRING = "expiring"
+    EXPIRED = "expired"
+
+
+class ReceiptSort(StrEnum):
+    RECENT = "recent"
+    EXPIRES_ON = "expiresOn"
+    PURCHASE_DATE = "purchaseDate"
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,9 +73,19 @@ class WarrantyPeriodMonths(ValueObject[int]):
 
 @dataclass(frozen=True, slots=True)
 class ReceiptFileReferences(ValueObject[tuple[UUID, ...]]):
+    MIN_COUNT: ClassVar[int] = 1
     MAX_COUNT: ClassVar[int] = 5
 
     def validate(self) -> None:
+        if len(self.value) < self.MIN_COUNT:
+            raise ValidationError(
+                [
+                    ErrorDetail(
+                        field="receipt_file_ids",
+                        message="영수증 파일은 최소 1개 이상 연결해야 합니다.",
+                    )
+                ]
+            )
         if len(self.value) > self.MAX_COUNT:
             raise ValidationError(
                 [

@@ -50,7 +50,7 @@ class LoginRequest(AppBaseModel):
     marketing_consent: bool = Field(
         default=False,
         alias="marketingConsent",
-        description="마케팅 수신 선택 동의.",
+        description="마케팅 알림 수신 선택 동의 여부.",
     )
 
 

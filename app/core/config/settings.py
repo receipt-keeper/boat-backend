@@ -71,11 +71,11 @@ class Settings(BaseSettings):
         description="Server-side pepper used when hashing opaque refresh tokens.",
     )
 
-    initial_free_analysis_tokens: int = 0
     default_profile_image_url: str | None = None
     file_storage_backend: Literal["local"] = "local"
     file_storage_root: str = "./storage/files"
     file_max_upload_bytes: int = Field(default=10_485_760, gt=0)
+    file_max_upload_count: int = Field(default=5, gt=0)
     file_allowed_content_types: Annotated[tuple[str, ...], NoDecode] = (
         "image/jpeg",
         "image/png",

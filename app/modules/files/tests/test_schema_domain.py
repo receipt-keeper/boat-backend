@@ -97,6 +97,7 @@ def test_file_storage_settings_are_declared_with_local_defaults() -> None:
     assert settings.file_storage_backend == "local"
     assert settings.file_storage_root == "./storage/files"
     assert settings.file_max_upload_bytes == 10_485_760
+    assert settings.file_max_upload_count == 5
     assert settings.file_allowed_content_types == (
         "image/jpeg",
         "image/png",

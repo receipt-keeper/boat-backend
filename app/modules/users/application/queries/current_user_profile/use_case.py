@@ -24,8 +24,4 @@ def _profile_result(state: UserAccountState) -> CurrentUserProfileResult:
         name=state.user.name,
         nickname=state.user.nickname,
         profile_image_url=state.user.profile_image_url,
-        notification_enabled=state.settings.notification_enabled,
-        marketing_consent=state.settings.marketing_consent,
-        free_analysis_tokens_remaining=state.entitlement.free_analysis_tokens_remaining.value,
-        push_token_count=len(state.push_tokens),
     )

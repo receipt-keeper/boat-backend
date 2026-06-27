@@ -19,7 +19,7 @@ app/
 |---|---|---|
 | App factory | `main.py` | `create_app(settings)` is the entry point. |
 | DB state | `main.py` | Lifespan creates `engine` and `session_factory` on `app.state`. |
-| Router registration | `main.py` | Auth/examples use `resolved_settings.api_prefix`; health has no API prefix. |
+| Router registration | `main.py` | Business routers use `resolved_settings.api_prefix`; health has no API prefix. |
 | Exception mapping | `main.py` | Register specific handlers before generic `DomainError` and catch-all handlers. |
 | Shared primitives | `core/` | Modules can depend on core. |
 | Business slices | `modules/` | Cross-module wiring stays in module `dependencies.py`. |

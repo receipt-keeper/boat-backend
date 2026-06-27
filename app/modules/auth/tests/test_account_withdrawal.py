@@ -51,37 +51,16 @@ async def _seed_full_account(
     *,
     subject: str,
     refresh_token_hash: str,
-    push_token_device_id: str | None = None,
 ) -> SeededAccount:
-    """Seed users (user/settings/entitlement/push) + auth (credential/session/refresh)."""
     user = await create_persisted_user(
         session,
         name="탈퇴 테스트 사용자",
         email=f"{subject}@example.com",
     )
-    # Seed users-side account state (settings + entitlement)
-    from app.modules.users.domain.model import UserEntitlement, UserSettings
+    from app.modules.users.domain.model import UserSettings
 
     settings = UserSettings.create(user_id=user.id)
-    entitlement = UserEntitlement.create(user_id=user.id)
-    session.add_all(
-        [
-            _settings_record(settings),
-            _entitlement_record(entitlement),
-        ]
-    )
-    # Optionally seed push token
-    if push_token_device_id is not None:
-        session.add(
-            users_orm.UserPushToken(
-                user_id=user.id,
-                device_id=push_token_device_id,
-                fcm_token=f"fcm-{subject}-{push_token_device_id}",
-                platform="android",
-            )
-        )
-
-    # Seed auth side
+    session.add(_settings_record(settings))
     credentials = await SqlAlchemyCredentialRepository(session).create_for_external_identity(
         identity=ExternalIdentity.create(
             issuer="google",
@@ -127,19 +106,6 @@ def _settings_record(settings: object) -> users_orm.UserSettings:
     # UserSettings.id == user_id (entity PK is the user_id)
     return users_orm.UserSettings(
         user_id=settings.id,
-        notification_enabled=settings.notification_enabled,
-        marketing_consent=settings.marketing_consent,
-    )
-
-
-def _entitlement_record(entitlement: object) -> users_orm.UserEntitlement:
-    from app.modules.users.domain.model import UserEntitlement as DomainEntitlement
-
-    assert isinstance(entitlement, DomainEntitlement)
-    # UserEntitlement.id == user_id
-    return users_orm.UserEntitlement(
-        user_id=entitlement.id,
-        free_analysis_tokens_remaining=entitlement.free_analysis_tokens_remaining.value,
     )
 
 
@@ -163,12 +129,6 @@ async def _count_all_rows(
         settings_count = await session.scalar(
             select(func.count()).select_from(users_orm.UserSettings)
         )
-        entitlements_count = await session.scalar(
-            select(func.count()).select_from(users_orm.UserEntitlement)
-        )
-        push_tokens_count = await session.scalar(
-            select(func.count()).select_from(users_orm.UserPushToken)
-        )
 
     def _req(v: int | None) -> int:
         if v is None:
@@ -182,8 +142,6 @@ async def _count_all_rows(
         "auth_sessions": _req(auth_sessions_count),
         "refresh_tokens": _req(refresh_tokens_count),
         "user_settings": _req(settings_count),
-        "user_entitlements": _req(entitlements_count),
-        "user_push_tokens": _req(push_tokens_count),
     }
 
 
@@ -263,13 +221,11 @@ async def test_delete_me_withdraws_full_account(
             session,
             subject="current-user",
             refresh_token_hash="current-refresh-hash",
-            push_token_device_id="device-current",
         )
         other = await _seed_full_account(
             session,
             subject="other-user",
             refresh_token_hash="other-refresh-hash",
-            push_token_device_id="device-other",
         )
 
     async with _plain_client(postgres_session_factory) as client:
@@ -306,21 +262,11 @@ async def test_delete_me_withdraws_full_account(
                 )
             )
         )
-        current_push_tokens = list(
-            await session.scalars(
-                select(users_orm.UserPushToken).where(
-                    users_orm.UserPushToken.user_id == current.user_id
-                )
-            )
-        )
         current_settings = await session.get(users_orm.UserSettings, current.user_id)
-        current_entitlements = await session.get(users_orm.UserEntitlement, current.user_id)
 
         assert current_identities == []
         assert current_refresh_tokens == []
-        assert current_push_tokens == []
         assert current_settings is None
-        assert current_entitlements is None
 
         # other account fully intact
         assert await persisted_user_exists(session, other.user_id)
@@ -333,14 +279,6 @@ async def test_delete_me_withdraws_full_account(
             )
         )
         assert len(other_identities) == 1
-        other_push_tokens = list(
-            await session.scalars(
-                select(users_orm.UserPushToken).where(
-                    users_orm.UserPushToken.user_id == other.user_id
-                )
-            )
-        )
-        assert len(other_push_tokens) == 1
 
     counts = await _count_all_rows(postgres_session_factory)
     assert counts == {
@@ -350,8 +288,6 @@ async def test_delete_me_withdraws_full_account(
         "auth_sessions": 1,
         "refresh_tokens": 1,
         "user_settings": 1,
-        "user_entitlements": 1,
-        "user_push_tokens": 1,
     }
 
 
@@ -364,7 +300,6 @@ async def test_delete_me_rolls_back_when_users_cleanup_fails(
             session,
             subject="rollback-user",
             refresh_token_hash="rollback-refresh-hash",
-            push_token_device_id="device-rollback",
         )
 
     async with _client_with_failing_cleanup(postgres_session_factory) as client:
@@ -388,6 +323,4 @@ async def test_delete_me_rolls_back_when_users_cleanup_fails(
         "auth_sessions": 1,
         "refresh_tokens": 1,
         "user_settings": 1,
-        "user_entitlements": 1,
-        "user_push_tokens": 1,
     }, f"Expected all rows intact after rollback but got: {counts}"

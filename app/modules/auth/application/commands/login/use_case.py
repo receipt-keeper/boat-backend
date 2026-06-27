@@ -75,7 +75,6 @@ class LoginCommandUseCase:
                         privacy_version=command.privacy_version,
                         terms_accepted=command.terms_accepted,
                         privacy_accepted=command.privacy_accepted,
-                        marketing_consent=command.marketing_consent,
                     )
                 )
                 credentials = await self._credential_repository.create_for_external_identity(

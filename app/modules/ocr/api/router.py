@@ -20,6 +20,8 @@ _SUCCESS_EXAMPLE = {
         "expires_on": "2025-05-26",
         "category": "가전",
         "needs_review": True,
+        "charged": True,
+        "remaining_count": 2,
         "warnings": ["무상 AS 기간을 찾지 못해 12개월 기본값을 적용했습니다."],
     },
 }
@@ -29,7 +31,7 @@ _UNREADABLE_RECEIPT_EXAMPLE = {
     "data": {
         "timestamp": "2026-06-21T00:00:00",
         "message": "입력값이 올바르지 않습니다.",
-        "path": "/api/v1/ocr/receipt",
+        "path": "/api/v1/ocr",
         "errors": [
             {
                 "field": "image_uri",
@@ -44,7 +46,7 @@ _PROVIDER_UNAVAILABLE_EXAMPLE = {
     "data": {
         "timestamp": "2026-06-21T00:00:00",
         "message": "OCR 서비스를 일시적으로 사용할 수 없습니다. 잠시 후 다시 시도해 주세요.",
-        "path": "/api/v1/ocr/receipt",
+        "path": "/api/v1/ocr",
         "errors": [],
     },
 }
@@ -66,7 +68,7 @@ router = APIRouter(
 
 
 @router.post(
-    "/receipt",
+    "",
     summary="영수증 OCR 분석",
     description=(
         "영수증 이미지에서 대표 결제 항목, 브랜드, 구매처, 구매일, 금액, "
@@ -109,6 +111,8 @@ async def extract_receipt_ocr(
             expires_on=result.expires_on,
             category=result.category,
             needs_review=bool(result.warnings),
+            charged=True,
+            remaining_count=2,
             warnings=list(result.warnings),
         ),
     )

@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic_core import ErrorDetails
 
 _REQUEST_LOCATION_PREFIXES = {"body", "query", "path", "header", "cookie"}
@@ -14,6 +14,36 @@ class CommonResponse[DataT](AppBaseModel):
     success: bool
     status: int
     data: DataT
+
+
+class CursorPaginationResponse(AppBaseModel):
+    model_config = ConfigDict(
+        frozen=True,
+        populate_by_name=True,
+        json_schema_extra={
+            "examples": [
+                {
+                    "nextCursor": "20",
+                    "hasNext": True,
+                    "limit": 20,
+                    "totalCount": 42,
+                }
+            ]
+        },
+    )
+
+    next_cursor: str | None = Field(
+        default=None,
+        alias="nextCursor",
+        description="다음 목록을 조회할 때 cursor로 전달할 값. 마지막 목록이면 null이다.",
+    )
+    has_next: bool = Field(alias="hasNext", description="다음 목록 존재 여부.")
+    limit: int = Field(description="이번 요청에 적용된 최대 조회 개수.")
+    total_count: int | None = Field(
+        default=None,
+        alias="totalCount",
+        description="현재 조건에 맞는 전체 개수. 계산하지 않는 목록이면 null이다.",
+    )
 
 
 class FieldError(AppBaseModel):
