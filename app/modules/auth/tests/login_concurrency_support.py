@@ -141,6 +141,8 @@ async def run_login_attempt(
             result = await command_use_case.execute(
                 LoginCommand(
                     provider_token=attempt.provider_token,
+                    terms_version="1.0",
+                    privacy_version="1.0",
                     terms_accepted=True,
                     privacy_accepted=True,
                 )

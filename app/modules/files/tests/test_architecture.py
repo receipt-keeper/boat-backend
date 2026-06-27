@@ -43,6 +43,7 @@ EXPECTED_SETTINGS = {
     "file_storage_backend",
     "file_storage_root",
     "file_max_upload_bytes",
+    "file_max_upload_count",
     "file_allowed_content_types",
 }
 

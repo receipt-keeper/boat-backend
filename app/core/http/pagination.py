@@ -1,10 +1,7 @@
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import TypeVar
 
 from app.core.http.responses import CursorPaginationResponse
-
-ItemT = TypeVar("ItemT")
 
 
 @dataclass(frozen=True, slots=True)

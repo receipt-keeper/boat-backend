@@ -27,21 +27,37 @@ class ValidatedUpload:
     content: bytes
 
 
+@dataclass(frozen=True, slots=True)
+class UploadValidationPolicy:
+    allowed_content_types: tuple[str, ...]
+    max_upload_bytes: int
+    max_upload_count: int
+
+
 async def read_and_validate_uploads(
     *,
     files: list[UploadFile],
-    allowed_content_types: tuple[str, ...],
-    max_upload_bytes: int,
+    policy: UploadValidationPolicy,
 ) -> list[ValidatedUpload]:
+    if not 1 <= len(files) <= policy.max_upload_count:
+        raise ValidationError(
+            [
+                ErrorDetail(
+                    field="files",
+                    message=f"파일은 최대 {policy.max_upload_count}개까지 업로드할 수 있습니다.",
+                )
+            ]
+        )
+
     validated_uploads: list[ValidatedUpload] = []
     for file in files:
-        content = await file.read(max_upload_bytes + 1)
+        content = await file.read(policy.max_upload_bytes + 1)
         _validate_upload(
             content_type=file.content_type,
             content=content,
             size=len(content),
-            allowed_content_types=allowed_content_types,
-            max_upload_bytes=max_upload_bytes,
+            allowed_content_types=policy.allowed_content_types,
+            max_upload_bytes=policy.max_upload_bytes,
         )
         validated_uploads.append(
             ValidatedUpload(

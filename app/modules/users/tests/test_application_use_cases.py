@@ -46,6 +46,8 @@ async def test_resolve_user_for_login_creates_profile_email_value(
                 name="첫 사용자",
                 email="person@example.com",
                 profile_image_url="https://example.com/a.png",
+                terms_version="1.0",
+                privacy_version="1.0",
                 terms_accepted=True,
                 privacy_accepted=True,
             )
@@ -78,6 +80,8 @@ async def test_profile_and_withdrawal_surface(
                 name="표면 테스트",
                 email="surface@example.com",
                 profile_image_url=None,
+                terms_version="1.0",
+                privacy_version="1.0",
                 terms_accepted=True,
                 privacy_accepted=True,
             )
@@ -115,6 +119,8 @@ async def test_current_user_profile_prefers_file_content_path_over_legacy_url(
                 name="프로필 이미지 우선순위",
                 email="profile-priority@example.com",
                 profile_image_url="https://example.com/legacy.png",
+                terms_version="1.0",
+                privacy_version="1.0",
                 terms_accepted=True,
                 privacy_accepted=True,
             )
@@ -146,6 +152,8 @@ async def test_current_user_profile_keeps_legacy_profile_image_url_without_file(
                 name="레거시 이미지",
                 email="legacy-profile@example.com",
                 profile_image_url="https://example.com/legacy.png",
+                terms_version="1.0",
+                privacy_version="1.0",
                 terms_accepted=True,
                 privacy_accepted=True,
             )
@@ -173,12 +181,39 @@ async def test_use_cases_reject_malformed_input(
                     name="잘못된 이메일",
                     email="not-an-email",
                     profile_image_url=None,
+                    terms_version="1.0",
+                    privacy_version="1.0",
                     terms_accepted=True,
                     privacy_accepted=True,
                 )
             )
 
     assert [detail.field for detail in invalid_email.value.details] == ["email"]
+
+
+async def test_resolve_user_for_login_requires_consent_versions(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with postgres_session_factory() as session:
+        resolver = ResolveUserForLoginCommandUseCase(
+            user_repository=SqlAlchemyUserRepository(session),
+            unit_of_work=SqlAlchemyUnitOfWork(session),
+        )
+        with pytest.raises(ValidationError) as missing_versions:
+            await resolver.execute(
+                ResolveUserForLoginCommand(
+                    name="동의 버전 누락",
+                    email="missing-version@example.com",
+                    profile_image_url=None,
+                    terms_accepted=True,
+                    privacy_accepted=True,
+                )
+            )
+
+    assert [detail.field for detail in missing_versions.value.details] == [
+        "termsVersion",
+        "privacyVersion",
+    ]
 
 
 async def _count(session: AsyncSession, table: CountableUsersTable) -> int:

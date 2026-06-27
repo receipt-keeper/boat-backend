@@ -12,7 +12,10 @@ from app.modules.files.api.schemas import (
     UploadedFileResponse,
     UploadedFilesResponse,
 )
-from app.modules.files.api.upload_validation import read_and_validate_uploads
+from app.modules.files.api.upload_validation import (
+    UploadValidationPolicy,
+    read_and_validate_uploads,
+)
 from app.modules.files.application.commands.delete_file.command import DeleteFileCommand
 from app.modules.files.application.commands.upload_file.command import UploadFileCommand
 from app.modules.files.application.queries.get_file.query import GetFileQuery
@@ -83,8 +86,11 @@ async def upload_file(
     settings = request.app.state.settings
     validated_uploads = await read_and_validate_uploads(
         files=files,
-        allowed_content_types=tuple(settings.file_allowed_content_types),
-        max_upload_bytes=settings.file_max_upload_bytes,
+        policy=UploadValidationPolicy(
+            allowed_content_types=tuple(settings.file_allowed_content_types),
+            max_upload_bytes=settings.file_max_upload_bytes,
+            max_upload_count=settings.file_max_upload_count,
+        ),
     )
     uploaded_files: list[UploadedFileResponse] = []
     for upload in validated_uploads:

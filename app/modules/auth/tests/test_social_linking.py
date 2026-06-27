@@ -90,6 +90,8 @@ async def _login(
         await use_case.execute(
             LoginCommand(
                 provider_token=provider_token,
+                terms_version="1.0",
+                privacy_version="1.0",
                 terms_accepted=True,
                 privacy_accepted=True,
             )

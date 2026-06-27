@@ -3,7 +3,7 @@ from typing import Final
 from uuid import UUID
 
 from app.modules.notifications.api.schemas import NotificationResponse
-from app.modules.notifications.domain.value_objects import NotificationTargetType
+from app.modules.notifications.domain.value_objects import NotificationKind, NotificationTargetType
 
 MOCK_NOTIFICATION_ID: Final = UUID("00000000-0000-0000-0000-000000000601")
 MOCK_RECEIPT_ID: Final = UUID("00000000-0000-0000-0000-000000000301")
@@ -11,7 +11,7 @@ MOCK_RECEIPT_ID: Final = UUID("00000000-0000-0000-0000-000000000301")
 SAMPLE_NOTIFICATIONS: Final[tuple[NotificationResponse, ...]] = (
     NotificationResponse(
         notificationId=MOCK_NOTIFICATION_ID,
-        kind="warranty_warning",
+        kind=NotificationKind.WARRANTY_WARNING,
         message=(
             "삼성 냉장고 875L 무상 AS 14일 남았어요! 기간이 지나기 전 영수증 증빙 서류를 챙기세요."
         ),
@@ -22,7 +22,7 @@ SAMPLE_NOTIFICATIONS: Final[tuple[NotificationResponse, ...]] = (
     ),
     NotificationResponse(
         notificationId=UUID("00000000-0000-0000-0000-000000000602"),
-        kind="registration_prompt",
+        kind=NotificationKind.REGISTRATION_PROMPT,
         message="영수증을 등록하면 무상 AS 만료일을 놓치지 않도록 알려드려요.",
         targetType=NotificationTargetType.RECEIPT_UPLOAD,
         targetId=None,
@@ -31,7 +31,7 @@ SAMPLE_NOTIFICATIONS: Final[tuple[NotificationResponse, ...]] = (
     ),
     NotificationResponse(
         notificationId=UUID("00000000-0000-0000-0000-000000000603"),
-        kind="credit_prompt",
+        kind=NotificationKind.CREDIT_PROMPT,
         message="새 알림이 있습니다.",
         targetType=NotificationTargetType.NONE,
         targetId=None,

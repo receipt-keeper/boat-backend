@@ -4,12 +4,12 @@ from uuid import UUID
 from pydantic import ConfigDict, Field
 
 from app.core.http.responses import AppBaseModel, CursorPaginationResponse
-from app.modules.notifications.domain.value_objects import NotificationTargetType
+from app.modules.notifications.domain.value_objects import NotificationKind, NotificationTargetType
 
 
 class NotificationResponse(AppBaseModel):
     notification_id: UUID = Field(alias="notificationId", description="알림 ID.")
-    kind: str = Field(description="알림 유형.")
+    kind: NotificationKind = Field(description="알림 유형.")
     message: str = Field(description="알림 문구.")
     target_type: NotificationTargetType = Field(
         alias="targetType",

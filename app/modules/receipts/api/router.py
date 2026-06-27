@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from typing import Annotated, Any, assert_never
 from uuid import UUID
 
@@ -230,7 +230,7 @@ def _sort_receipts(
         case ReceiptSort.RECENT:
             return sorted(
                 receipts,
-                key=lambda receipt: receipt.registered_at or date.min,
+                key=lambda receipt: receipt.registered_at or datetime.min,
                 reverse=True,
             )
         case ReceiptSort.EXPIRES_ON:

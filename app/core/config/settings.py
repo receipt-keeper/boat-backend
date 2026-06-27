@@ -75,6 +75,7 @@ class Settings(BaseSettings):
     file_storage_backend: Literal["local"] = "local"
     file_storage_root: str = "./storage/files"
     file_max_upload_bytes: int = Field(default=10_485_760, gt=0)
+    file_max_upload_count: int = Field(default=5, gt=0)
     file_allowed_content_types: Annotated[tuple[str, ...], NoDecode] = (
         "image/jpeg",
         "image/png",

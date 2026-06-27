@@ -50,11 +50,21 @@ def _require_consent(command: ResolveUserForLoginCommand) -> None:
         details.append(
             ErrorDetail(field="termsAccepted", message="이용약관에 동의해야 가입할 수 있습니다.")
         )
+    if command.terms_accepted and command.terms_version is None:
+        details.append(
+            ErrorDetail(field="termsVersion", message="동의한 이용약관 버전이 필요합니다.")
+        )
     if not command.privacy_accepted:
         details.append(
             ErrorDetail(
                 field="privacyAccepted",
                 message="개인정보 처리방침에 동의해야 가입할 수 있습니다.",
+            )
+        )
+    if command.privacy_accepted and command.privacy_version is None:
+        details.append(
+            ErrorDetail(
+                field="privacyVersion", message="동의한 개인정보 처리방침 버전이 필요합니다."
             )
         )
     if details:
