@@ -47,8 +47,6 @@ def test_openapi_descriptions_are_app_developer_friendly() -> None:
         paths["/api/v1/files/{file_id}"]["get"]["description"],
         paths["/api/v1/files/{file_id}/content"]["get"]["description"],
         paths["/api/v1/files/{file_id}"]["delete"]["description"],
-        paths["/api/v1/examples"]["post"]["description"],
-        paths["/api/v1/examples/{example_user_id}"]["get"]["description"],
     ]
 
     forbidden_terms = (
@@ -92,7 +90,6 @@ def test_openapi_response_schemas_include_examples() -> None:
         "ProfileImageResponse",
         "UploadedFileResponse",
         "FileMetadataResponse",
-        "ExampleUserResponse",
     ):
         assert schemas[schema_name]["examples"]
 
@@ -112,7 +109,6 @@ def test_openapi_request_schemas_include_examples() -> None:
         "RefreshTokenRequest",
         "UpdateCurrentUserRequest",
         "SetProfileImageRequest",
-        "CreateExampleUserRequest",
     ):
         assert schemas[schema_name]["examples"]
 

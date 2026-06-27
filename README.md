@@ -14,8 +14,6 @@ uv run fastapi dev app/main.py
 The API exposes:
 
 - `GET /health`
-- `GET /api/v1/examples/{example_user_id}`
-- `POST /api/v1/examples`
 - `GET /docs`
 - `GET /openapi.json`
 
@@ -42,11 +40,9 @@ Current initial setup scope:
 - `app/core/domain/exceptions.py`: base domain exception state shared by modules
 - `app/core/http`: shared HTTP response models and exception-to-response adapters
 - `app/core/observability`: operational probes
-- `app/modules/examples`: sample bounded-context module
+- `app/modules/<bounded_context>`: vertical product domain modules
 
-The `examples` module is a replaceable sample bounded context. Real product
-modules should follow the same boundary shape once their database schemas are
-decided:
+Product modules follow this boundary shape:
 
 ```text
 app/modules/<bounded_context>/
@@ -71,8 +67,8 @@ changes by route or error type.
   "status": 200,
   "data": {
     "id": "4fe7798e-dc09-4f42-8ddc-8a9222ed40a8",
-    "nickname": "created-user",
-    "email": "created@test.com"
+    "nickname": "user",
+    "email": "user@test.com"
   }
 }
 ```
@@ -86,7 +82,7 @@ Failures are normalized by globally registered exception handlers:
   "data": {
     "timestamp": "2026-06-01T00:00:00",
     "message": "입력값이 올바르지 않습니다.",
-    "path": "/api/v1/examples",
+    "path": "/api/v1/users/me",
     "errors": [
       {
         "field": "email",
