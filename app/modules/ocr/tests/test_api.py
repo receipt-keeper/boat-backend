@@ -138,6 +138,26 @@ async def test_receipt_ocr_endpoint_uses_request_validation_envelope(
     assert body["data"]["errors"] == [{"field": "file", "message": "Field required"}]
 
 
+async def test_receipt_ocr_endpoint_rejects_multiple_file_parts(client: AsyncClient) -> None:
+    response = await client.post(
+        "/api/v1/ocr",
+        files=[
+            ("file", ("receipt-1.png", _PNG_BYTES, "image/png")),
+            ("file", ("receipt-2.png", _PNG_BYTES, "image/png")),
+        ],
+    )
+
+    body = response.json()
+
+    assert response.status_code == 422
+    assert body["success"] is False
+    assert body["status"] == 422
+    assert body["data"]["path"] == "/api/v1/ocr"
+    assert body["data"]["errors"] == [
+        {"field": "files", "message": "파일은 최대 1개까지 업로드할 수 있습니다."}
+    ]
+
+
 async def test_receipt_ocr_endpoint_returns_unreadable_image_failure(
     client: AsyncClient,
     override_receipt_ocr_client: Callable[[UnreadableReceiptOcrClient], None],

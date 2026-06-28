@@ -108,15 +108,20 @@ router = APIRouter(
     },
 )
 async def extract_receipt_ocr(
-    file: Annotated[
-        UploadFile,
-        File(description="분석할 영수증 이미지 파일. 이 API에서는 파일을 저장하지 않는다."),
+    files: Annotated[
+        list[UploadFile],
+        File(
+            alias="file",
+            description=(
+                "분석할 영수증 이미지 파일. 이 API에서는 파일을 저장하지 않으며 1개만 허용한다."
+            ),
+        ),
     ],
     service: ReceiptOcrServiceDep,
 ) -> CommonResponse[ReceiptOcrResultResponse]:
     validated_upload = (
         await read_and_validate_uploads(
-            files=[file],
+            files=files,
             policy=RECEIPT_OCR_UPLOAD_POLICY,
         )
     )[0]
