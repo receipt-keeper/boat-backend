@@ -15,4 +15,4 @@ class CreateReceiptCommand:
     category: str | None = None
     memo: str | None = None
     requires_physical_receipt: bool = False
-    receipt_file_ids: tuple[UUID, ...] = ()
+    receipt_file_ids: tuple[UUID, ...] | None = None

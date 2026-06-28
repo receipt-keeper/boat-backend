@@ -48,7 +48,7 @@ class Receipt(Entity[UUID]):
         category: str | None = None,
         memo: str | None = None,
         requires_physical_receipt: bool | None = False,
-        receipt_file_ids: tuple[UUID, ...] | None = (),
+        receipt_file_ids: tuple[UUID, ...] | None = None,
     ) -> "Receipt":
         resolved_period_months = (
             DEFAULT_WARRANTY_PERIOD_MONTHS if period_months is None else period_months
@@ -150,7 +150,7 @@ def _required_file_references(value: tuple[UUID, ...] | None) -> ReceiptFileRefe
             [
                 ErrorDetail(
                     field="receipt_file_ids",
-                    message="영수증 파일은 최소 1개 이상 연결해야 합니다.",
+                    message="영수증 파일은 필수입니다.",
                 )
             ]
         )

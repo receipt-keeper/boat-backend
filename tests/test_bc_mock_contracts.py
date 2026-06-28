@@ -238,12 +238,47 @@ async def test_credits_usage_response_bodies_match_app_contract() -> None:
 async def test_receipts_match_app_contract() -> None:
     schema = create_app(TEST_SETTINGS).openapi()
 
-    assert set(schema["paths"]["/api/v1/receipts"]) == {"get", "post"}
-    assert set(schema["paths"]["/api/v1/receipts/{receipt_id}"]) == {
+    receipt_collection = schema["paths"]["/api/v1/receipts"]
+    receipt_detail = schema["paths"]["/api/v1/receipts/{receipt_id}"]
+
+    assert set(receipt_collection) == {"get", "post"}
+    assert set(receipt_detail) == {
         "get",
         "patch",
         "delete",
     }
+    _assert_common_response_schema(schema, receipt_collection["get"], 200)
+    _assert_common_response_schema(schema, receipt_collection["post"], 201)
+    _assert_common_response_schema(schema, receipt_detail["get"], 200)
+    _assert_common_response_schema(schema, receipt_detail["patch"], 200)
+    _assert_common_response_schema(schema, receipt_detail["delete"], 200)
+
+
+def _assert_common_response_schema(
+    openapi_schema: dict[str, object],
+    operation: dict[str, object],
+    status_code: int,
+) -> None:
+    responses = operation["responses"]
+    assert isinstance(responses, dict)
+    response = responses[str(status_code)]
+    assert isinstance(response, dict)
+    content = response["content"]
+    assert isinstance(content, dict)
+    schema_ref = content["application/json"]["schema"]["$ref"]
+    assert isinstance(schema_ref, str)
+    assert schema_ref.startswith("#/components/schemas/CommonResponse")
+
+    component_name = schema_ref.rsplit("/", maxsplit=1)[-1]
+    components = openapi_schema["components"]
+    assert isinstance(components, dict)
+    schemas = components["schemas"]
+    assert isinstance(schemas, dict)
+    response_schema = schemas[component_name]
+    assert isinstance(response_schema, dict)
+    properties = response_schema["properties"]
+    assert isinstance(properties, dict)
+    assert {"success", "status", "data"} <= set(properties)
 
 
 async def test_users_me_response_does_not_leak_split_bc_fields() -> None:

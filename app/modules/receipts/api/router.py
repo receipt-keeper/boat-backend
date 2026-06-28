@@ -1,7 +1,7 @@
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Query, Response, status
+from fastapi import APIRouter, Query, status
 
 from app.core.http.auth import CurrentPrincipalDep
 from app.core.http.responses import ApiErrorData, CommonResponse, CursorPaginationResponse
@@ -193,7 +193,7 @@ async def update_receipt(
 
 @router.delete(
     "/{receipt_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
+    response_model=CommonResponse[None],
     summary="영수증 삭제",
     description=(
         "등록된 영수증과 제품 조회 데이터를 삭제한다. "
@@ -204,11 +204,11 @@ async def delete_receipt(
     receipt_id: UUID,
     principal: CurrentPrincipalDep,
     command_use_case: DeleteReceiptCommandUseCaseDep,
-) -> Response:
+) -> CommonResponse[None]:
     await command_use_case.execute(
         DeleteReceiptCommand(user_id=principal.user_id, receipt_id=receipt_id)
     )
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+    return CommonResponse(success=True, status=status.HTTP_200_OK, data=None)
 
 
 def _receipt_response(receipt: ReceiptReadModel) -> ReceiptResponse:

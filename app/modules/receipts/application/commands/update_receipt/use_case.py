@@ -1,4 +1,5 @@
 from app.core.application.unit_of_work import UnitOfWork
+from app.core.domain.exceptions import ErrorDetail, ValidationError
 from app.modules.receipts.application.commands.update_receipt.command import (
     UpdateReceiptCommand,
 )
@@ -39,7 +40,12 @@ class UpdateReceiptCommandUseCase:
                 if _has_update(command, "total_amount")
                 else current.total_amount
             ),
-            period_months=_updated_value(command, "period_months", current.period_months),
+            period_months=_required_updated_value(
+                command,
+                "period_months",
+                current.period_months,
+                "무상 AS 기간",
+            ),
             category=command.category if _has_update(command, "category") else current.category,
             memo=command.memo if _has_update(command, "memo") else current.memo,
             requires_physical_receipt=_updated_value(
@@ -68,3 +74,18 @@ def _updated_value[T](command: UpdateReceiptCommand, field: str, current_value: 
     if not _has_update(command, field):
         return current_value
     return getattr(command, field)
+
+
+def _required_updated_value[T](
+    command: UpdateReceiptCommand,
+    field: str,
+    current_value: T,
+    label: str,
+) -> T:
+    if not _has_update(command, field):
+        return current_value
+
+    updated_value = getattr(command, field)
+    if updated_value is None:
+        raise ValidationError([ErrorDetail(field=field, message=f"{label}은 필수입니다.")])
+    return updated_value
