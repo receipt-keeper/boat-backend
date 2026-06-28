@@ -80,7 +80,7 @@ async def upload_file(
     command_use_case: UploadFileCommandUseCaseDep,
     files: Annotated[
         list[UploadFile],
-        File(description="업로드할 이미지 파일 목록.", examples=["receipt-1.png", "receipt-2.png"]),
+        File(description="업로드할 이미지 파일 목록."),
     ],
 ) -> CommonResponse[UploadedFilesResponse]:
     settings = request.app.state.settings
