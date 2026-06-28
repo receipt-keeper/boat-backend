@@ -41,7 +41,8 @@ boat-backend/
 | Files | `app/modules/files/` | 업로드, 메타데이터, content streaming, delete guard, local object storage adapter. |
 | Receipts | `app/modules/receipts/` | receipt aggregate와 create/list/read API. |
 | OCR | `app/modules/ocr/` | 영수증 이미지 OCR boundary와 provider unavailable mapping. |
-| Credits/usage/notifications | `app/modules/{credits,usage,notifications}/` | 현재 mock-backed app contract지만 API schema와 OpenAPI 문구는 각 모듈 소유. |
+| Credits/usage | `app/modules/{credits,usage}/` | 현재 mock-backed app contract지만 API schema와 OpenAPI 문구는 각 모듈 소유. |
+| Notifications | `app/modules/notifications/` | persistence-backed notifications 모듈이며 API schema, OpenAPI 문구, 저장소 adapter를 모듈이 소유. |
 | App tests | `tests/` | health/OpenAPI/lifespan, DB session architecture, BC contract tests. |
 | Module tests | `app/modules/<name>/tests/` | 모듈 소유 API, service, fixture, architecture tests. |
 

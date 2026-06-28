@@ -8,6 +8,8 @@ from app.modules.notifications.infrastructure.persistence.repository import (
     SqlAlchemyNotificationRepository,
 )
 from app.modules.notifications.tests.conftest import (
+    MISSING_NOTIFICATION_ID,
+    OTHER_USER_ID,
     TEST_USER_ID,
     notification_api_client,
 )
@@ -275,3 +277,86 @@ async def test_update_notification_settings_preserves_concurrent_partial_update(
 
     assert updated_settings.push_enabled is False
     assert updated_settings.marketing_consent is True
+
+
+async def test_mark_notification_read_persists_for_current_user(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    # Given: 현재 사용자의 읽지 않은 알림이 생성되어 있다.
+    payload = {
+        "kind": "registration_prompt",
+        "message": "보증 관리를 위해 영수증을 등록해 주세요.",
+        "targetType": "receiptUpload",
+        "targetId": None,
+    }
+
+    # When: 읽음 처리 후 목록을 다시 조회한다.
+    async with notification_api_client(postgres_session_factory) as client:
+        create_response = await client.post("/api/v1/notifications", json=payload)
+        assert create_response.status_code == 201
+        notification_id = create_response.json()["data"]["notificationId"]
+        read_response = await client.patch(f"/api/v1/notifications/{notification_id}")
+        list_response = await client.get("/api/v1/notifications?limit=10")
+
+    # Then: 읽음 응답과 목록의 같은 알림 모두 readAt을 가진다.
+    read_body = read_response.json()
+    notifications = list_response.json()["data"]["notifications"]
+    persisted = next(
+        notification
+        for notification in notifications
+        if notification["notificationId"] == notification_id
+    )
+
+    assert read_response.status_code == 200
+    assert read_body["data"]["notificationId"] == notification_id
+    assert read_body["data"]["readAt"] is not None
+    assert persisted["readAt"] == read_body["data"]["readAt"]
+
+
+async def test_mark_missing_notification_returns_not_found_envelope(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    # Given: 현재 사용자에게 존재하지 않는 알림 ID가 있다.
+    # When: 읽음 처리를 요청한다.
+    async with notification_api_client(postgres_session_factory) as client:
+        response = await client.patch(f"/api/v1/notifications/{MISSING_NOTIFICATION_ID}")
+
+    # Then: 404 실패 envelope를 반환한다.
+    body = response.json()
+    assert response.status_code == 404
+    assert body["success"] is False
+    assert body["status"] == 404
+    assert body["data"]["path"] == f"/api/v1/notifications/{MISSING_NOTIFICATION_ID}"
+
+
+async def test_mark_foreign_notification_returns_not_found_envelope(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    # Given: 다른 사용자에게 알림이 생성되어 있다.
+    payload = {
+        "kind": "benefit",
+        "message": "다른 사용자에게만 보이는 알림입니다.",
+        "targetType": "none",
+        "targetId": None,
+    }
+
+    async with notification_api_client(
+        postgres_session_factory,
+        OTHER_USER_ID,
+    ) as other_client:
+        create_response = await other_client.post("/api/v1/notifications", json=payload)
+        assert create_response.status_code == 201
+        notification_id = create_response.json()["data"]["notificationId"]
+
+    # When: 현재 사용자가 그 알림을 읽음 처리하려고 한다.
+    async with notification_api_client(
+        postgres_session_factory,
+        TEST_USER_ID,
+    ) as client:
+        response = await client.patch(f"/api/v1/notifications/{notification_id}")
+
+    # Then: 존재 여부를 숨기기 위해 404 실패 envelope를 반환한다.
+    body = response.json()
+    assert response.status_code == 404
+    assert body["success"] is False
+    assert body["status"] == 404

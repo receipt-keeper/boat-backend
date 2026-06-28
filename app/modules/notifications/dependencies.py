@@ -8,6 +8,9 @@ from app.core.db.unit_of_work import SqlAlchemyUnitOfWork
 from app.modules.notifications.application.commands.create_notification.use_case import (
     CreateNotificationCommandUseCase,
 )
+from app.modules.notifications.application.commands.mark_notification_read.use_case import (
+    MarkNotificationReadCommandUseCase,
+)
 from app.modules.notifications.application.commands.update_notification_settings.use_case import (
     UpdateNotificationSettingsCommandUseCase,
 )
@@ -41,6 +44,19 @@ async def get_create_notification_command_use_case(
     unit_of_work: Annotated[UnitOfWork, Depends(get_unit_of_work)],
 ) -> CreateNotificationCommandUseCase:
     return CreateNotificationCommandUseCase(
+        notification_repository=notification_repository,
+        unit_of_work=unit_of_work,
+    )
+
+
+async def get_mark_notification_read_command_use_case(
+    notification_repository: Annotated[
+        NotificationRepository,
+        Depends(get_notification_repository),
+    ],
+    unit_of_work: Annotated[UnitOfWork, Depends(get_unit_of_work)],
+) -> MarkNotificationReadCommandUseCase:
+    return MarkNotificationReadCommandUseCase(
         notification_repository=notification_repository,
         unit_of_work=unit_of_work,
     )
@@ -82,6 +98,10 @@ async def get_notification_settings_query_use_case(
 CreateNotificationCommandUseCaseDep = Annotated[
     CreateNotificationCommandUseCase,
     Depends(get_create_notification_command_use_case),
+]
+MarkNotificationReadCommandUseCaseDep = Annotated[
+    MarkNotificationReadCommandUseCase,
+    Depends(get_mark_notification_read_command_use_case),
 ]
 UpdateNotificationSettingsCommandUseCaseDep = Annotated[
     UpdateNotificationSettingsCommandUseCase,
