@@ -12,9 +12,13 @@ from app.modules.ocr.domain.exceptions import ReceiptOcrProviderUnavailableError
 from app.modules.ocr.domain.value_objects import BrandName, ItemName, PaymentLocation, TotalAmount
 from app.modules.ocr.infrastructure.receipt_ocr_client import ExtractedReceiptOcrFields
 
+_PNG_BYTES = b"\x89PNG\r\n\x1a\nreceipt-image"
+
 
 class UnreadableReceiptOcrClient:
-    async def extract(self, *, image_uri: str) -> ExtractedReceiptOcrFields:
+    async def extract(
+        self, *, image_content: bytes, content_type: str
+    ) -> ExtractedReceiptOcrFields:
         return ExtractedReceiptOcrFields(
             item_name="",
             brand_name=None,
@@ -27,12 +31,16 @@ class UnreadableReceiptOcrClient:
 
 
 class ProviderUnavailableReceiptOcrClient:
-    async def extract(self, *, image_uri: str) -> ExtractedReceiptOcrFields:
+    async def extract(
+        self, *, image_content: bytes, content_type: str
+    ) -> ExtractedReceiptOcrFields:
         raise ReceiptOcrProviderUnavailableError()
 
 
 class ZeroTotalAmountReceiptOcrClient:
-    async def extract(self, *, image_uri: str) -> ExtractedReceiptOcrFields:
+    async def extract(
+        self, *, image_content: bytes, content_type: str
+    ) -> ExtractedReceiptOcrFields:
         return ExtractedReceiptOcrFields(
             item_name="무상 교체",
             brand_name=None,
@@ -76,7 +84,7 @@ async def test_receipt_ocr_endpoint_returns_contract_response(client: AsyncClien
 
     response = await client.post(
         "/api/v1/ocr",
-        json={"image_uri": "https://storage.example.com/receipts/sample.png"},
+        files={"file": ("receipt.png", _PNG_BYTES, "image/png")},
     )
 
     body = response.json()
@@ -94,8 +102,6 @@ async def test_receipt_ocr_endpoint_returns_contract_response(client: AsyncClien
         "expires_on": expected_expires_on.isoformat(),
         "category": "가전",
         "needs_review": True,
-        "charged": True,
-        "remaining_count": 2,
         "warnings": ["무상 AS 기간을 찾지 못해 12개월 기본값을 적용했습니다."],
     }
 
@@ -108,7 +114,7 @@ async def test_receipt_ocr_endpoint_keeps_zero_total_amount(
 
     response = await client.post(
         "/api/v1/ocr",
-        json={"image_uri": "https://storage.example.com/receipts/free-replacement.png"},
+        files={"file": ("receipt.png", _PNG_BYTES, "image/png")},
     )
 
     body = response.json()
@@ -120,7 +126,7 @@ async def test_receipt_ocr_endpoint_keeps_zero_total_amount(
 async def test_receipt_ocr_endpoint_uses_request_validation_envelope(
     client: AsyncClient,
 ) -> None:
-    response = await client.post("/api/v1/ocr", json={})
+    response = await client.post("/api/v1/ocr", data={})
 
     body = response.json()
 
@@ -129,7 +135,7 @@ async def test_receipt_ocr_endpoint_uses_request_validation_envelope(
     assert body["status"] == 422
     assert body["data"]["message"] == "요청 값이 올바르지 않습니다."
     assert body["data"]["path"] == "/api/v1/ocr"
-    assert body["data"]["errors"] == [{"field": "image_uri", "message": "Field required"}]
+    assert body["data"]["errors"] == [{"field": "file", "message": "Field required"}]
 
 
 async def test_receipt_ocr_endpoint_returns_unreadable_image_failure(
@@ -140,7 +146,7 @@ async def test_receipt_ocr_endpoint_returns_unreadable_image_failure(
 
     response = await client.post(
         "/api/v1/ocr",
-        json={"image_uri": "https://storage.example.com/receipts/unreadable.png"},
+        files={"file": ("receipt.png", _PNG_BYTES, "image/png")},
     )
 
     body = response.json()
@@ -152,7 +158,7 @@ async def test_receipt_ocr_endpoint_returns_unreadable_image_failure(
     assert body["data"]["path"] == "/api/v1/ocr"
     assert body["data"]["errors"] == [
         {
-            "field": "image_uri",
+            "field": "file",
             "message": "영수증 이미지를 인식하지 못했습니다. 다시 촬영하거나 수동 입력해 주세요.",
         }
     ]
@@ -166,7 +172,7 @@ async def test_receipt_ocr_endpoint_returns_provider_unavailable_failure(
 
     response = await client.post(
         "/api/v1/ocr",
-        json={"image_uri": "https://storage.example.com/receipts/sample.png"},
+        files={"file": ("receipt.png", _PNG_BYTES, "image/png")},
     )
 
     body = response.json()
@@ -196,7 +202,15 @@ async def test_receipt_ocr_endpoint_openapi_examples(client: AsyncClient) -> Non
     assert success_example["data"]["item_name"] == "삼성 냉장고 875L"
     assert success_example["data"]["category"] == "가전"
     assert success_example["data"]["needs_review"] is True
-    assert success_example["data"]["charged"] is True
-    assert success_example["data"]["remaining_count"] == 2
-    assert unreadable_example["data"]["errors"][0]["field"] == "image_uri"
+    assert unreadable_example["data"]["errors"][0]["field"] == "file"
     assert provider_unavailable_example["status"] == 503
+
+
+async def test_receipt_ocr_endpoint_openapi_uses_multipart_file(client: AsyncClient) -> None:
+    response = await client.get("/openapi.json")
+
+    operation = response.json()["paths"]["/api/v1/ocr"]["post"]
+    request_content = operation["requestBody"]["content"]
+
+    assert "multipart/form-data" in request_content
+    assert "application/json" not in request_content

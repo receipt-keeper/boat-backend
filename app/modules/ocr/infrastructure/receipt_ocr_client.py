@@ -1,15 +1,9 @@
 from __future__ import annotations
 
-import asyncio
 import base64
-import ipaddress
-import mimetypes
-import socket
 from dataclasses import dataclass
 from datetime import date
-from pathlib import Path
 from typing import Protocol
-from urllib.parse import unquote, urlparse
 
 import httpx
 from pydantic import BaseModel, Field
@@ -30,14 +24,8 @@ Do not extract serial numbers. Serial number support is out of scope for MVP.
 Respond only with the configured structured output.
 Write text values in Korean when applicable.
 """
-_DEFAULT_IMAGE_MIME_TYPE = "image/jpeg"
 _HTTP_TIMEOUT_SECONDS = 10.0
-_MAX_IMAGE_BYTES = 10 * 1024 * 1024
 _OPENROUTER_CHAT_COMPLETIONS_URL = "https://openrouter.ai/api/v1/chat/completions"
-_BLOCKED_REMOTE_HOSTNAMES = {
-    "localhost",
-    "metadata.google.internal",
-}
 
 
 @dataclass(frozen=True)
@@ -95,7 +83,12 @@ class ReceiptOcrStructuredOutput(BaseModel):
 
 
 class ReceiptOcrClientProtocol(Protocol):
-    async def extract(self, *, image_uri: str) -> ExtractedReceiptOcrFields: ...
+    async def extract(
+        self,
+        *,
+        image_content: bytes,
+        content_type: str,
+    ) -> ExtractedReceiptOcrFields: ...
 
 
 class ReceiptOcrClient:
@@ -104,7 +97,12 @@ class ReceiptOcrClient:
     실제 AI OCR 연동 전까지 Swagger와 앱 연동 흐름을 먼저 맞추기 위한 구현이다.
     """
 
-    async def extract(self, *, image_uri: str) -> ExtractedReceiptOcrFields:
+    async def extract(
+        self,
+        *,
+        image_content: bytes,
+        content_type: str,
+    ) -> ExtractedReceiptOcrFields:
         structured_output = ReceiptOcrStructuredOutput(
             item_name="테스트 전자제품",
             brand_name="BOAT",
@@ -118,16 +116,20 @@ class ReceiptOcrClient:
 
 
 class OpenRouterReceiptOcrClient:
-    def __init__(self, *, api_key: str, model: str, allow_local_files: bool = False) -> None:
+    def __init__(self, *, api_key: str, model: str) -> None:
         self._api_key = api_key
         self._model = model
-        self._allow_local_files = allow_local_files
 
-    async def extract(self, *, image_uri: str) -> ExtractedReceiptOcrFields:
+    async def extract(
+        self,
+        *,
+        image_content: bytes,
+        content_type: str,
+    ) -> ExtractedReceiptOcrFields:
         try:
-            image_url = await _load_openrouter_image_url(
-                image_uri,
-                allow_local_files=self._allow_local_files,
+            image_url = _build_openrouter_image_url(
+                image_content=image_content,
+                content_type=content_type,
             )
             payload = {
                 "model": self._model,
@@ -175,97 +177,6 @@ class OpenRouterReceiptOcrClient:
             raise ReceiptOcrProviderUnavailableError() from exception
 
 
-async def _load_openrouter_image_url(image_uri: str, *, allow_local_files: bool) -> str:
-    parsed = urlparse(image_uri)
-    if parsed.scheme in {"http", "https"}:
-        await _validate_remote_image_url(image_uri)
-        return image_uri
-
-    image_path = _resolve_local_image_path(
-        image_uri,
-        parsed.scheme,
-        allow_local_files=allow_local_files,
-    )
-    _validate_local_image_size(image_path)
-    image_bytes = await asyncio.to_thread(image_path.read_bytes)
-    mime_type = _guess_mime_type(image_path.as_posix())
-    encoded_image = base64.b64encode(image_bytes).decode("ascii")
-    return f"data:{mime_type};base64,{encoded_image}"
-
-
-def _resolve_local_image_path(image_uri: str, scheme: str, *, allow_local_files: bool) -> Path:
-    if not allow_local_files:
-        raise ValueError("local image files are only allowed in local/test environments")
-
-    if scheme == "file":
-        parsed = urlparse(image_uri)
-        path = unquote(parsed.path)
-        if len(path) >= 3 and path[0] == "/" and path[2] == ":":
-            path = path[1:]
-        return Path(path)
-
-    if scheme and not _is_windows_drive_scheme(scheme, image_uri):
-        raise ValueError(f"unsupported image uri scheme: {scheme}")
-
-    return Path(image_uri)
-
-
-def _validate_local_image_size(image_path: Path) -> None:
-    if image_path.stat().st_size > _MAX_IMAGE_BYTES:
-        raise ValueError("image file is too large")
-
-
-async def _validate_remote_image_url(image_uri: str) -> None:
-    parsed = urlparse(image_uri)
-    if parsed.scheme not in {"http", "https"}:
-        raise ValueError(f"unsupported remote image uri scheme: {parsed.scheme}")
-
-    hostname = parsed.hostname
-    if hostname is None:
-        raise ValueError("remote image uri must include a host")
-
-    normalized_hostname = hostname.rstrip(".").lower()
-    if (
-        normalized_hostname in _BLOCKED_REMOTE_HOSTNAMES
-        or normalized_hostname.endswith(".localhost")
-        or normalized_hostname.endswith(".local")
-    ):
-        raise ValueError("remote image host is not allowed")
-
-    try:
-        _validate_public_ip_address(ipaddress.ip_address(normalized_hostname))
-        return
-    except ValueError:
-        pass
-
-    addresses = await asyncio.to_thread(_resolve_hostname, normalized_hostname)
-    for address in addresses:
-        _validate_public_ip_address(ipaddress.ip_address(address))
-
-
-def _resolve_hostname(hostname: str) -> set[str]:
-    return {
-        str(address_info[4][0])
-        for address_info in socket.getaddrinfo(hostname, None, type=socket.SOCK_STREAM)
-    }
-
-
-def _validate_public_ip_address(ip_address: ipaddress.IPv4Address | ipaddress.IPv6Address) -> None:
-    if (
-        ip_address.is_loopback
-        or ip_address.is_private
-        or ip_address.is_link_local
-        or ip_address.is_multicast
-        or ip_address.is_reserved
-        or ip_address.is_unspecified
-    ):
-        raise ValueError("remote image host resolves to a blocked address")
-
-
-def _is_windows_drive_scheme(scheme: str, image_uri: str) -> bool:
-    return len(scheme) == 1 and image_uri[1:3] in {":\\", ":/"}
-
-
-def _guess_mime_type(source: str) -> str:
-    mime_type, _encoding = mimetypes.guess_type(source)
-    return mime_type or _DEFAULT_IMAGE_MIME_TYPE
+def _build_openrouter_image_url(*, image_content: bytes, content_type: str) -> str:
+    encoded_image = base64.b64encode(image_content).decode("ascii")
+    return f"data:{content_type};base64,{encoded_image}"

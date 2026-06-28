@@ -7,8 +7,16 @@ class ReceiptOcrService:
     def __init__(self, ocr_client: ReceiptOcrClientProtocol) -> None:
         self._ocr_client = ocr_client
 
-    async def extract_receipt(self, *, image_uri: str) -> ReceiptOcrResult:
-        extracted = await self._ocr_client.extract(image_uri=image_uri)
+    async def extract_receipt(
+        self,
+        *,
+        image_content: bytes,
+        content_type: str,
+    ) -> ReceiptOcrResult:
+        extracted = await self._ocr_client.extract(
+            image_content=image_content,
+            content_type=content_type,
+        )
         if not extracted.item_name.strip():
             raise ReceiptImageUnreadableError()
 

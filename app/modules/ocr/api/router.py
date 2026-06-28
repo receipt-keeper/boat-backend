@@ -1,7 +1,11 @@
-from fastapi import APIRouter, status
+from typing import Annotated
+
+from fastapi import APIRouter, File, UploadFile, status
 
 from app.core.http.responses import ApiErrorData, CommonResponse
-from app.modules.ocr.api.schemas import ReceiptOcrRequest, ReceiptOcrResultResponse
+from app.modules.files.api.upload_validation import read_and_validate_uploads
+from app.modules.ocr.api.schemas import ReceiptOcrResultResponse
+from app.modules.ocr.api.upload_policy import RECEIPT_OCR_UPLOAD_POLICY
 from app.modules.ocr.dependencies import ReceiptOcrServiceDep
 
 _UNREADABLE_RECEIPT_MESSAGE = (
@@ -20,8 +24,6 @@ _SUCCESS_EXAMPLE = {
         "expires_on": "2025-05-26",
         "category": "가전",
         "needs_review": True,
-        "charged": True,
-        "remaining_count": 2,
         "warnings": ["무상 AS 기간을 찾지 못해 12개월 기본값을 적용했습니다."],
     },
 }
@@ -34,7 +36,7 @@ _UNREADABLE_RECEIPT_EXAMPLE = {
         "path": "/api/v1/ocr",
         "errors": [
             {
-                "field": "image_uri",
+                "field": "file",
                 "message": _UNREADABLE_RECEIPT_MESSAGE,
             }
         ],
@@ -71,10 +73,25 @@ router = APIRouter(
     "",
     summary="영수증 OCR 분석",
     description=(
-        "영수증 이미지에서 대표 결제 항목, 브랜드, 구매처, 구매일, 금액, "
-        "AS 기간, 대분류 카테고리 후보를 추출한다."
+        "multipart/form-data로 전달된 영수증 이미지를 저장하지 않고 분석만 수행한다. "
+        "대표 결제 항목, 브랜드, 구매처, 구매일, 금액, AS 기간, 대분류 카테고리 후보를 추출한다. "
+        "영수증 원본 파일 보관 및 연결은 receipts 저장 API의 receipt_file_ids에서 처리한다."
     ),
     response_model=CommonResponse[ReceiptOcrResultResponse],
+    openapi_extra={
+        "requestBody": {
+            "content": {
+                "multipart/form-data": {
+                    "examples": {
+                        "receipt_image": {
+                            "summary": "영수증 이미지 분석",
+                            "value": {"file": "receipt-1.png"},
+                        }
+                    }
+                }
+            }
+        }
+    },
     responses={
         status.HTTP_200_OK: {
             "description": "OCR 분석 성공",
@@ -91,10 +108,22 @@ router = APIRouter(
     },
 )
 async def extract_receipt_ocr(
-    request: ReceiptOcrRequest,
+    file: Annotated[
+        UploadFile,
+        File(description="분석할 영수증 이미지 파일. 이 API에서는 파일을 저장하지 않는다."),
+    ],
     service: ReceiptOcrServiceDep,
 ) -> CommonResponse[ReceiptOcrResultResponse]:
-    result = await service.extract_receipt(image_uri=request.image_uri)
+    validated_upload = (
+        await read_and_validate_uploads(
+            files=[file],
+            policy=RECEIPT_OCR_UPLOAD_POLICY,
+        )
+    )[0]
+    result = await service.extract_receipt(
+        image_content=validated_upload.content,
+        content_type=validated_upload.content_type,
+    )
 
     return CommonResponse(
         success=True,
@@ -111,8 +140,6 @@ async def extract_receipt_ocr(
             expires_on=result.expires_on,
             category=result.category,
             needs_review=bool(result.warnings),
-            charged=True,
-            remaining_count=2,
             warnings=list(result.warnings),
         ),
     )

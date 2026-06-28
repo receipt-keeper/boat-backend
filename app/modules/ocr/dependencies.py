@@ -15,12 +15,10 @@ from app.modules.ocr.infrastructure.receipt_ocr_client import (
 async def get_receipt_ocr_client(
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> ReceiptOcrClientProtocol:
-    allow_local_files = settings.app_env in {"local", "test"}
     if settings.openrouter_api_key:
         return OpenRouterReceiptOcrClient(
             api_key=settings.openrouter_api_key,
             model=settings.openrouter_model,
-            allow_local_files=allow_local_files,
         )
 
     if settings.app_env not in {"local", "test"}:

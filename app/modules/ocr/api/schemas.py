@@ -5,22 +5,6 @@ from pydantic import ConfigDict, Field
 from app.core.http.responses import AppBaseModel
 
 
-class ReceiptOcrRequest(AppBaseModel):
-    model_config = ConfigDict(
-        json_schema_extra={
-            "examples": [
-                {
-                    "image_uri": "https://storage.example.com/receipts/receipt-20240526.png",
-                }
-            ]
-        }
-    )
-
-    image_uri: str = Field(
-        description="OCR 분석 대상 영수증 이미지 URI. http(s), file 경로를 지원한다.",
-    )
-
-
 class ReceiptOcrResultResponse(AppBaseModel):
     model_config = ConfigDict(
         json_schema_extra={
@@ -35,8 +19,6 @@ class ReceiptOcrResultResponse(AppBaseModel):
                     "expires_on": "2025-05-26",
                     "category": "가전",
                     "needs_review": True,
-                    "charged": True,
-                    "remaining_count": 2,
                     "warnings": ["무상 AS 기간을 찾지 못해 12개월 기본값을 적용했습니다."],
                 }
             ]
@@ -54,6 +36,4 @@ class ReceiptOcrResultResponse(AppBaseModel):
         description="대분류 카테고리 추천값. 사용자가 수정 후 저장할 수 있다."
     )
     needs_review: bool = Field(description="기본값 적용 등 사용자 확인이 필요한지 여부")
-    charged: bool = Field(description="이번 OCR 분석으로 무료 분석 횟수가 차감되었는지 여부")
-    remaining_count: int = Field(description="OCR 분석 후 남은 무료 분석 횟수")
     warnings: list[str] = Field(description="사용자 확인이 필요한 항목 안내")
