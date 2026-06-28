@@ -28,7 +28,7 @@ class NotificationListQuery(AppBaseModel):
 
     cursor: str | None = Field(
         default=None,
-        description="다음 목록 조회용 커서. 첫 조회에서는 보내지 않는다.",
+        description="다음 목록 조회용 keyset 커서. 첫 조회에서는 보내지 않는다.",
         min_length=1,
         max_length=200,
     )

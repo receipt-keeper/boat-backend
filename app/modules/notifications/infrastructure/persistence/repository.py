@@ -1,10 +1,11 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.notifications.application.ports.notification_repository import (
+    NotificationListCursor,
     NotificationListResult,
     NotificationRepository,
 )
@@ -25,7 +26,7 @@ class SqlAlchemyNotificationRepository(NotificationRepository):
         self,
         *,
         user_id: UUID,
-        offset: int,
+        cursor: NotificationListCursor | None,
         limit: int,
     ) -> NotificationListResult:
         total_count = await self._session.scalar(
@@ -33,18 +34,31 @@ class SqlAlchemyNotificationRepository(NotificationRepository):
             .select_from(orm.UserNotification)
             .where(orm.UserNotification.user_id == user_id)
         )
-        records = await self._session.scalars(
+        query = (
             select(orm.UserNotification)
             .where(orm.UserNotification.user_id == user_id)
             .order_by(
                 orm.UserNotification.created_at.desc(),
                 orm.UserNotification.id.desc(),
             )
-            .offset(offset)
-            .limit(limit)
+            .limit(limit + 1)
         )
+        if cursor is not None:
+            query = query.where(
+                or_(
+                    orm.UserNotification.created_at < cursor.created_at,
+                    and_(
+                        orm.UserNotification.created_at == cursor.created_at,
+                        orm.UserNotification.id < cursor.notification_id,
+                    ),
+                )
+            )
+        records = tuple(await self._session.scalars(query))
         return NotificationListResult(
-            notifications=tuple(mapper.notification_to_domain(record) for record in records),
+            notifications=tuple(
+                mapper.notification_to_domain(record) for record in records[:limit]
+            ),
+            has_next=len(records) > limit,
             total_count=total_count or 0,
         )
 

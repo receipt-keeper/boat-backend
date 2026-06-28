@@ -7,8 +7,15 @@ from app.modules.notifications.domain.model import NotificationSettings, UserNot
 
 
 @dataclass(frozen=True, slots=True)
+class NotificationListCursor:
+    created_at: datetime
+    notification_id: UUID
+
+
+@dataclass(frozen=True, slots=True)
 class NotificationListResult:
     notifications: tuple[UserNotification, ...]
+    has_next: bool
     total_count: int
 
 
@@ -22,7 +29,7 @@ class NotificationRepository(ABC):
         self,
         *,
         user_id: UUID,
-        offset: int,
+        cursor: NotificationListCursor | None,
         limit: int,
     ) -> NotificationListResult:
         raise NotImplementedError
