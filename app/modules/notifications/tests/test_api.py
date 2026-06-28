@@ -275,3 +275,37 @@ async def test_create_notification_rejects_extra_field_contract(
     assert body["success"] is False
     assert body["status"] == 422
     assert body["data"]["path"] == "/api/v1/notifications"
+
+
+async def test_create_notification_rejects_target_id_mismatch(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    receipt_id = "00000000-0000-0000-0000-000000000701"
+    invalid_payloads = [
+        {
+            "kind": "benefit",
+            "message": "영수증 상세를 확인해 보세요.",
+            "targetType": "receipt",
+            "targetId": None,
+        },
+        {
+            "kind": "benefit",
+            "message": "이번 달 혜택을 확인해 보세요.",
+            "targetType": "none",
+            "targetId": receipt_id,
+        },
+        {
+            "kind": "registration_prompt",
+            "message": "영수증을 등록해 보세요.",
+            "targetType": "receiptUpload",
+            "targetId": receipt_id,
+        },
+    ]
+
+    async with notification_api_client(postgres_session_factory) as client:
+        responses = [
+            await client.post("/api/v1/notifications", json=payload) for payload in invalid_payloads
+        ]
+
+    assert [response.status_code for response in responses] == [422, 422, 422]
+    assert [response.json()["success"] for response in responses] == [False, False, False]

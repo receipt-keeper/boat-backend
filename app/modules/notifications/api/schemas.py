@@ -1,7 +1,8 @@
 from datetime import datetime
+from typing import Self, assert_never
 from uuid import UUID
 
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, model_validator
 
 from app.core.http.responses import AppBaseModel, CursorPaginationResponse
 from app.modules.notifications.domain.value_objects import NotificationKind, NotificationTargetType
@@ -45,6 +46,22 @@ class CreateNotificationRequest(AppBaseModel):
         description="알림 클릭 대상 ID. 대상이 없거나 등록 유도 대상이면 null로 보낸다.",
         examples=[None],
     )
+
+    @model_validator(mode="after")
+    def validate_target_id_contract(self) -> Self:
+        match self.target_type:
+            case NotificationTargetType.RECEIPT:
+                if self.target_id is None:
+                    raise ValueError("receipt 대상 알림은 targetId가 필요합니다.")
+            case NotificationTargetType.RECEIPT_UPLOAD | NotificationTargetType.NONE:
+                if self.target_id is not None:
+                    raise ValueError(
+                        "receiptUpload 또는 none 대상 알림은 targetId를 보낼 수 없습니다."
+                    )
+            case unreachable:
+                assert_never(unreachable)
+
+        return self
 
 
 class NotificationResponse(AppBaseModel):
