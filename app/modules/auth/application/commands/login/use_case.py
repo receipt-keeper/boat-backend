@@ -9,11 +9,7 @@ from app.modules.auth.application.ports.external_identity_login_synchronizer imp
 )
 from app.modules.auth.application.ports.external_identity_verifier import ExternalIdentityVerifier
 from app.modules.auth.application.ports.token_issuer import AccessTokenIssuer, RefreshTokenIssuer
-from app.modules.auth.application.ports.user_provisioner import (
-    UserProvisioner,
-    UserProvisioningRequest,
-)
-from app.modules.auth.domain.exceptions import AuthenticationError
+from app.modules.auth.domain.exceptions import AuthenticationError, UserNotRegisteredError
 from app.modules.auth.domain.model import ExternalIdentity
 
 
@@ -24,7 +20,6 @@ class LoginCommandUseCase:
         identity_verifier: ExternalIdentityVerifier,
         login_synchronizer: ExternalIdentityLoginSynchronizer,
         credential_repository: CredentialRepository,
-        user_provisioner: UserProvisioner,
         access_token_issuer: AccessTokenIssuer,
         refresh_token_issuer: RefreshTokenIssuer,
         unit_of_work: UnitOfWork,
@@ -32,7 +27,6 @@ class LoginCommandUseCase:
         self._identity_verifier = identity_verifier
         self._login_synchronizer = login_synchronizer
         self._credential_repository = credential_repository
-        self._user_provisioner = user_provisioner
         self._access_token_issuer = access_token_issuer
         self._refresh_token_issuer = refresh_token_issuer
         self._unit_of_work = unit_of_work
@@ -66,22 +60,7 @@ class LoginCommandUseCase:
                     logged_in_at=logged_in_at,
                 )
             else:
-                provisioned = await self._user_provisioner.provision(
-                    request=UserProvisioningRequest(
-                        name=identity.name,
-                        email=None if identity.email is None else identity.email.value,
-                        profile_image_url=None,
-                        terms_version=command.terms_version,
-                        privacy_version=command.privacy_version,
-                        terms_accepted=command.terms_accepted,
-                        privacy_accepted=command.privacy_accepted,
-                    )
-                )
-                credentials = await self._credential_repository.create_for_external_identity(
-                    identity=identity,
-                    user_id=provisioned.user_id,
-                    logged_in_at=logged_in_at,
-                )
+                raise UserNotRegisteredError()
 
         session_id = await self._credential_repository.create_session(
             credentials_id=credentials.credentials_id,

@@ -11,7 +11,7 @@ def _failure_response(*, status_code: int, message: str, path: str) -> JSONRespo
         status=status_code,
         data=ApiErrorData(message=message, path=path, errors=[]),
     )
-    return JSONResponse(status_code=status_code, content=response.model_dump())
+    return JSONResponse(status_code=status_code, content=response.model_dump(exclude_none=True))
 
 
 async def handle_authentication_error(request: Request, exception: Exception) -> JSONResponse:

@@ -1,4 +1,5 @@
 import logging
+from typing import Protocol, runtime_checkable
 
 from fastapi import Request, status
 from fastapi.exceptions import RequestValidationError
@@ -17,23 +18,38 @@ from app.core.http.responses import ApiErrorData, CommonResponse, FieldError
 logger = logging.getLogger(__name__)
 
 
+@runtime_checkable
+class _ErrorCodeCarrier(Protocol):
+    @property
+    def code(self) -> str:
+        raise NotImplementedError
+
+
 def _failure_response(
     *,
     status_code: int,
     message: str,
     path: str,
+    code: str | None = None,
     errors: list[FieldError] | None = None,
 ) -> JSONResponse:
     response = CommonResponse(
         success=False,
         status=status_code,
         data=ApiErrorData(
+            code=code,
             message=message,
             path=path,
             errors=errors or [],
         ),
     )
-    return JSONResponse(status_code=status_code, content=response.model_dump())
+    return JSONResponse(status_code=status_code, content=response.model_dump(exclude_none=True))
+
+
+def _error_code(exception: DomainError) -> str | None:
+    if isinstance(exception, _ErrorCodeCarrier):
+        return exception.code
+    return None
 
 
 async def handle_domain_validation_error(request: Request, exception: Exception) -> JSONResponse:
@@ -56,6 +72,7 @@ async def handle_not_found_error(request: Request, exception: Exception) -> JSON
 
     return _failure_response(
         status_code=status.HTTP_404_NOT_FOUND,
+        code=_error_code(exception),
         message=exception.message,
         path=request.url.path,
     )

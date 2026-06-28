@@ -19,7 +19,6 @@ from app.modules.auth.application.ports.token_issuer import (
     IssuedRefreshToken,
     RefreshTokenIssuer,
 )
-from app.modules.auth.dependencies import _ProvisionUserPortAdapter
 from app.modules.auth.domain.model import ExternalIdentity
 from app.modules.auth.infrastructure.persistence import orm as auth_orm
 from app.modules.auth.infrastructure.persistence.credential_repository import (
@@ -27,6 +26,9 @@ from app.modules.auth.infrastructure.persistence.credential_repository import (
 )
 from app.modules.auth.infrastructure.persistence.external_identity_login_synchronizer import (
     SqlAlchemyExternalIdentityLoginSynchronizer,
+)
+from app.modules.users.application.commands.resolve_user_for_login.command import (
+    ResolveUserForLoginCommand,
 )
 from app.modules.users.dependencies import build_resolve_user_for_login_command_use_case
 from tests.support.users_persistence import count_persisted_users
@@ -139,13 +141,7 @@ async def run_login_attempt(
         )
         try:
             result = await command_use_case.execute(
-                LoginCommand(
-                    provider_token=attempt.provider_token,
-                    terms_version="1.0",
-                    privacy_version="1.0",
-                    terms_accepted=True,
-                    privacy_accepted=True,
-                )
+                LoginCommand(provider_token=attempt.provider_token)
             )
         except SQLAlchemyError as exc:
             await session.rollback()
@@ -153,6 +149,35 @@ async def run_login_attempt(
             return
 
     outcomes.append(LoginOutcome(label=attempt.label, result=result))
+
+
+async def seed_registered_identity(
+    *,
+    session_factory: async_sessionmaker[AsyncSession],
+    identity: ExternalIdentity,
+) -> None:
+    async with session_factory() as session:
+        user_use_case = build_resolve_user_for_login_command_use_case(
+            session,
+            DeferredCommitUnitOfWork(),
+        )
+        provisioned = await user_use_case.execute(
+            ResolveUserForLoginCommand(
+                name=identity.name,
+                email=None if identity.email is None else identity.email.value,
+                profile_image_url=None,
+                terms_version="1.0",
+                privacy_version="1.0",
+                terms_accepted=True,
+                privacy_accepted=True,
+            )
+        )
+        await SqlAlchemyCredentialRepository(session).create_for_external_identity(
+            identity=identity,
+            user_id=provisioned.user_id,
+            logged_in_at=datetime.now(UTC),
+        )
+        await SqlAlchemyUnitOfWork(session).commit()
 
 
 async def count_persisted_login_rows(
@@ -190,12 +215,6 @@ def _build_login_command_use_case(
         ),
         login_synchronizer=SqlAlchemyExternalIdentityLoginSynchronizer(session),
         credential_repository=SqlAlchemyCredentialRepository(session),
-        user_provisioner=_ProvisionUserPortAdapter(
-            build_resolve_user_for_login_command_use_case(
-                session,
-                DeferredCommitUnitOfWork(),
-            )
-        ),
         access_token_issuer=DeterministicAccessTokenIssuer(),
         refresh_token_issuer=DeterministicRefreshTokenIssuer(
             token=attempt.refresh_token,

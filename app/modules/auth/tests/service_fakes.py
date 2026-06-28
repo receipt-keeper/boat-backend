@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from uuid import UUID, uuid4
 
 from app.modules.auth.application.commands.login.use_case import LoginCommandUseCase
 from app.modules.auth.application.commands.logout.use_case import LogoutCommandUseCase
@@ -8,11 +7,6 @@ from app.modules.auth.application.ports.external_identity_login_synchronizer imp
     ExternalIdentityLoginSynchronizer,
 )
 from app.modules.auth.application.ports.external_identity_verifier import ExternalIdentityVerifier
-from app.modules.auth.application.ports.user_provisioner import (
-    ProvisionedUser,
-    UserProvisioner,
-    UserProvisioningRequest,
-)
 from app.modules.auth.domain.model import ExternalIdentity
 from app.modules.auth.infrastructure.tokens.jwt import JwtAccessTokenService
 from app.modules.auth.infrastructure.tokens.opaque_refresh_token import OpaqueRefreshTokenIssuer
@@ -33,16 +27,6 @@ class FakeExternalIdentityVerifier(ExternalIdentityVerifier):
         if self.identity is None:
             raise AssertionError("identity or error is required")
         return self.identity
-
-
-class FakeUserProvisioner(UserProvisioner):
-    def __init__(self, *, user_id: UUID | None = None) -> None:
-        self.provisioned: list[UserProvisioningRequest] = []
-        self._user_id = user_id
-
-    async def provision(self, *, request: UserProvisioningRequest) -> ProvisionedUser:
-        self.provisioned.append(request)
-        return ProvisionedUser(user_id=self._user_id or uuid4())
 
 
 class NoOpExternalIdentityLoginSynchronizer(ExternalIdentityLoginSynchronizer):
@@ -71,14 +55,12 @@ def build_login_command_use_case(
     *,
     verifier: FakeExternalIdentityVerifier,
     repository: FakeCredentialRepository,
-    user_provisioner: UserProvisioner,
 ) -> LoginCommandUseCase:
     refresh_token_service = build_refresh_token_service()
     return LoginCommandUseCase(
         identity_verifier=verifier,
         login_synchronizer=NoOpExternalIdentityLoginSynchronizer(),
         credential_repository=repository,
-        user_provisioner=user_provisioner,
         access_token_issuer=build_access_token_issuer(),
         refresh_token_issuer=refresh_token_service,
         unit_of_work=FakeUnitOfWork(),

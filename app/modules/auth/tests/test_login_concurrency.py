@@ -11,10 +11,11 @@ from app.modules.auth.tests.login_concurrency_support import (
     PersistedLoginRows,
     count_persisted_login_rows,
     run_login_attempt,
+    seed_registered_identity,
 )
 
 
-async def test_concurrent_first_login_for_same_external_identity_is_idempotent(
+async def test_concurrent_login_for_same_existing_external_identity_is_idempotent(
     postgres_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     identity = ExternalIdentity.create(
@@ -24,6 +25,10 @@ async def test_concurrent_first_login_for_same_external_identity_is_idempotent(
         email="shared-user@example.com",
         name="동시 로그인 사용자",
         email_verified=True,
+    )
+    await seed_registered_identity(
+        session_factory=postgres_session_factory,
+        identity=identity,
     )
     context = ConcurrentLoginContext(
         session_factory=postgres_session_factory,
@@ -79,20 +84,25 @@ async def test_concurrent_first_login_for_same_external_identity_is_idempotent(
     )
 
 
-async def test_concurrent_first_login_for_same_verified_email_links_identities(
+async def test_concurrent_login_for_same_verified_email_links_identities(
     postgres_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
+    google_identity = ExternalIdentity.create(
+        issuer="google",
+        subject="google-subject",
+        provider="google",
+        email="shared-email@example.com",
+        name="동시 연결 사용자",
+        email_verified=True,
+    )
+    await seed_registered_identity(
+        session_factory=postgres_session_factory,
+        identity=google_identity,
+    )
     context = ConcurrentLoginContext(
         session_factory=postgres_session_factory,
         identities={
-            "google-token": ExternalIdentity.create(
-                issuer="google",
-                subject="google-subject",
-                provider="google",
-                email="shared-email@example.com",
-                name="동시 연결 사용자",
-                email_verified=True,
-            ),
+            "google-token": google_identity,
             "apple-token": ExternalIdentity.create(
                 issuer="apple",
                 subject="apple-subject",

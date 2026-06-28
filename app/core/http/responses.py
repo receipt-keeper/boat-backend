@@ -74,6 +74,7 @@ class ApiErrorData(AppBaseModel):
     timestamp: str = Field(
         default_factory=lambda: datetime.now(UTC).replace(tzinfo=None).isoformat(timespec="seconds")
     )
+    code: str | None = None
     message: str
     path: str
     errors: list[FieldError] = Field(default_factory=list)
