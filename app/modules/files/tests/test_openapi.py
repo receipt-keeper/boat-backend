@@ -116,6 +116,6 @@ def test_openapi_request_schemas_include_examples() -> None:
 
     upload_body_schema = schemas["Body_upload_file_api_v1_files_post"]
     files_schema = upload_body_schema["properties"]["files"]
-    assert files_schema["items"]["contentMediaType"] == "application/octet-stream"
+    assert files_schema["items"] == {"type": "string", "format": "binary"}
     assert "examples" not in files_schema
     assert set(upload_body_schema["properties"]) == {"files"}
