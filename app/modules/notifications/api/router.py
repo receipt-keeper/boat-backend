@@ -1,11 +1,11 @@
 from datetime import UTC, datetime
-from typing import Annotated
+from typing import Annotated, Protocol
 from uuid import UUID
 
 from fastapi import APIRouter, Query, status
 
-from app.core.http.pagination import paginate_by_cursor
-from app.core.http.responses import ApiErrorData, CommonResponse
+from app.core.http.auth import CurrentPrincipalDep
+from app.core.http.responses import ApiErrorData, CommonResponse, CursorPaginationResponse
 from app.modules.notifications.api.schemas import (
     NotificationListQuery,
     NotificationListResponse,
@@ -13,7 +13,39 @@ from app.modules.notifications.api.schemas import (
     NotificationSettingsResponse,
     UpdateNotificationSettingsRequest,
 )
-from app.modules.notifications.mock import SAMPLE_NOTIFICATIONS, notification_with_read_state
+from app.modules.notifications.application.queries.list_notifications.query import (
+    ListNotificationsQuery,
+)
+from app.modules.notifications.dependencies import ListNotificationsQueryUseCaseDep
+from app.modules.notifications.domain.value_objects import (
+    NotificationKind,
+    NotificationTargetType,
+)
+from app.modules.notifications.mock import notification_with_read_state
+
+
+class _NotificationResult(Protocol):
+    @property
+    def notification_id(self) -> UUID: ...
+
+    @property
+    def kind(self) -> NotificationKind: ...
+
+    @property
+    def message(self) -> str: ...
+
+    @property
+    def target_type(self) -> NotificationTargetType: ...
+
+    @property
+    def target_id(self) -> UUID | None: ...
+
+    @property
+    def created_at(self) -> datetime: ...
+
+    @property
+    def read_at(self) -> datetime | None: ...
+
 
 _OpenApiResponse = dict[str, type[CommonResponse[ApiErrorData]] | str]
 
@@ -41,19 +73,29 @@ router = APIRouter(
 )
 async def list_notifications(
     query: Annotated[NotificationListQuery, Query()],
+    principal: CurrentPrincipalDep,
+    query_use_case: ListNotificationsQueryUseCaseDep,
 ) -> CommonResponse[NotificationListResponse]:
-    page = paginate_by_cursor(
-        SAMPLE_NOTIFICATIONS,
-        cursor=query.cursor,
-        limit=query.limit,
-        total_count=len(SAMPLE_NOTIFICATIONS),
+    result = await query_use_case.execute(
+        ListNotificationsQuery(
+            user_id=principal.user_id,
+            cursor=query.cursor,
+            limit=query.limit,
+        )
     )
     return CommonResponse(
         success=True,
         status=status.HTTP_200_OK,
         data=NotificationListResponse(
-            notifications=page.items,
-            pagination=page.pagination,
+            notifications=[
+                _notification_response(notification) for notification in result.notifications
+            ],
+            pagination=CursorPaginationResponse(
+                nextCursor=result.next_cursor,
+                hasNext=result.has_next,
+                limit=result.limit,
+                totalCount=result.total_count,
+            ),
         ),
     )
 
@@ -106,6 +148,18 @@ async def update_notification(
         success=True,
         status=status.HTTP_200_OK,
         data=notification_with_read_state(notification_id=notification_id, read_at=_now()),
+    )
+
+
+def _notification_response(notification: _NotificationResult) -> NotificationResponse:
+    return NotificationResponse(
+        notificationId=notification.notification_id,
+        kind=notification.kind,
+        message=notification.message,
+        targetType=notification.target_type,
+        targetId=notification.target_id,
+        createdAt=notification.created_at,
+        readAt=notification.read_at,
     )
 
 

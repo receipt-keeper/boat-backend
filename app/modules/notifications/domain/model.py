@@ -63,7 +63,7 @@ class UserNotification(Entity[UUID]):
 
 
 @dataclass(eq=False)
-class NotificationPreference(Entity[UUID]):
+class NotificationSettings(Entity[UUID]):
     push_enabled: bool
     marketing_consent: bool
 
@@ -74,7 +74,7 @@ class NotificationPreference(Entity[UUID]):
         user_id: UUID,
         push_enabled: bool = True,
         marketing_consent: bool = False,
-    ) -> "NotificationPreference":
+    ) -> "NotificationSettings":
         return cls(
             id=user_id,
             push_enabled=push_enabled,

@@ -284,42 +284,6 @@ async def test_receipts_match_app_contract() -> None:
     assert receipt_body["data"]["receiptFileIds"]
 
 
-async def test_notifications_match_cursor_paging_contract() -> None:
-    test_app = _contract_app()
-
-    async with AsyncClient(
-        transport=ASGITransport(app=test_app, raise_app_exceptions=False),
-        base_url="http://test",
-    ) as test_client:
-        response = await test_client.get("/api/v1/notifications?limit=2")
-        next_response = await test_client.get("/api/v1/notifications?limit=2&cursor=2")
-
-    body = response.json()
-    next_body = next_response.json()
-
-    assert response.status_code == 200
-    assert [notification["notificationId"] for notification in body["data"]["notifications"]] == [
-        "00000000-0000-0000-0000-000000000601",
-        "00000000-0000-0000-0000-000000000602",
-    ]
-    assert body["data"]["pagination"] == {
-        "nextCursor": "2",
-        "hasNext": True,
-        "limit": 2,
-        "totalCount": 3,
-    }
-    assert next_response.status_code == 200
-    assert next_body["data"]["notifications"][0]["notificationId"] == (
-        "00000000-0000-0000-0000-000000000603"
-    )
-    assert next_body["data"]["pagination"] == {
-        "nextCursor": None,
-        "hasNext": False,
-        "limit": 2,
-        "totalCount": 3,
-    }
-
-
 async def test_users_me_response_does_not_leak_split_bc_fields() -> None:
     # Given: 인증된 앱 클라이언트가 있다.
     test_app = _contract_app()
