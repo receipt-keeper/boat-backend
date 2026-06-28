@@ -33,6 +33,19 @@ async def test_openapi_schema_is_available() -> None:
     assert response.json()["info"]["title"] == "Boat Backend"
 
 
+def test_notifications_openapi_exposes_create_without_alias_routes() -> None:
+    schema = create_app(Settings(app_name="Boat Backend")).openapi()
+    paths = schema["paths"]
+
+    assert set(paths["/api/v1/notifications"]) == {"get", "post"}
+    assert set(paths["/api/v1/notifications/{notification_id}"]) == {"patch"}
+    assert set(paths["/api/v1/notifications/settings"]) == {"get", "patch"}
+    assert "/api/v1/notifications/device-token" not in paths
+    assert "/api/v1/notifications/devices/{device_id}" not in paths
+    assert "/api/v1/notification-reads/{notification_id}" not in paths
+    assert "/api/v1/notification-settings" not in paths
+
+
 async def test_unhandled_exception_uses_failure_envelope() -> None:
     test_app = create_app(Settings())
 
