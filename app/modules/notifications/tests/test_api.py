@@ -111,6 +111,73 @@ async def test_list_notifications_returns_persisted_current_user_notifications(
     }
 
 
+async def test_list_notifications_uses_id_tiebreaker_for_same_created_at_cursor(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    higher_notification_id = UUID("00000000-0000-0000-0000-000000000612")
+    lower_notification_id = UUID("00000000-0000-0000-0000-000000000611")
+    older_notification_id = UUID("00000000-0000-0000-0000-000000000610")
+    async with postgres_session_factory() as session:
+        session.add_all(
+            [
+                orm.UserNotification(
+                    id=higher_notification_id,
+                    user_id=TEST_USER_ID,
+                    kind="registration_prompt",
+                    message="같은 시각의 최신 알림입니다.",
+                    target_type="none",
+                    target_id=None,
+                    created_at=datetime(2026, 6, 28, 10, 0, tzinfo=UTC),
+                    read_at=None,
+                ),
+                orm.UserNotification(
+                    id=lower_notification_id,
+                    user_id=TEST_USER_ID,
+                    kind="registration_prompt",
+                    message="같은 시각의 다음 알림입니다.",
+                    target_type="none",
+                    target_id=None,
+                    created_at=datetime(2026, 6, 28, 10, 0, tzinfo=UTC),
+                    read_at=None,
+                ),
+                orm.UserNotification(
+                    id=older_notification_id,
+                    user_id=TEST_USER_ID,
+                    kind="benefit",
+                    message="이전 시각의 알림입니다.",
+                    target_type="none",
+                    target_id=None,
+                    created_at=datetime(2026, 6, 28, 9, 0, tzinfo=UTC),
+                    read_at=None,
+                ),
+            ]
+        )
+        await session.commit()
+
+    async with notification_api_client(postgres_session_factory) as client:
+        first_response = await client.get("/api/v1/notifications?limit=1")
+
+    first_body = first_response.json()
+    assert first_response.status_code == 200
+    assert first_body["data"]["notifications"][0]["notificationId"] == str(higher_notification_id)
+
+    async with notification_api_client(postgres_session_factory) as client:
+        second_response = await client.get(
+            "/api/v1/notifications",
+            params={"limit": 1, "cursor": first_body["data"]["pagination"]["nextCursor"]},
+        )
+
+    second_body = second_response.json()
+    assert second_response.status_code == 200
+    assert second_body["data"]["notifications"][0]["notificationId"] == str(lower_notification_id)
+    assert second_body["data"]["pagination"] == {
+        "nextCursor": f"2026-06-28T10:00:00Z|{lower_notification_id}",
+        "hasNext": True,
+        "limit": 1,
+        "totalCount": 3,
+    }
+
+
 async def test_list_notifications_rejects_invalid_cursor(
     postgres_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
