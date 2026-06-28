@@ -23,6 +23,52 @@ class LoginRequest(AppBaseModel):
     )
 
 
+class SignupRequest(AppBaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        populate_by_name=True,
+        json_schema_extra={
+            "examples": [
+                {
+                    "idToken": "firebase-id-token",
+                    "termsAccepted": True,
+                    "privacyAccepted": True,
+                    "termsVersion": "2026-06-01",
+                    "privacyVersion": "2026-06-01",
+                    "marketingConsent": False,
+                }
+            ]
+        },
+    )
+
+    id_token: str = Field(
+        alias="idToken",
+        min_length=1,
+        description="Firebase 로그인 후 앱이 받은 ID 토큰.",
+    )
+    terms_accepted: bool = Field(
+        alias="termsAccepted",
+        description="이용약관 동의 여부.",
+    )
+    privacy_accepted: bool = Field(
+        alias="privacyAccepted",
+        description="개인정보 처리방침 동의 여부.",
+    )
+    terms_version: str | None = Field(
+        alias="termsVersion",
+        description="동의한 이용약관 버전.",
+    )
+    privacy_version: str | None = Field(
+        alias="privacyVersion",
+        description="동의한 개인정보 처리방침 버전.",
+    )
+    marketing_consent: bool = Field(
+        default=False,
+        alias="marketingConsent",
+        description="마케팅 알림 수신 동의 여부.",
+    )
+
+
 class RefreshTokenRequest(AppBaseModel):
     model_config = ConfigDict(
         populate_by_name=True,

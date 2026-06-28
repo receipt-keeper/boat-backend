@@ -1,16 +1,24 @@
 from fastapi import APIRouter, Response, status
 
 from app.core.http.responses import ApiErrorData, CommonResponse
-from app.modules.auth.api.schemas import AuthTokenResponse, LoginRequest, RefreshTokenRequest
+from app.modules.auth.api.schemas import (
+    AuthTokenResponse,
+    LoginRequest,
+    RefreshTokenRequest,
+    SignupRequest,
+)
 from app.modules.auth.application.commands.login.command import LoginCommand
 from app.modules.auth.application.commands.login.result import LoginResult
 from app.modules.auth.application.commands.logout.command import LogoutCommand
 from app.modules.auth.application.commands.refresh.command import RefreshTokenCommand
 from app.modules.auth.application.commands.refresh.result import RefreshTokenResult
+from app.modules.auth.application.commands.signup.command import SignupCommand
+from app.modules.auth.application.commands.signup.result import SignupResult
 from app.modules.auth.dependencies import (
     LoginCommandUseCaseDep,
     LogoutCommandUseCaseDep,
     RefreshTokenCommandUseCaseDep,
+    SignupCommandUseCaseDep,
 )
 
 router = APIRouter(
@@ -29,12 +37,49 @@ router = APIRouter(
 )
 
 
-def _token_response(tokens: LoginResult | RefreshTokenResult) -> AuthTokenResponse:
+def _token_response(tokens: LoginResult | RefreshTokenResult | SignupResult) -> AuthTokenResponse:
     return AuthTokenResponse(
         accessToken=tokens.access_token,
         refreshToken=tokens.refresh_token,
         tokenType="Bearer",
         expiresIn=tokens.expires_in,
+    )
+
+
+@router.post(
+    "/signup",
+    response_model=CommonResponse[AuthTokenResponse],
+    status_code=status.HTTP_201_CREATED,
+    summary="소셜 회원가입",
+    description=(
+        "가입되지 않은 사용자가 Firebase 로그인 후 받은 idToken과 필수 약관 동의 정보로 "
+        "계정을 만들고 backend accessToken과 refreshToken을 발급한다."
+    ),
+    responses={
+        status.HTTP_409_CONFLICT: {
+            "model": CommonResponse[ApiErrorData],
+            "description": "USER_ALREADY_EXISTS — 이미 가입된 외부 identity 또는 검증된 이메일",
+        },
+    },
+)
+async def signup(
+    request: SignupRequest,
+    command_use_case: SignupCommandUseCaseDep,
+) -> CommonResponse[AuthTokenResponse]:
+    tokens = await command_use_case.execute(
+        SignupCommand(
+            provider_token=request.id_token,
+            terms_accepted=request.terms_accepted,
+            privacy_accepted=request.privacy_accepted,
+            terms_version=request.terms_version,
+            privacy_version=request.privacy_version,
+            marketing_consent=request.marketing_consent,
+        )
+    )
+    return CommonResponse(
+        success=True,
+        status=status.HTTP_201_CREATED,
+        data=_token_response(tokens),
     )
 
 
