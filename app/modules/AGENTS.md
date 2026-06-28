@@ -50,7 +50,8 @@ modules/
 - Cross-module reference는 UUID value와 application contract를 쓴다. cross-BC ORM FK나 infrastructure import를 쓰지 않는다.
 - 중요한 boundary는 module `tests/test_architecture.py`로 고정한다.
 - module이 ORM model을 추가하면 Alembic migration을 추가하고 same-BC FK만 둔다.
-- mock-backed app contract module(`credits`, `usage`, `notifications`)도 API schema와 한글 OpenAPI 문구를 각자 소유한다. shared mock package로 합치지 않는다.
+- mock-backed app contract module(`credits`, `usage`)도 API schema와 한글 OpenAPI 문구를 각자 소유한다. shared mock package로 합치지 않는다.
+- `notifications`는 persistence-backed module이며 API schema, 한글 OpenAPI 문구, 저장소 adapter를 module 내부에서 소유한다.
 
 ## ANTI-PATTERNS
 

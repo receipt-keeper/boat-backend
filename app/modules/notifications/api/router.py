@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Annotated, Protocol
 from uuid import UUID
 
@@ -17,6 +17,9 @@ from app.modules.notifications.api.schemas import (
 from app.modules.notifications.application.commands.create_notification.command import (
     CreateNotificationCommand,
 )
+from app.modules.notifications.application.commands.mark_notification_read.command import (
+    MarkNotificationReadCommand,
+)
 from app.modules.notifications.application.commands.update_notification_settings.command import (
     UpdateNotificationSettingsCommand,
 )
@@ -30,13 +33,13 @@ from app.modules.notifications.dependencies import (
     CreateNotificationCommandUseCaseDep,
     GetNotificationSettingsQueryUseCaseDep,
     ListNotificationsQueryUseCaseDep,
+    MarkNotificationReadCommandUseCaseDep,
     UpdateNotificationSettingsCommandUseCaseDep,
 )
 from app.modules.notifications.domain.value_objects import (
     NotificationKind,
     NotificationTargetType,
 )
-from app.modules.notifications.mock import notification_with_read_state
 
 
 class _NotificationResult(Protocol):
@@ -195,21 +198,31 @@ async def get_notification_settings(
 @router.patch(
     "/notifications/{notification_id}",
     response_model=CommonResponse[NotificationResponse],
+    responses={
+        status.HTTP_404_NOT_FOUND: {
+            "model": CommonResponse[ApiErrorData],
+            "description": "알림을 찾을 수 없음",
+        },
+    },
     summary="알림 상태 수정",
     description="알림을 읽은 상태로 바꾸고 변경된 알림 정보를 반환한다.",
 )
 async def update_notification(
     notification_id: UUID,
+    principal: CurrentPrincipalDep,
+    command_use_case: MarkNotificationReadCommandUseCaseDep,
 ) -> CommonResponse[NotificationResponse]:
+    result = await command_use_case.execute(
+        MarkNotificationReadCommand(
+            user_id=principal.user_id,
+            notification_id=notification_id,
+        )
+    )
     return CommonResponse(
         success=True,
         status=status.HTTP_200_OK,
-        data=notification_with_read_state(notification_id=notification_id, read_at=_now()),
+        data=_notification_response(result),
     )
-
-
-def _now() -> datetime:
-    return datetime.now(UTC)
 
 
 def _notification_response(notification: _NotificationResult) -> NotificationResponse:
