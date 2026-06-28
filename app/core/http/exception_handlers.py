@@ -84,6 +84,7 @@ async def handle_conflict_error(request: Request, exception: Exception) -> JSONR
 
     return _failure_response(
         status_code=status.HTTP_409_CONFLICT,
+        code=_error_code(exception),
         message=exception.message,
         path=request.url.path,
     )
