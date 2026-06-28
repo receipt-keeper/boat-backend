@@ -7,7 +7,7 @@ class ReceiptImageUnreadableError(ValidationError):
         super().__init__(
             [
                 ErrorDetail(
-                    field="image_uri",
+                    field="file",
                     message=message,
                 )
             ]

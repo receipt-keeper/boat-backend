@@ -24,6 +24,7 @@ TEST_CREDENTIALS_ID = UUID("00000000-0000-0000-0000-000000000102")
 TEST_SESSION_ID = UUID("00000000-0000-0000-0000-000000000103")
 TEST_FILE_ID = UUID("00000000-0000-0000-0000-000000000201")
 SECOND_TEST_FILE_ID = UUID("00000000-0000-0000-0000-000000000202")
+PNG_BYTES = b"\x89PNG\r\n\x1a\nreceipt-image"
 TEST_SETTINGS = Settings(
     jwt_secret_key="x" * 48,
     jwt_issuer="boat-backend-test",
@@ -43,11 +44,23 @@ class _ExtractedReceiptOcrFields:
 
 
 class _ReceiptOcrClientStub(Protocol):
-    async def extract(self, *, image_uri: str) -> _ExtractedReceiptOcrFields: ...
+    async def extract(
+        self,
+        *,
+        image_content: bytes,
+        content_type: str,
+    ) -> _ExtractedReceiptOcrFields: ...
 
 
 class UnreadableReceiptOcrClient:
-    async def extract(self, *, image_uri: str) -> _ExtractedReceiptOcrFields:
+    async def extract(
+        self,
+        *,
+        image_content: bytes,
+        content_type: str,
+    ) -> _ExtractedReceiptOcrFields:
+        assert image_content == PNG_BYTES
+        assert content_type == "image/png"
         return _ExtractedReceiptOcrFields(
             item_name="",
             brand_name=None,
@@ -60,7 +73,14 @@ class UnreadableReceiptOcrClient:
 
 
 class CategoryReceiptOcrClient:
-    async def extract(self, *, image_uri: str) -> _ExtractedReceiptOcrFields:
+    async def extract(
+        self,
+        *,
+        image_content: bytes,
+        content_type: str,
+    ) -> _ExtractedReceiptOcrFields:
+        assert image_content == PNG_BYTES
+        assert content_type == "image/png"
         return _ExtractedReceiptOcrFields(
             item_name="삼성 냉장고 875L",
             brand_name="삼성",
@@ -275,7 +295,7 @@ async def test_ocr_failure_can_fall_back_to_manual_receipt_save(
     ) as client:
         ocr_response = await client.post(
             "/api/v1/ocr",
-            json={"image_uri": "https://storage.example.com/receipts/unreadable.png"},
+            files={"file": ("receipt.png", PNG_BYTES, "image/png")},
         )
         save_response = await client.post(
             "/api/v1/receipts",
@@ -292,7 +312,7 @@ async def test_ocr_failure_can_fall_back_to_manual_receipt_save(
     assert ocr_response.status_code == 422
     assert ocr_body["data"]["errors"] == [
         {
-            "field": "image_uri",
+            "field": "file",
             "message": "영수증 이미지를 인식하지 못했습니다. 다시 촬영하거나 수동 입력해 주세요.",
         }
     ]
@@ -313,8 +333,9 @@ async def test_ocr_auto_fill_category_can_be_saved(
     ) as client:
         ocr_response = await client.post(
             "/api/v1/ocr",
-            json={"image_uri": "https://storage.example.com/receipts/category.png"},
+            files={"file": ("receipt.png", PNG_BYTES, "image/png")},
         )
+        assert ocr_response.status_code == 200
         ocr_data = ocr_response.json()["data"]
         save_response = await client.post(
             "/api/v1/receipts",
@@ -331,7 +352,6 @@ async def test_ocr_auto_fill_category_can_be_saved(
         )
 
     save_body = save_response.json()
-    assert ocr_response.status_code == 200
     assert ocr_data["category"] == "가전"
     assert save_response.status_code == 201
     assert save_body["data"]["category"] == "가전"
