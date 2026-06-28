@@ -7,16 +7,23 @@ from fastapi import APIRouter, Query, status
 from app.core.http.auth import CurrentPrincipalDep
 from app.core.http.responses import ApiErrorData, CommonResponse, CursorPaginationResponse
 from app.modules.notifications.api.schemas import (
+    CreateNotificationRequest,
     NotificationListQuery,
     NotificationListResponse,
     NotificationResponse,
     NotificationSettingsResponse,
     UpdateNotificationSettingsRequest,
 )
+from app.modules.notifications.application.commands.create_notification.command import (
+    CreateNotificationCommand,
+)
 from app.modules.notifications.application.queries.list_notifications.query import (
     ListNotificationsQuery,
 )
-from app.modules.notifications.dependencies import ListNotificationsQueryUseCaseDep
+from app.modules.notifications.dependencies import (
+    CreateNotificationCommandUseCaseDep,
+    ListNotificationsQueryUseCaseDep,
+)
 from app.modules.notifications.domain.value_objects import (
     NotificationKind,
     NotificationTargetType,
@@ -97,6 +104,34 @@ async def list_notifications(
                 totalCount=result.total_count,
             ),
         ),
+    )
+
+
+@router.post(
+    "/notifications",
+    status_code=status.HTTP_201_CREATED,
+    response_model=CommonResponse[NotificationResponse],
+    summary="알림 생성",
+    description="현재 사용자에게 표시할 앱 알림을 생성한다.",
+)
+async def create_notification(
+    request: CreateNotificationRequest,
+    principal: CurrentPrincipalDep,
+    command_use_case: CreateNotificationCommandUseCaseDep,
+) -> CommonResponse[NotificationResponse]:
+    result = await command_use_case.execute(
+        CreateNotificationCommand(
+            user_id=principal.user_id,
+            kind=request.kind,
+            message=request.message,
+            target_type=request.target_type,
+            target_id=request.target_id,
+        )
+    )
+    return CommonResponse(
+        success=True,
+        status=status.HTTP_201_CREATED,
+        data=_notification_response(result),
     )
 
 

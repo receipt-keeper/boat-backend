@@ -7,6 +7,46 @@ from app.core.http.responses import AppBaseModel, CursorPaginationResponse
 from app.modules.notifications.domain.value_objects import NotificationKind, NotificationTargetType
 
 
+class CreateNotificationRequest(AppBaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+        json_schema_extra={
+            "examples": [
+                {
+                    "kind": "benefit",
+                    "message": "이번 달 혜택을 확인해 보세요.",
+                    "targetType": "none",
+                    "targetId": None,
+                }
+            ]
+        },
+    )
+
+    kind: NotificationKind = Field(
+        description="생성할 알림 유형.",
+        examples=["benefit"],
+    )
+    message: str = Field(
+        description="사용자에게 표시할 알림 문구.",
+        examples=["이번 달 혜택을 확인해 보세요."],
+    )
+    target_type: NotificationTargetType = Field(
+        alias="targetType",
+        description=(
+            "알림 클릭 대상 유형. 영수증 상세는 receipt, "
+            "등록 유도는 receiptUpload, 대상이 없으면 none."
+        ),
+        examples=["none"],
+    )
+    target_id: UUID | None = Field(
+        default=None,
+        alias="targetId",
+        description="알림 클릭 대상 ID. 대상이 없거나 등록 유도 대상이면 null로 보낸다.",
+        examples=[None],
+    )
+
+
 class NotificationResponse(AppBaseModel):
     notification_id: UUID = Field(alias="notificationId", description="알림 ID.")
     kind: NotificationKind = Field(description="알림 유형.")

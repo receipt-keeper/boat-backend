@@ -189,3 +189,89 @@ async def test_list_notifications_rejects_invalid_cursor(
     assert body["success"] is False
     assert body["status"] == 400
     assert body["data"]["message"] == "알림 목록 cursor가 올바르지 않습니다."
+
+
+async def test_create_notification_returns_created_common_response(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    payload = {
+        "kind": "registration_prompt",
+        "message": "영수증을 등록해 보세요.",
+        "targetType": "receiptUpload",
+        "targetId": None,
+    }
+
+    async with notification_api_client(postgres_session_factory) as client:
+        response = await client.post("/api/v1/notifications", json=payload)
+
+    body = response.json()
+    assert response.status_code == 201
+    assert body["success"] is True
+    assert body["status"] == 201
+    assert body["data"]["kind"] == "registration_prompt"
+    assert body["data"]["message"] == "영수증을 등록해 보세요."
+    assert body["data"]["targetType"] == "receiptUpload"
+    assert body["data"]["targetId"] is None
+    assert body["data"]["readAt"] is None
+    assert "notificationId" in body["data"]
+    assert "createdAt" in body["data"]
+    assert "userId" not in body["data"]
+    assert "created_at" not in body["data"]
+    assert "read_at" not in body["data"]
+
+
+async def test_create_notification_persists_to_current_user_list(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    payload = {
+        "kind": "benefit",
+        "message": "이번 달 혜택을 확인해 보세요.",
+        "targetType": "none",
+        "targetId": None,
+    }
+
+    async with notification_api_client(postgres_session_factory) as client:
+        create_response = await client.post("/api/v1/notifications", json=payload)
+        assert create_response.status_code == 201
+        created = create_response.json()["data"]
+        list_response = await client.get("/api/v1/notifications?limit=2")
+
+    list_body = list_response.json()
+    notifications = list_body["data"]["notifications"]
+    created_ids = {
+        notification["notificationId"]
+        for notification in notifications
+        if notification["notificationId"] == created["notificationId"]
+    }
+
+    assert list_response.status_code == 200
+    assert created_ids == {created["notificationId"]}
+    assert list_body["data"]["pagination"] == {
+        "nextCursor": None,
+        "hasNext": False,
+        "limit": 2,
+        "totalCount": 1,
+    }
+
+
+async def test_create_notification_rejects_extra_field_contract(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    payload = {
+        "kind": "registration_prompt",
+        "message": "영수증을 등록해 보세요.",
+        "targetType": "receiptUpload",
+        "targetId": None,
+        "userId": str(TEST_USER_ID),
+        "createdAt": "2026-06-28T00:00:00Z",
+        "readAt": None,
+    }
+
+    async with notification_api_client(postgres_session_factory) as client:
+        response = await client.post("/api/v1/notifications", json=payload)
+
+    body = response.json()
+    assert response.status_code == 422
+    assert body["success"] is False
+    assert body["status"] == 422
+    assert body["data"]["path"] == "/api/v1/notifications"
