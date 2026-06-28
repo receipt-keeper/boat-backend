@@ -4,6 +4,9 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.modules.notifications.infrastructure.persistence import orm
+from app.modules.notifications.infrastructure.persistence.repository import (
+    SqlAlchemyNotificationRepository,
+)
 from app.modules.notifications.tests.conftest import (
     TEST_USER_ID,
     notification_api_client,
@@ -230,3 +233,45 @@ async def test_patch_notification_settings_persists_partial_update(
         "pushEnabled": False,
         "marketingConsent": False,
     }
+
+
+async def test_update_notification_settings_preserves_concurrent_partial_update(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with postgres_session_factory() as session:
+        session.add(
+            orm.NotificationSettings(
+                user_id=TEST_USER_ID,
+                push_enabled=True,
+                marketing_consent=False,
+            )
+        )
+        await session.commit()
+
+    async with (
+        postgres_session_factory() as stale_session,
+        postgres_session_factory() as concurrent_session,
+    ):
+        stale_repository = SqlAlchemyNotificationRepository(stale_session)
+        concurrent_repository = SqlAlchemyNotificationRepository(concurrent_session)
+
+        stale_settings = await stale_repository.get_settings(user_id=TEST_USER_ID)
+        assert stale_settings.push_enabled is True
+        assert stale_settings.marketing_consent is False
+
+        await concurrent_repository.update_settings(
+            user_id=TEST_USER_ID,
+            push_enabled=False,
+            marketing_consent=None,
+        )
+        await concurrent_session.commit()
+
+        updated_settings = await stale_repository.update_settings(
+            user_id=TEST_USER_ID,
+            push_enabled=None,
+            marketing_consent=True,
+        )
+        await stale_session.commit()
+
+    assert updated_settings.push_enabled is False
+    assert updated_settings.marketing_consent is True

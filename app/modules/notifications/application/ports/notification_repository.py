@@ -61,6 +61,8 @@ class NotificationRepository(ABC):
     async def update_settings(
         self,
         *,
-        settings: NotificationSettings,
+        user_id: UUID,
+        push_enabled: bool | None,
+        marketing_consent: bool | None,
     ) -> NotificationSettings:
         raise NotImplementedError
