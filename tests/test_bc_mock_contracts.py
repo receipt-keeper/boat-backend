@@ -236,52 +236,49 @@ async def test_credits_usage_response_bodies_match_app_contract() -> None:
 
 
 async def test_receipts_match_app_contract() -> None:
-    test_app = _contract_app()
-    receipt_id = "00000000-0000-0000-0000-000000000301"
+    schema = create_app(TEST_SETTINGS).openapi()
 
-    async with AsyncClient(
-        transport=ASGITransport(app=test_app, raise_app_exceptions=False),
-        base_url="http://test",
-    ) as test_client:
-        receipts_response = await test_client.get("/api/v1/receipts?limit=2")
-        next_receipts_response = await test_client.get("/api/v1/receipts?limit=2&cursor=2")
-        expiring_response = await test_client.get(
-            "/api/v1/receipts?status=expiring&sort=expiresOn&limit=5"
-        )
-        search_response = await test_client.get("/api/v1/receipts?q=냉장고")
-        receipt_response = await test_client.get(f"/api/v1/receipts/{receipt_id}")
+    receipt_collection = schema["paths"]["/api/v1/receipts"]
+    receipt_detail = schema["paths"]["/api/v1/receipts/{receipt_id}"]
 
-    receipts_body = receipts_response.json()
-    next_receipts_body = next_receipts_response.json()
-    expiring_body = expiring_response.json()
-    search_body = search_response.json()
-    receipt_body = receipt_response.json()
+    assert set(receipt_collection) == {"get", "post"}
+    assert set(receipt_detail) == {
+        "get",
+        "patch",
+        "delete",
+    }
+    _assert_common_response_schema(schema, receipt_collection["get"], 200)
+    _assert_common_response_schema(schema, receipt_collection["post"], 201)
+    _assert_common_response_schema(schema, receipt_detail["get"], 200)
+    _assert_common_response_schema(schema, receipt_detail["patch"], 200)
+    _assert_common_response_schema(schema, receipt_detail["delete"], 200)
 
-    assert receipts_response.status_code == 200
-    assert receipts_body["data"]["totalCount"] >= 1
-    assert receipts_body["data"]["pagination"]["nextCursor"] == "2"
-    assert receipts_body["data"]["pagination"]["hasNext"] is True
-    assert "receiptFileIds" in receipts_body["data"]["receipts"][0]
-    assert "supportUrl" in receipts_body["data"]["receipts"][0]
-    assert "receipt_file_ids" not in receipts_body["data"]["receipts"][0]
-    assert "support_url" not in receipts_body["data"]["receipts"][0]
-    image_urls = [receipt["imageUrl"] for receipt in receipts_body["data"]["receipts"]]
-    assert image_urls == [
-        "https://picsum.photos/id/1060/960/640",
-        "https://picsum.photos/id/180/512/512",
-    ]
-    assert next_receipts_response.status_code == 200
-    assert next_receipts_body["data"]["pagination"]["hasNext"] is False
-    assert next_receipts_body["data"]["receipts"][0]["imageUrl"] == (
-        "https://picsum.photos/id/160/480/720"
-    )
-    assert expiring_response.status_code == 200
-    assert expiring_body["data"]["receipts"][0]["warrantyDDay"] == 14
-    assert search_response.status_code == 200
-    assert search_body["data"]["receipts"][0]["itemName"] == "삼성 냉장고 875L"
 
-    assert receipt_response.status_code == 200
-    assert receipt_body["data"]["receiptFileIds"]
+def _assert_common_response_schema(
+    openapi_schema: dict[str, object],
+    operation: dict[str, object],
+    status_code: int,
+) -> None:
+    responses = operation["responses"]
+    assert isinstance(responses, dict)
+    response = responses[str(status_code)]
+    assert isinstance(response, dict)
+    content = response["content"]
+    assert isinstance(content, dict)
+    schema_ref = content["application/json"]["schema"]["$ref"]
+    assert isinstance(schema_ref, str)
+    assert schema_ref.startswith("#/components/schemas/CommonResponse")
+
+    component_name = schema_ref.rsplit("/", maxsplit=1)[-1]
+    components = openapi_schema["components"]
+    assert isinstance(components, dict)
+    schemas = components["schemas"]
+    assert isinstance(schemas, dict)
+    response_schema = schemas[component_name]
+    assert isinstance(response_schema, dict)
+    properties = response_schema["properties"]
+    assert isinstance(properties, dict)
+    assert {"success", "status", "data"} <= set(properties)
 
 
 async def test_users_me_response_does_not_leak_split_bc_fields() -> None:

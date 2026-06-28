@@ -1,5 +1,6 @@
 from uuid import UUID
 
+from app.modules.receipts.application.read_models.receipt import ReceiptReadModel
 from app.modules.receipts.domain.model import Receipt as DomainReceipt
 from app.modules.receipts.infrastructure.persistence import orm
 
@@ -23,3 +24,26 @@ def receipt_to_record(receipt: DomainReceipt) -> orm.Receipt:
 
 def attachment_to_record(*, receipt_id: UUID, file_id: UUID) -> orm.ReceiptAttachment:
     return orm.ReceiptAttachment(receipt_id=receipt_id, file_id=file_id)
+
+
+def record_to_read_model(
+    record: orm.Receipt,
+    *,
+    receipt_file_ids: tuple[UUID, ...],
+) -> ReceiptReadModel:
+    return ReceiptReadModel(
+        receipt_id=record.id,
+        user_id=record.user_id,
+        item_name=record.item_name,
+        brand_name=record.brand_name,
+        payment_location=record.payment_location,
+        payment_date=record.payment_date,
+        total_amount=record.total_amount,
+        period_months=record.period_months,
+        expires_on=record.expires_on,
+        category=record.category,
+        memo=record.memo,
+        requires_physical_receipt=record.requires_physical_receipt,
+        receipt_file_ids=receipt_file_ids,
+        registered_at=record.created_at,
+    )

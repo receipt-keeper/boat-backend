@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Protocol
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from fastapi import Request
@@ -129,6 +129,45 @@ async def _client(
         test_app.dependency_overrides.clear()
 
 
+async def _create_receipt(
+    client: AsyncClient,
+    *,
+    item_name: str,
+    payment_date: date,
+    brand_name: str | None = None,
+    payment_location: str | None = None,
+    total_amount: int | None = None,
+    period_months: int | None = None,
+    category: str | None = None,
+    memo: str | None = None,
+    requires_physical_receipt: bool = True,
+    receipt_file_ids: list[UUID] | None = None,
+) -> dict[str, object]:
+    response = await client.post(
+        "/api/v1/receipts",
+        json={
+            "item_name": item_name,
+            "brand_name": brand_name,
+            "payment_location": payment_location,
+            "payment_date": payment_date.isoformat(),
+            "total_amount": total_amount,
+            "period_months": period_months,
+            "category": category,
+            "memo": memo,
+            "requires_physical_receipt": requires_physical_receipt,
+            "receipt_file_ids": [
+                str(file_id)
+                for file_id in (
+                    receipt_file_ids if receipt_file_ids is not None else [TEST_FILE_ID, uuid4()]
+                )
+            ],
+        },
+    )
+    body = response.json()
+    assert response.status_code == 201
+    return body["data"]
+
+
 async def test_create_receipt_persists_final_values(
     postgres_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
@@ -197,32 +236,68 @@ async def test_list_receipts_supports_home_list_and_search_contract(
     postgres_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     async with _client(postgres_session_factory) as client:
+        first_receipt = await _create_receipt(
+            client,
+            item_name="삼성 냉장고 875L",
+            brand_name="삼성",
+            payment_location="전자랜드",
+            payment_date=date.today() - timedelta(days=16),
+            total_amount=5137000,
+            period_months=1,
+            category="주방 가전",
+            memo="주방 냉장고",
+        )
+        await _create_receipt(
+            client,
+            item_name="LG 세탁기",
+            brand_name="LG",
+            payment_location="하이마트",
+            payment_date=date.today() - timedelta(days=400),
+            total_amount=1290000,
+            period_months=1,
+            category="세탁/청소",
+            memo=None,
+        )
+        await _create_receipt(
+            client,
+            item_name="다이슨 청소기",
+            brand_name="Dyson",
+            payment_location="코스트코",
+            payment_date=date.today(),
+            total_amount=890000,
+            period_months=24,
+            category="세탁/청소",
+            memo="거실 청소용",
+        )
         recent_response = await client.get("/api/v1/receipts?sort=recent&limit=2")
-        next_response = await client.get("/api/v1/receipts?sort=recent&limit=2&cursor=2")
+        recent_body = recent_response.json()
+        next_cursor = recent_body["data"]["pagination"]["nextCursor"]
+        next_response = await client.get(
+            f"/api/v1/receipts?sort=recent&limit=2&cursor={next_cursor}"
+        )
+        invalid_cursor_response = await client.get(
+            "/api/v1/receipts?sort=recent&limit=2&cursor=invalid-cursor"
+        )
         expiring_response = await client.get(
             "/api/v1/receipts?status=expiring&sort=expiresOn&limit=5"
         )
         active_response = await client.get("/api/v1/receipts?status=active")
         search_response = await client.get("/api/v1/receipts?q=주방")
 
-    recent_body = recent_response.json()
     next_body = next_response.json()
+    invalid_cursor_body = invalid_cursor_response.json()
     expiring_body = expiring_response.json()
     active_body = active_response.json()
     search_body = search_response.json()
 
     assert recent_response.status_code == 200
     assert recent_body["data"]["totalCount"] == 3
-    assert recent_body["data"]["pagination"] == {
-        "nextCursor": "2",
-        "hasNext": True,
-        "limit": 2,
-        "totalCount": 3,
-    }
-    assert recent_body["data"]["receipts"][0]["itemName"] == "삼성 냉장고 875L"
-    assert recent_body["data"]["receipts"][0]["imageUrl"] == (
-        "https://picsum.photos/id/1060/960/640"
-    )
+    assert recent_body["data"]["pagination"]["nextCursor"] is not None
+    assert recent_body["data"]["pagination"]["nextCursor"] != "2"
+    assert recent_body["data"]["pagination"]["hasNext"] is True
+    assert recent_body["data"]["pagination"]["limit"] == 2
+    assert recent_body["data"]["pagination"]["totalCount"] == 3
+    assert recent_body["data"]["receipts"][0]["imageUrl"] is None
     assert next_response.status_code == 200
     assert next_body["data"]["pagination"] == {
         "nextCursor": None,
@@ -231,14 +306,108 @@ async def test_list_receipts_supports_home_list_and_search_contract(
         "totalCount": 3,
     }
     assert len(next_body["data"]["receipts"]) == 1
-    assert next_body["data"]["receipts"][0]["imageUrl"] == ("https://picsum.photos/id/160/480/720")
+    assert invalid_cursor_response.status_code == 422
+    assert invalid_cursor_body["data"]["errors"][0] == {
+        "field": "cursor",
+        "message": "유효하지 않은 커서입니다.",
+    }
     assert expiring_response.status_code == 200
-    assert expiring_body["data"]["receipts"][0]["warrantyDDay"] == 14
+    assert expiring_body["data"]["receipts"][0]["itemName"] == "삼성 냉장고 875L"
+    assert 0 <= expiring_body["data"]["receipts"][0]["warrantyDDay"] <= 30
     assert active_response.status_code == 200
-    assert active_body["data"]["receipts"][0]["itemName"] == "다이슨 청소기"
+    assert {receipt["itemName"] for receipt in active_body["data"]["receipts"]} == {"다이슨 청소기"}
     assert search_response.status_code == 200
     assert search_body["data"]["pagination"]["totalCount"] == 1
     assert search_body["data"]["receipts"][0]["memo"] == "주방 냉장고"
+    assert search_body["data"]["receipts"][0]["receiptFileIds"] == first_receipt["receiptFileIds"]
+
+
+async def test_receipt_detail_update_and_delete_use_persisted_data(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with _client(postgres_session_factory) as client:
+        created = await _create_receipt(
+            client,
+            item_name="삼성 냉장고 875L",
+            brand_name="삼성",
+            payment_location="전자랜드",
+            payment_date=date(2024, 5, 26),
+            total_amount=5137000,
+            period_months=24,
+            category="주방 가전",
+            memo="등록 메모",
+            requires_physical_receipt=True,
+        )
+        receipt_id = created["receiptId"]
+
+        detail_response = await client.get(f"/api/v1/receipts/{receipt_id}")
+        update_response = await client.patch(
+            f"/api/v1/receipts/{receipt_id}",
+            json={
+                "item_name": "삼성 냉장고 900L",
+                "payment_location": None,
+                "total_amount": None,
+                "category": "가전",
+                "memo": "수정 메모",
+                "period_months": 36,
+                "receipt_file_ids": [str(SECOND_TEST_FILE_ID)],
+            },
+        )
+        delete_response = await client.delete(f"/api/v1/receipts/{receipt_id}")
+        missing_response = await client.get(f"/api/v1/receipts/{receipt_id}")
+
+    detail_body = detail_response.json()
+    update_body = update_response.json()
+    delete_body = delete_response.json()
+    missing_body = missing_response.json()
+
+    assert detail_response.status_code == 200
+    assert detail_body["data"]["receiptId"] == receipt_id
+    assert detail_body["data"]["itemName"] == "삼성 냉장고 875L"
+    assert update_response.status_code == 200
+    assert update_body["data"]["itemName"] == "삼성 냉장고 900L"
+    assert update_body["data"]["paymentLocation"] is None
+    assert update_body["data"]["totalAmount"] is None
+    assert update_body["data"]["periodMonths"] == 36
+    assert update_body["data"]["expiresOn"] == "2027-05-26"
+    assert update_body["data"]["category"] == "가전"
+    assert update_body["data"]["memo"] == "수정 메모"
+    assert update_body["data"]["receiptFileIds"] == [str(SECOND_TEST_FILE_ID)]
+    assert delete_response.status_code == 200
+    assert delete_body == {"success": True, "status": 200, "data": None}
+    assert missing_response.status_code == 404
+    assert missing_body["data"]["message"] == "영수증을 찾을 수 없습니다."
+
+
+async def test_update_receipt_rejects_null_period_months_without_rewriting_default(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with _client(postgres_session_factory) as client:
+        created = await _create_receipt(
+            client,
+            item_name="삼성 냉장고 875L",
+            payment_date=date(2024, 5, 26),
+            period_months=24,
+        )
+        receipt_id = created["receiptId"]
+
+        update_response = await client.patch(
+            f"/api/v1/receipts/{receipt_id}",
+            json={"period_months": None},
+        )
+        detail_response = await client.get(f"/api/v1/receipts/{receipt_id}")
+
+    update_body = update_response.json()
+    detail_body = detail_response.json()
+
+    assert update_response.status_code == 422
+    assert update_body["data"]["errors"][0] == {
+        "field": "period_months",
+        "message": "무상 AS 기간은 필수입니다.",
+    }
+    assert detail_response.status_code == 200
+    assert detail_body["data"]["periodMonths"] == 24
+    assert detail_body["data"]["expiresOn"] == "2026-05-26"
 
 
 async def test_create_receipt_requires_at_least_one_file(
