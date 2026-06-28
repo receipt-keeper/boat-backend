@@ -1,10 +1,67 @@
 from datetime import datetime
+from typing import Self, assert_never
 from uuid import UUID
 
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, model_validator
 
 from app.core.http.responses import AppBaseModel, CursorPaginationResponse
 from app.modules.notifications.domain.value_objects import NotificationKind, NotificationTargetType
+
+
+class CreateNotificationRequest(AppBaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+        json_schema_extra={
+            "examples": [
+                {
+                    "kind": "benefit",
+                    "message": "이번 달 혜택을 확인해 보세요.",
+                    "targetType": "none",
+                    "targetId": None,
+                }
+            ]
+        },
+    )
+
+    kind: NotificationKind = Field(
+        description="생성할 알림 유형.",
+        examples=["benefit"],
+    )
+    message: str = Field(
+        description="사용자에게 표시할 알림 문구.",
+        examples=["이번 달 혜택을 확인해 보세요."],
+    )
+    target_type: NotificationTargetType = Field(
+        alias="targetType",
+        description=(
+            "알림 클릭 대상 유형. 영수증 상세는 receipt, "
+            "등록 유도는 receiptUpload, 대상이 없으면 none."
+        ),
+        examples=["none"],
+    )
+    target_id: UUID | None = Field(
+        default=None,
+        alias="targetId",
+        description="알림 클릭 대상 ID. 대상이 없거나 등록 유도 대상이면 null로 보낸다.",
+        examples=[None],
+    )
+
+    @model_validator(mode="after")
+    def validate_target_id_contract(self) -> Self:
+        match self.target_type:
+            case NotificationTargetType.RECEIPT:
+                if self.target_id is None:
+                    raise ValueError("receipt 대상 알림은 targetId가 필요합니다.")
+            case NotificationTargetType.RECEIPT_UPLOAD | NotificationTargetType.NONE:
+                if self.target_id is not None:
+                    raise ValueError(
+                        "receiptUpload 또는 none 대상 알림은 targetId를 보낼 수 없습니다."
+                    )
+            case unreachable:
+                assert_never(unreachable)
+
+        return self
 
 
 class NotificationResponse(AppBaseModel):

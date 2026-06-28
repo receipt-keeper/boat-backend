@@ -4,7 +4,12 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.modules.notifications.infrastructure.persistence import orm
+from app.modules.notifications.infrastructure.persistence.repository import (
+    SqlAlchemyNotificationRepository,
+)
 from app.modules.notifications.tests.conftest import (
+    MISSING_NOTIFICATION_ID,
+    OTHER_USER_ID,
     TEST_USER_ID,
     notification_api_client,
 )
@@ -111,6 +116,73 @@ async def test_list_notifications_returns_persisted_current_user_notifications(
     }
 
 
+async def test_list_notifications_uses_id_tiebreaker_for_same_created_at_cursor(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    higher_notification_id = UUID("00000000-0000-0000-0000-000000000612")
+    lower_notification_id = UUID("00000000-0000-0000-0000-000000000611")
+    older_notification_id = UUID("00000000-0000-0000-0000-000000000610")
+    async with postgres_session_factory() as session:
+        session.add_all(
+            [
+                orm.UserNotification(
+                    id=higher_notification_id,
+                    user_id=TEST_USER_ID,
+                    kind="registration_prompt",
+                    message="같은 시각의 최신 알림입니다.",
+                    target_type="none",
+                    target_id=None,
+                    created_at=datetime(2026, 6, 28, 10, 0, tzinfo=UTC),
+                    read_at=None,
+                ),
+                orm.UserNotification(
+                    id=lower_notification_id,
+                    user_id=TEST_USER_ID,
+                    kind="registration_prompt",
+                    message="같은 시각의 다음 알림입니다.",
+                    target_type="none",
+                    target_id=None,
+                    created_at=datetime(2026, 6, 28, 10, 0, tzinfo=UTC),
+                    read_at=None,
+                ),
+                orm.UserNotification(
+                    id=older_notification_id,
+                    user_id=TEST_USER_ID,
+                    kind="benefit",
+                    message="이전 시각의 알림입니다.",
+                    target_type="none",
+                    target_id=None,
+                    created_at=datetime(2026, 6, 28, 9, 0, tzinfo=UTC),
+                    read_at=None,
+                ),
+            ]
+        )
+        await session.commit()
+
+    async with notification_api_client(postgres_session_factory) as client:
+        first_response = await client.get("/api/v1/notifications?limit=1")
+
+    first_body = first_response.json()
+    assert first_response.status_code == 200
+    assert first_body["data"]["notifications"][0]["notificationId"] == str(higher_notification_id)
+
+    async with notification_api_client(postgres_session_factory) as client:
+        second_response = await client.get(
+            "/api/v1/notifications",
+            params={"limit": 1, "cursor": first_body["data"]["pagination"]["nextCursor"]},
+        )
+
+    second_body = second_response.json()
+    assert second_response.status_code == 200
+    assert second_body["data"]["notifications"][0]["notificationId"] == str(lower_notification_id)
+    assert second_body["data"]["pagination"] == {
+        "nextCursor": f"2026-06-28T10:00:00Z|{lower_notification_id}",
+        "hasNext": True,
+        "limit": 1,
+        "totalCount": 3,
+    }
+
+
 async def test_list_notifications_rejects_invalid_cursor(
     postgres_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
@@ -122,3 +194,169 @@ async def test_list_notifications_rejects_invalid_cursor(
     assert body["success"] is False
     assert body["status"] == 400
     assert body["data"]["message"] == "알림 목록 cursor가 올바르지 않습니다."
+
+
+async def test_get_notification_settings_returns_defaults(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with notification_api_client(postgres_session_factory) as client:
+        response = await client.get("/api/v1/notifications/settings")
+
+    assert response.status_code == 200
+    assert response.json()["data"] == {
+        "pushEnabled": True,
+        "marketingConsent": False,
+    }
+
+
+async def test_patch_notification_settings_persists_partial_update(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with notification_api_client(postgres_session_factory) as client:
+        default_response = await client.get("/api/v1/notifications/settings")
+        patch_response = await client.patch(
+            "/api/v1/notifications/settings",
+            json={"pushEnabled": False},
+        )
+        persisted_response = await client.get("/api/v1/notifications/settings")
+
+    assert default_response.status_code == 200
+    assert default_response.json()["data"] == {
+        "pushEnabled": True,
+        "marketingConsent": False,
+    }
+    assert patch_response.status_code == 200
+    assert patch_response.json()["data"] == {
+        "pushEnabled": False,
+        "marketingConsent": False,
+    }
+    assert persisted_response.status_code == 200
+    assert persisted_response.json()["data"] == {
+        "pushEnabled": False,
+        "marketingConsent": False,
+    }
+
+
+async def test_update_notification_settings_preserves_concurrent_partial_update(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with postgres_session_factory() as session:
+        session.add(
+            orm.NotificationSettings(
+                user_id=TEST_USER_ID,
+                push_enabled=True,
+                marketing_consent=False,
+            )
+        )
+        await session.commit()
+
+    async with (
+        postgres_session_factory() as stale_session,
+        postgres_session_factory() as concurrent_session,
+    ):
+        stale_repository = SqlAlchemyNotificationRepository(stale_session)
+        concurrent_repository = SqlAlchemyNotificationRepository(concurrent_session)
+
+        stale_settings = await stale_repository.get_settings(user_id=TEST_USER_ID)
+        assert stale_settings.push_enabled is True
+        assert stale_settings.marketing_consent is False
+
+        await concurrent_repository.update_settings(
+            user_id=TEST_USER_ID,
+            push_enabled=False,
+            marketing_consent=None,
+        )
+        await concurrent_session.commit()
+
+        updated_settings = await stale_repository.update_settings(
+            user_id=TEST_USER_ID,
+            push_enabled=None,
+            marketing_consent=True,
+        )
+        await stale_session.commit()
+
+    assert updated_settings.push_enabled is False
+    assert updated_settings.marketing_consent is True
+
+
+async def test_mark_notification_read_persists_for_current_user(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    # Given: 현재 사용자의 읽지 않은 알림이 생성되어 있다.
+    payload = {
+        "kind": "registration_prompt",
+        "message": "보증 관리를 위해 영수증을 등록해 주세요.",
+        "targetType": "receiptUpload",
+        "targetId": None,
+    }
+
+    # When: 읽음 처리 후 목록을 다시 조회한다.
+    async with notification_api_client(postgres_session_factory) as client:
+        create_response = await client.post("/api/v1/notifications", json=payload)
+        assert create_response.status_code == 201
+        notification_id = create_response.json()["data"]["notificationId"]
+        read_response = await client.patch(f"/api/v1/notifications/{notification_id}")
+        list_response = await client.get("/api/v1/notifications?limit=10")
+
+    # Then: 읽음 응답과 목록의 같은 알림 모두 readAt을 가진다.
+    read_body = read_response.json()
+    notifications = list_response.json()["data"]["notifications"]
+    persisted = next(
+        notification
+        for notification in notifications
+        if notification["notificationId"] == notification_id
+    )
+
+    assert read_response.status_code == 200
+    assert read_body["data"]["notificationId"] == notification_id
+    assert read_body["data"]["readAt"] is not None
+    assert persisted["readAt"] == read_body["data"]["readAt"]
+
+
+async def test_mark_missing_notification_returns_not_found_envelope(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    # Given: 현재 사용자에게 존재하지 않는 알림 ID가 있다.
+    # When: 읽음 처리를 요청한다.
+    async with notification_api_client(postgres_session_factory) as client:
+        response = await client.patch(f"/api/v1/notifications/{MISSING_NOTIFICATION_ID}")
+
+    # Then: 404 실패 envelope를 반환한다.
+    body = response.json()
+    assert response.status_code == 404
+    assert body["success"] is False
+    assert body["status"] == 404
+    assert body["data"]["path"] == f"/api/v1/notifications/{MISSING_NOTIFICATION_ID}"
+
+
+async def test_mark_foreign_notification_returns_not_found_envelope(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    # Given: 다른 사용자에게 알림이 생성되어 있다.
+    payload = {
+        "kind": "benefit",
+        "message": "다른 사용자에게만 보이는 알림입니다.",
+        "targetType": "none",
+        "targetId": None,
+    }
+
+    async with notification_api_client(
+        postgres_session_factory,
+        OTHER_USER_ID,
+    ) as other_client:
+        create_response = await other_client.post("/api/v1/notifications", json=payload)
+        assert create_response.status_code == 201
+        notification_id = create_response.json()["data"]["notificationId"]
+
+    # When: 현재 사용자가 그 알림을 읽음 처리하려고 한다.
+    async with notification_api_client(
+        postgres_session_factory,
+        TEST_USER_ID,
+    ) as client:
+        response = await client.patch(f"/api/v1/notifications/{notification_id}")
+
+    # Then: 존재 여부를 숨기기 위해 404 실패 envelope를 반환한다.
+    body = response.json()
+    assert response.status_code == 404
+    assert body["success"] is False
+    assert body["status"] == 404

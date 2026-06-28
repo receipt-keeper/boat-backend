@@ -2,6 +2,7 @@ from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import and_, func, or_, select
+from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.notifications.application.ports.notification_repository import (
@@ -102,17 +103,39 @@ class SqlAlchemyNotificationRepository(NotificationRepository):
     async def update_settings(
         self,
         *,
-        settings: NotificationSettings,
+        user_id: UUID,
+        push_enabled: bool | None,
+        marketing_consent: bool | None,
     ) -> NotificationSettings:
-        record = await self._session.get(orm.NotificationSettings, settings.id)
-        if record is None:
-            self._session.add(mapper.settings_to_record(settings))
-            await self._session.flush()
-            return settings
+        update_values: dict[str, bool] = {}
+        if push_enabled is not None:
+            update_values["push_enabled"] = push_enabled
+        if marketing_consent is not None:
+            update_values["marketing_consent"] = marketing_consent
 
-        record.push_enabled = settings.push_enabled
-        record.marketing_consent = settings.marketing_consent
+        if update_values:
+            insert_statement = postgresql_insert(orm.NotificationSettings).values(
+                user_id=user_id,
+                **update_values,
+            )
+            await self._session.execute(
+                insert_statement.on_conflict_do_update(
+                    index_elements=[orm.NotificationSettings.user_id],
+                    set_={
+                        **update_values,
+                        "updated_at": func.now(),
+                    },
+                )
+            )
         await self._session.flush()
+
+        record = await self._session.scalar(
+            select(orm.NotificationSettings)
+            .where(orm.NotificationSettings.user_id == user_id)
+            .execution_options(populate_existing=True)
+        )
+        if record is None:
+            return NotificationSettings.create(user_id=user_id)
         return mapper.settings_to_domain(record)
 
     async def _find_record_by_id_for_user(
