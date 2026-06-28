@@ -10,6 +10,7 @@ from app.modules.receipts.domain.value_objects import (
     ItemName,
     PaymentDate,
     ReceiptFileReferences,
+    ReceiptStatusFilter,
     TotalAmount,
     WarrantyPeriodMonths,
 )
@@ -37,8 +38,8 @@ class Receipt(Entity[UUID]):
         cls,
         *,
         user_id: UUID,
-        item_name: str,
-        payment_date: date,
+        item_name: str | None,
+        payment_date: date | None,
         receipt_id: UUID | None = None,
         brand_name: str | None = None,
         payment_location: str | None = None,
@@ -46,16 +47,16 @@ class Receipt(Entity[UUID]):
         period_months: int | None = None,
         category: str | None = None,
         memo: str | None = None,
-        requires_physical_receipt: bool = False,
-        receipt_file_ids: tuple[UUID, ...] = (),
+        requires_physical_receipt: bool | None = False,
+        receipt_file_ids: tuple[UUID, ...] | None = (),
     ) -> "Receipt":
         resolved_period_months = (
             DEFAULT_WARRANTY_PERIOD_MONTHS if period_months is None else period_months
         )
 
         notification = Notification()
-        new_item_name = notification.collect(lambda: ItemName(item_name.strip()))
-        new_payment_date = notification.collect(lambda: PaymentDate(payment_date))
+        new_item_name = notification.collect(lambda: _required_item_name(item_name))
+        new_payment_date = notification.collect(lambda: _required_payment_date(payment_date))
         new_total_amount = (
             None
             if total_amount is None
@@ -96,7 +97,16 @@ class Receipt(Entity[UUID]):
                 max_length=1000,
             )
         )
-        new_file_references = notification.collect(lambda: ReceiptFileReferences(receipt_file_ids))
+        new_requires_physical_receipt = notification.collect(
+            lambda: _required_bool(
+                value=requires_physical_receipt,
+                field="requires_physical_receipt",
+                label="실물 영수증 보관 필요 여부",
+            )
+        )
+        new_file_references = notification.collect(
+            lambda: _required_file_references(receipt_file_ids)
+        )
         notification.raise_if_any()
 
         return cls(
@@ -111,9 +121,40 @@ class Receipt(Entity[UUID]):
             expires_on=_add_months(new_payment_date.value, new_period_months.value),
             category=new_category,
             memo=new_memo,
-            requires_physical_receipt=requires_physical_receipt,
+            requires_physical_receipt=new_requires_physical_receipt,
             receipt_file_ids=new_file_references.value,
         )
+
+
+def _required_item_name(value: str | None) -> ItemName:
+    if value is None:
+        raise ValidationError([ErrorDetail(field="item_name", message="제품명은 필수입니다.")])
+    return ItemName(value.strip())
+
+
+def _required_payment_date(value: date | None) -> PaymentDate:
+    if value is None:
+        raise ValidationError([ErrorDetail(field="payment_date", message="구매일은 필수입니다.")])
+    return PaymentDate(value)
+
+
+def _required_bool(*, value: bool | None, field: str, label: str) -> bool:
+    if value is None:
+        raise ValidationError([ErrorDetail(field=field, message=f"{label}는 필수입니다.")])
+    return value
+
+
+def _required_file_references(value: tuple[UUID, ...] | None) -> ReceiptFileReferences:
+    if value is None:
+        raise ValidationError(
+            [
+                ErrorDetail(
+                    field="receipt_file_ids",
+                    message="영수증 파일은 최소 1개 이상 연결해야 합니다.",
+                )
+            ]
+        )
+    return ReceiptFileReferences(value)
 
 
 def _optional_text(
@@ -156,3 +197,17 @@ def _add_months(start_date: date, months: int) -> date:
     last_day = calendar.monthrange(year, month)[1]
     day = min(start_date.day, last_day)
     return date(year, month, day)
+
+
+def warranty_d_day(expires_on: date, *, today: date | None = None) -> int:
+    reference_date = today or date.today()
+    return (expires_on - reference_date).days
+
+
+def warranty_status(expires_on: date, *, today: date | None = None) -> ReceiptStatusFilter:
+    d_day = warranty_d_day(expires_on, today=today)
+    if d_day < 0:
+        return ReceiptStatusFilter.EXPIRED
+    if d_day <= 30:
+        return ReceiptStatusFilter.EXPIRING
+    return ReceiptStatusFilter.ACTIVE
