@@ -109,7 +109,6 @@ class NotificationsContractStore:
         )
 
     def list_notifications(self, query: ListNotificationsQuery) -> ListNotificationsResult:
-        offset = int(query.cursor) if query.cursor and query.cursor.isdecimal() else 0
         user_notifications = sorted(
             (
                 notification
@@ -119,12 +118,22 @@ class NotificationsContractStore:
             key=lambda notification: (notification.created_at, notification.notification_id),
             reverse=True,
         )
-        page = user_notifications[offset : offset + query.limit]
-        end = offset + len(page)
+        candidates = user_notifications
+        if query.cursor:
+            cursor_created_at, cursor_id = _parse_contract_cursor(query.cursor)
+            candidates = [
+                notification
+                for notification in user_notifications
+                if (notification.created_at, notification.notification_id)
+                < (cursor_created_at, cursor_id)
+            ]
+        page = candidates[: query.limit]
+        has_next = len(candidates) > query.limit
+        next_cursor = _format_contract_cursor(page[-1]) if has_next and page else None
         return ListNotificationsResult(
             notifications=tuple(_list_item(notification) for notification in page),
-            next_cursor=str(end) if end < len(user_notifications) else None,
-            has_next=end < len(user_notifications),
+            next_cursor=next_cursor,
+            has_next=has_next,
             limit=query.limit,
             total_count=len(user_notifications),
         )
@@ -168,6 +177,20 @@ class NotificationsContractStore:
             push_enabled=self._push_enabled,
             marketing_consent=self._marketing_consent,
         )
+
+
+_CONTRACT_CURSOR_SEPARATOR: Final = "|"
+
+
+def _parse_contract_cursor(cursor: str) -> tuple[datetime, UUID]:
+    created_at_text, _, notification_id_text = cursor.partition(_CONTRACT_CURSOR_SEPARATOR)
+    created_at = datetime.fromisoformat(created_at_text.replace("Z", "+00:00"))
+    return created_at, UUID(notification_id_text)
+
+
+def _format_contract_cursor(notification: StoredNotification) -> str:
+    created_at_text = notification.created_at.astimezone(UTC).isoformat().replace("+00:00", "Z")
+    return f"{created_at_text}{_CONTRACT_CURSOR_SEPARATOR}{notification.notification_id}"
 
 
 def _list_item(notification: StoredNotification) -> NotificationListItemResult:

@@ -60,7 +60,10 @@ async def test_notifications_match_cursor_paging_contract() -> None:
             await test_client.post("/api/v1/notifications", json=payload) for payload in payloads
         ]
         response = await test_client.get("/api/v1/notifications?limit=2")
-        next_response = await test_client.get("/api/v1/notifications?limit=2&cursor=2")
+        first_next_cursor = response.json()["data"]["pagination"]["nextCursor"]
+        next_response = await test_client.get(
+            f"/api/v1/notifications?limit=2&cursor={first_next_cursor}"
+        )
         read_response = await test_client.patch(
             f"/api/v1/notifications/{create_responses[-1].json()['data']['notificationId']}"
         )
@@ -95,7 +98,7 @@ async def test_notifications_match_cursor_paging_contract() -> None:
         created[1]["notificationId"],
     ]
     assert body["data"]["pagination"] == {
-        "nextCursor": "2",
+        "nextCursor": f"{created[1]['createdAt']}|{created[1]['notificationId']}",
         "hasNext": True,
         "limit": 2,
         "totalCount": 3,
