@@ -18,6 +18,7 @@ EXPECTED_PERSISTENCE_BACKED_DATA: Final[dict[str, frozenset[str]]] = {
             "get_create_notification_command_use_case",
             "get_list_notifications_query_use_case",
             "get_notification_repository",
+            "get_notification_settings_query_use_case",
         }
     ),
     "app.modules.notifications.infrastructure.persistence.repository": frozenset(

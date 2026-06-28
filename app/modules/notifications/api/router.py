@@ -17,11 +17,15 @@ from app.modules.notifications.api.schemas import (
 from app.modules.notifications.application.commands.create_notification.command import (
     CreateNotificationCommand,
 )
+from app.modules.notifications.application.queries.get_notification_settings.query import (
+    GetNotificationSettingsQuery,
+)
 from app.modules.notifications.application.queries.list_notifications.query import (
     ListNotificationsQuery,
 )
 from app.modules.notifications.dependencies import (
     CreateNotificationCommandUseCaseDep,
+    GetNotificationSettingsQueryUseCaseDep,
     ListNotificationsQueryUseCaseDep,
 )
 from app.modules.notifications.domain.value_objects import (
@@ -162,11 +166,18 @@ async def update_notification_settings(
     summary="알림 설정 조회",
     description="푸시 알림과 마케팅 알림 수신 여부를 반환한다.",
 )
-async def get_notification_settings() -> CommonResponse[NotificationSettingsResponse]:
+async def get_notification_settings(
+    principal: CurrentPrincipalDep,
+    query_use_case: GetNotificationSettingsQueryUseCaseDep,
+) -> CommonResponse[NotificationSettingsResponse]:
+    result = await query_use_case.execute(GetNotificationSettingsQuery(user_id=principal.user_id))
     return CommonResponse(
         success=True,
         status=status.HTTP_200_OK,
-        data=NotificationSettingsResponse(pushEnabled=True, marketingConsent=False),
+        data=NotificationSettingsResponse(
+            pushEnabled=result.push_enabled,
+            marketingConsent=result.marketing_consent,
+        ),
     )
 
 

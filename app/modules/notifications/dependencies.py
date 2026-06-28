@@ -11,6 +11,9 @@ from app.modules.notifications.application.commands.create_notification.use_case
 from app.modules.notifications.application.ports.notification_repository import (
     NotificationRepository,
 )
+from app.modules.notifications.application.queries.get_notification_settings.use_case import (
+    GetNotificationSettingsQueryUseCase,
+)
 from app.modules.notifications.application.queries.list_notifications.use_case import (
     ListNotificationsQueryUseCase,
 )
@@ -40,6 +43,17 @@ async def get_create_notification_command_use_case(
     )
 
 
+async def get_notification_settings_query_use_case(
+    notification_repository: Annotated[
+        NotificationRepository,
+        Depends(get_notification_repository),
+    ],
+) -> GetNotificationSettingsQueryUseCase:
+    return GetNotificationSettingsQueryUseCase(
+        notification_repository=notification_repository,
+    )
+
+
 async def get_list_notifications_query_use_case(
     notification_repository: Annotated[
         NotificationRepository,
@@ -52,6 +66,10 @@ async def get_list_notifications_query_use_case(
 CreateNotificationCommandUseCaseDep = Annotated[
     CreateNotificationCommandUseCase,
     Depends(get_create_notification_command_use_case),
+]
+GetNotificationSettingsQueryUseCaseDep = Annotated[
+    GetNotificationSettingsQueryUseCase,
+    Depends(get_notification_settings_query_use_case),
 ]
 ListNotificationsQueryUseCaseDep = Annotated[
     ListNotificationsQueryUseCase,

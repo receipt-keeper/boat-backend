@@ -189,3 +189,16 @@ async def test_list_notifications_rejects_invalid_cursor(
     assert body["success"] is False
     assert body["status"] == 400
     assert body["data"]["message"] == "알림 목록 cursor가 올바르지 않습니다."
+
+
+async def test_get_notification_settings_returns_defaults(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with notification_api_client(postgres_session_factory) as client:
+        response = await client.get("/api/v1/notifications/settings")
+
+    assert response.status_code == 200
+    assert response.json()["data"] == {
+        "pushEnabled": True,
+        "marketingConsent": False,
+    }
