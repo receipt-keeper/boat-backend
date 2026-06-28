@@ -13,6 +13,7 @@ class NotificationKind(StrEnum):
     WARRANTY_EXPIRED = "warranty_expired"
     REGISTRATION_PROMPT = "registration_prompt"
     CREDIT_PROMPT = "credit_prompt"
+    BENEFIT = "benefit"
 
 
 class NotificationTargetType(StrEnum):

@@ -1,0 +1,124 @@
+from datetime import UTC, datetime
+from uuid import UUID
+
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from app.modules.notifications.infrastructure.persistence import orm
+from app.modules.notifications.tests.conftest import (
+    TEST_USER_ID,
+    notification_api_client,
+)
+
+
+async def test_list_notifications_returns_persisted_current_user_notifications(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    newer_notification_id = UUID("00000000-0000-0000-0000-000000000601")
+    older_notification_id = UUID("00000000-0000-0000-0000-000000000603")
+    other_notification_id = UUID("00000000-0000-0000-0000-000000000602")
+    async with postgres_session_factory() as session:
+        session.add_all(
+            [
+                orm.UserNotification(
+                    id=newer_notification_id,
+                    user_id=TEST_USER_ID,
+                    kind="registration_prompt",
+                    message="영수증을 등록해 보세요.",
+                    target_type="receiptUpload",
+                    target_id=None,
+                    created_at=datetime(2026, 6, 28, 10, 0, tzinfo=UTC),
+                    read_at=None,
+                ),
+                orm.UserNotification(
+                    id=older_notification_id,
+                    user_id=TEST_USER_ID,
+                    kind="registration_prompt",
+                    message="이전 알림입니다.",
+                    target_type="none",
+                    target_id=None,
+                    created_at=datetime(2026, 6, 28, 9, 0, tzinfo=UTC),
+                    read_at=None,
+                ),
+                orm.UserNotification(
+                    id=other_notification_id,
+                    user_id=UUID("00000000-0000-0000-0000-000000000201"),
+                    kind="benefit",
+                    message="다른 사용자 알림입니다.",
+                    target_type="none",
+                    target_id=None,
+                    created_at=datetime(2026, 6, 28, 10, 0, tzinfo=UTC),
+                    read_at=None,
+                ),
+            ]
+        )
+        await session.commit()
+
+    async with notification_api_client(postgres_session_factory) as client:
+        first_response = await client.get("/api/v1/notifications?limit=1")
+
+    first_body = first_response.json()
+    assert first_response.status_code == 200
+    assert first_body["success"] is True
+    assert first_body["status"] == 200
+    assert first_body["data"]["notifications"] == [
+        {
+            "notificationId": str(newer_notification_id),
+            "kind": "registration_prompt",
+            "message": "영수증을 등록해 보세요.",
+            "targetType": "receiptUpload",
+            "targetId": None,
+            "createdAt": "2026-06-28T10:00:00Z",
+            "readAt": None,
+        }
+    ]
+    assert first_body["data"]["pagination"] == {
+        "nextCursor": f"2026-06-28T10:00:00Z|{newer_notification_id}",
+        "hasNext": True,
+        "limit": 1,
+        "totalCount": 2,
+    }
+
+    inserted_notification_id = UUID("00000000-0000-0000-0000-000000000604")
+    async with postgres_session_factory() as session:
+        session.add(
+            orm.UserNotification(
+                id=inserted_notification_id,
+                user_id=TEST_USER_ID,
+                kind="benefit",
+                message="새로 도착한 알림입니다.",
+                target_type="none",
+                target_id=None,
+                created_at=datetime(2026, 6, 28, 11, 0, tzinfo=UTC),
+                read_at=None,
+            )
+        )
+        await session.commit()
+
+    async with notification_api_client(postgres_session_factory) as client:
+        second_response = await client.get(
+            "/api/v1/notifications",
+            params={"limit": 1, "cursor": first_body["data"]["pagination"]["nextCursor"]},
+        )
+
+    second_body = second_response.json()
+    assert second_response.status_code == 200
+    assert second_body["data"]["notifications"][0]["notificationId"] == str(older_notification_id)
+    assert second_body["data"]["pagination"] == {
+        "nextCursor": None,
+        "hasNext": False,
+        "limit": 1,
+        "totalCount": 3,
+    }
+
+
+async def test_list_notifications_rejects_invalid_cursor(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with notification_api_client(postgres_session_factory) as client:
+        response = await client.get("/api/v1/notifications?cursor=not-a-cursor")
+
+    body = response.json()
+    assert response.status_code == 400
+    assert body["success"] is False
+    assert body["status"] == 400
+    assert body["data"]["message"] == "알림 목록 cursor가 올바르지 않습니다."
