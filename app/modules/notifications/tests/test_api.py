@@ -202,3 +202,31 @@ async def test_get_notification_settings_returns_defaults(
         "pushEnabled": True,
         "marketingConsent": False,
     }
+
+
+async def test_patch_notification_settings_persists_partial_update(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with notification_api_client(postgres_session_factory) as client:
+        default_response = await client.get("/api/v1/notifications/settings")
+        patch_response = await client.patch(
+            "/api/v1/notifications/settings",
+            json={"pushEnabled": False},
+        )
+        persisted_response = await client.get("/api/v1/notifications/settings")
+
+    assert default_response.status_code == 200
+    assert default_response.json()["data"] == {
+        "pushEnabled": True,
+        "marketingConsent": False,
+    }
+    assert patch_response.status_code == 200
+    assert patch_response.json()["data"] == {
+        "pushEnabled": False,
+        "marketingConsent": False,
+    }
+    assert persisted_response.status_code == 200
+    assert persisted_response.json()["data"] == {
+        "pushEnabled": False,
+        "marketingConsent": False,
+    }

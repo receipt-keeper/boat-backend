@@ -17,6 +17,9 @@ from app.modules.notifications.api.schemas import (
 from app.modules.notifications.application.commands.create_notification.command import (
     CreateNotificationCommand,
 )
+from app.modules.notifications.application.commands.update_notification_settings.command import (
+    UpdateNotificationSettingsCommand,
+)
 from app.modules.notifications.application.queries.get_notification_settings.query import (
     GetNotificationSettingsQuery,
 )
@@ -27,6 +30,7 @@ from app.modules.notifications.dependencies import (
     CreateNotificationCommandUseCaseDep,
     GetNotificationSettingsQueryUseCaseDep,
     ListNotificationsQueryUseCaseDep,
+    UpdateNotificationSettingsCommandUseCaseDep,
 )
 from app.modules.notifications.domain.value_objects import (
     NotificationKind,
@@ -147,15 +151,22 @@ async def create_notification(
 )
 async def update_notification_settings(
     request: UpdateNotificationSettingsRequest,
+    principal: CurrentPrincipalDep,
+    command_use_case: UpdateNotificationSettingsCommandUseCaseDep,
 ) -> CommonResponse[NotificationSettingsResponse]:
+    result = await command_use_case.execute(
+        UpdateNotificationSettingsCommand(
+            user_id=principal.user_id,
+            push_enabled=request.push_enabled,
+            marketing_consent=request.marketing_consent,
+        )
+    )
     return CommonResponse(
         success=True,
         status=status.HTTP_200_OK,
         data=NotificationSettingsResponse(
-            pushEnabled=request.push_enabled if request.push_enabled is not None else True,
-            marketingConsent=(
-                request.marketing_consent if request.marketing_consent is not None else False
-            ),
+            pushEnabled=result.push_enabled,
+            marketingConsent=result.marketing_consent,
         ),
     )
 
@@ -197,6 +208,10 @@ async def update_notification(
     )
 
 
+def _now() -> datetime:
+    return datetime.now(UTC)
+
+
 def _notification_response(notification: _NotificationResult) -> NotificationResponse:
     return NotificationResponse(
         notificationId=notification.notification_id,
@@ -207,7 +222,3 @@ def _notification_response(notification: _NotificationResult) -> NotificationRes
         createdAt=notification.created_at,
         readAt=notification.read_at,
     )
-
-
-def _now() -> datetime:
-    return datetime.now(UTC)
