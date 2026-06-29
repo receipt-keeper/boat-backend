@@ -5,6 +5,16 @@ from fastapi import APIRouter, Query, status
 
 from app.core.http.auth import CurrentPrincipalDep
 from app.core.http.responses import ApiErrorData, CommonResponse, CursorPaginationResponse
+from app.modules.receipts.api.examples import (
+    CREATE_RECEIPT_REQUEST_OPENAPI_EXAMPLES,
+    CREATE_RECEIPT_RESPONSE_EXAMPLE,
+    DELETE_RECEIPT_RESPONSE_EXAMPLE,
+    EMPTY_RECEIPT_LIST_RESPONSE_EXAMPLE,
+    GET_RECEIPT_RESPONSE_EXAMPLE,
+    RECEIPT_LIST_RESPONSE_EXAMPLE,
+    UPDATE_RECEIPT_REQUEST_OPENAPI_EXAMPLES,
+    UPDATE_RECEIPT_RESPONSE_EXAMPLE,
+)
 from app.modules.receipts.api.schemas import (
     CreateReceiptRequest,
     CreateReceiptResponse,
@@ -48,7 +58,29 @@ router = APIRouter(
     "",
     response_model=CommonResponse[ReceiptListResponse],
     summary="영수증 목록 조회",
-    description="등록된 영수증을 무상 AS 상태, 카테고리, 검색어 조건에 맞춰 반환한다.",
+    description=(
+        "등록된 영수증을 무상 AS 상태, 카테고리, 검색어 조건에 맞춰 반환한다. "
+        "로그인 사용자에게 등록된 영수증이 없으면 빈 배열을 반환한다."
+    ),
+    responses={
+        status.HTTP_200_OK: {
+            "description": "영수증 목록 조회 성공",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "with_receipts": {
+                            "summary": "등록된 영수증이 있는 경우",
+                            "value": RECEIPT_LIST_RESPONSE_EXAMPLE,
+                        },
+                        "empty": {
+                            "summary": "등록된 영수증이 없는 경우",
+                            "value": EMPTY_RECEIPT_LIST_RESPONSE_EXAMPLE,
+                        },
+                    }
+                }
+            },
+        }
+    },
 )
 async def list_receipts(
     query: Annotated[ReceiptListQuery, Query()],
@@ -88,6 +120,17 @@ async def list_receipts(
     response_model=CommonResponse[CreateReceiptResponse],
     summary="영수증 등록",
     description="OCR 결과를 사용자가 수정한 최종값 또는 수동 입력값으로 영수증을 등록한다.",
+    openapi_extra={
+        "requestBody": {
+            "content": {"application/json": {"examples": CREATE_RECEIPT_REQUEST_OPENAPI_EXAMPLES}}
+        }
+    },
+    responses={
+        status.HTTP_201_CREATED: {
+            "description": "영수증 등록 성공",
+            "content": {"application/json": {"example": CREATE_RECEIPT_RESPONSE_EXAMPLE}},
+        }
+    },
 )
 async def create_receipt(
     request: CreateReceiptRequest,
@@ -134,6 +177,12 @@ async def create_receipt(
     response_model=CommonResponse[ReceiptResponse],
     summary="영수증 상세 조회",
     description="등록된 영수증의 제품명, 구매일, 무상 AS 기간, 메모, 첨부 이미지를 반환한다.",
+    responses={
+        status.HTTP_200_OK: {
+            "description": "영수증 상세 조회 성공",
+            "content": {"application/json": {"example": GET_RECEIPT_RESPONSE_EXAMPLE}},
+        }
+    },
 )
 async def get_receipt(
     receipt_id: UUID,
@@ -158,6 +207,17 @@ async def get_receipt(
         "영수증 기반 제품 정보와 첨부 이미지 목록을 수정한다. "
         "첨부 이미지는 수정 후에도 1장 이상 5장 이하여야 한다."
     ),
+    openapi_extra={
+        "requestBody": {
+            "content": {"application/json": {"examples": UPDATE_RECEIPT_REQUEST_OPENAPI_EXAMPLES}}
+        }
+    },
+    responses={
+        status.HTTP_200_OK: {
+            "description": "영수증 수정 성공",
+            "content": {"application/json": {"example": UPDATE_RECEIPT_RESPONSE_EXAMPLE}},
+        }
+    },
 )
 async def update_receipt(
     receipt_id: UUID,
@@ -199,6 +259,12 @@ async def update_receipt(
         "등록된 영수증과 제품 조회 데이터를 삭제한다. "
         "연결 해제된 파일의 실제 스토리지 삭제는 파일 정리 작업에서 처리한다."
     ),
+    responses={
+        status.HTTP_200_OK: {
+            "description": "영수증 삭제 성공",
+            "content": {"application/json": {"example": DELETE_RECEIPT_RESPONSE_EXAMPLE}},
+        }
+    },
 )
 async def delete_receipt(
     receipt_id: UUID,

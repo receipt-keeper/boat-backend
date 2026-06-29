@@ -1,9 +1,14 @@
 from datetime import date, datetime
+from typing import Any, cast
 from uuid import UUID
 
 from pydantic import ConfigDict, Field
 
 from app.core.http.responses import AppBaseModel, CursorPaginationResponse
+from app.modules.receipts.api.examples import (
+    CREATE_RECEIPT_REQUEST_EXAMPLES,
+    UPDATE_RECEIPT_REQUEST_EXAMPLES,
+)
 from app.modules.receipts.domain.value_objects import ReceiptSort, ReceiptStatusFilter
 
 
@@ -48,22 +53,7 @@ class ReceiptListQuery(AppBaseModel):
 class CreateReceiptRequest(AppBaseModel):
     model_config = ConfigDict(
         extra="forbid",
-        json_schema_extra={
-            "examples": [
-                {
-                    "item_name": "삼성 냉장고 875L",
-                    "brand_name": "삼성",
-                    "payment_location": "전자랜드",
-                    "payment_date": "2024-05-26",
-                    "total_amount": 5137000,
-                    "period_months": 24,
-                    "category": "가전",
-                    "memo": "OCR 결과 확인 후 저장",
-                    "requires_physical_receipt": True,
-                    "receipt_file_ids": ["00000000-0000-0000-0000-000000000201"],
-                }
-            ]
-        },
+        json_schema_extra=cast(dict[str, Any], {"examples": CREATE_RECEIPT_REQUEST_EXAMPLES}),
     )
 
     item_name: str = Field(
@@ -168,25 +158,7 @@ class ReceiptListResponse(AppBaseModel):
 class UpdateReceiptRequest(AppBaseModel):
     model_config = ConfigDict(
         extra="forbid",
-        json_schema_extra={
-            "examples": [
-                {
-                    "item_name": "삼성 냉장고 875L",
-                    "brand_name": "삼성",
-                    "payment_location": "전자랜드",
-                    "payment_date": "2024-05-26",
-                    "total_amount": 5137000,
-                    "period_months": 24,
-                    "category": "주방 가전",
-                    "memo": "보증서 사진 추가",
-                    "requires_physical_receipt": True,
-                    "receipt_file_ids": [
-                        "00000000-0000-0000-0000-000000000201",
-                        "00000000-0000-0000-0000-000000000202",
-                    ],
-                }
-            ]
-        },
+        json_schema_extra=cast(dict[str, Any], {"examples": UPDATE_RECEIPT_REQUEST_EXAMPLES}),
     )
 
     item_name: str | None = Field(default=None, description="제품명.", max_length=255)

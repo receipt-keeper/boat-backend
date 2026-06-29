@@ -232,6 +232,60 @@ def test_receipts_expose_final_registration_route_only() -> None:
     assert "/api/v1/assets" not in paths
 
 
+def test_receipts_openapi_includes_app_test_examples() -> None:
+    schema = create_app(TEST_SETTINGS).openapi()
+    paths = schema["paths"]
+
+    list_operation = paths["/api/v1/receipts"]["get"]
+    create_operation = paths["/api/v1/receipts"]["post"]
+    detail_operation = paths["/api/v1/receipts/{receipt_id}"]["get"]
+    update_operation = paths["/api/v1/receipts/{receipt_id}"]["patch"]
+    delete_operation = paths["/api/v1/receipts/{receipt_id}"]["delete"]
+
+    list_examples = list_operation["responses"]["200"]["content"]["application/json"]["examples"]
+    create_request_examples = create_operation["requestBody"]["content"]["application/json"][
+        "examples"
+    ]
+    update_request_examples = update_operation["requestBody"]["content"]["application/json"][
+        "examples"
+    ]
+    create_request_properties = schema["components"]["schemas"]["CreateReceiptRequest"][
+        "properties"
+    ]
+    receipt_response_properties = schema["components"]["schemas"]["ReceiptResponse"]["properties"]
+    create_response_example = create_operation["responses"]["201"]["content"]["application/json"][
+        "example"
+    ]
+    detail_response_example = detail_operation["responses"]["200"]["content"]["application/json"][
+        "example"
+    ]
+    update_response_example = update_operation["responses"]["200"]["content"]["application/json"][
+        "example"
+    ]
+    delete_response_example = delete_operation["responses"]["200"]["content"]["application/json"][
+        "example"
+    ]
+
+    assert list_examples["with_receipts"]["value"]["data"]["receipts"][0]["itemName"] == (
+        "삼성 냉장고 875L"
+    )
+    assert list_examples["empty"]["value"]["data"]["receipts"] == []
+    assert create_request_examples["ocr_reviewed"]["value"]["receipt_file_ids"] == [
+        "00000000-0000-0000-0000-000000000201"
+    ]
+    assert "total_amount" not in create_request_examples["manual_nullable"]["value"]
+    assert {"type": "null"} in create_request_properties["total_amount"]["anyOf"]
+    assert create_response_example["status"] == 201
+    assert create_response_example["data"]["receiptFileIds"] == [
+        "00000000-0000-0000-0000-000000000201"
+    ]
+    assert detail_response_example["data"]["itemName"] == "삼성 냉장고 875L"
+    assert {"type": "null"} in receipt_response_properties["imageUrl"]["anyOf"]
+    assert update_request_examples["partial_update"]["value"]["item_name"] == "삼성 냉장고 900L"
+    assert "paymentLocation" not in update_response_example["data"]
+    assert delete_response_example == {"success": True, "status": 200}
+
+
 async def test_list_receipts_supports_home_list_and_search_contract(
     postgres_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
