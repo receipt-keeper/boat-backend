@@ -1,3 +1,5 @@
+import base64
+import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -103,6 +105,13 @@ def _dev_test_settings() -> Settings:
         jwt_issuer="boat-backend-test",
         jwt_audience="boat-api-test",
     )
+
+
+def _encode_test_cursor(payload: dict[str, object]) -> str:
+    encoded = base64.urlsafe_b64encode(
+        json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    ).decode("ascii")
+    return encoded.rstrip("=")
 
 
 async def _fake_authenticate_current_principal(request: Request) -> AuthenticatedPrincipal:
@@ -346,6 +355,16 @@ async def test_list_receipts_supports_home_list_and_search_contract(
         invalid_cursor_response = await client.get(
             "/api/v1/receipts?sort=recent&limit=2&cursor=invalid-cursor"
         )
+        numeric_id_cursor = _encode_test_cursor(
+            {
+                "sort": "recent",
+                "value": "2026-06-29T00:00:00+00:00",
+                "id": 1,
+            }
+        )
+        numeric_id_cursor_response = await client.get(
+            f"/api/v1/receipts?sort=recent&limit=2&cursor={numeric_id_cursor}"
+        )
         expiring_response = await client.get(
             "/api/v1/receipts?status=expiring&sort=expiresOn&limit=5"
         )
@@ -354,6 +373,7 @@ async def test_list_receipts_supports_home_list_and_search_contract(
 
     next_body = next_response.json()
     invalid_cursor_body = invalid_cursor_response.json()
+    numeric_id_cursor_body = numeric_id_cursor_response.json()
     expiring_body = expiring_response.json()
     active_body = active_response.json()
     search_body = search_response.json()
@@ -376,6 +396,11 @@ async def test_list_receipts_supports_home_list_and_search_contract(
     assert len(next_body["data"]["receipts"]) == 1
     assert invalid_cursor_response.status_code == 422
     assert invalid_cursor_body["data"]["errors"][0] == {
+        "field": "cursor",
+        "message": "유효하지 않은 커서입니다.",
+    }
+    assert numeric_id_cursor_response.status_code == 422
+    assert numeric_id_cursor_body["data"]["errors"][0] == {
         "field": "cursor",
         "message": "유효하지 않은 커서입니다.",
     }

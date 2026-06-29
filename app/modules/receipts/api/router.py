@@ -239,7 +239,10 @@ def _decode_dev_mock_cursor_receipt_id(cursor: str, *, sort: ReceiptSort) -> UUI
         cursor_sort = ReceiptSort(payload["sort"])
         if cursor_sort != sort:
             raise ValueError("cursor sort mismatch")
-        return UUID(payload["id"])
+        cursor_receipt_id = payload["id"]
+        if not isinstance(cursor_receipt_id, str):
+            raise ValueError("cursor id must be a string")
+        return UUID(cursor_receipt_id)
     except (
         binascii.Error,
         KeyError,

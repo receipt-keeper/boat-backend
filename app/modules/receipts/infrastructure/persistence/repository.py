@@ -281,11 +281,14 @@ def _decode_cursor(cursor: str | None, *, sort: ReceiptSort) -> _ReceiptCursor |
         cursor_sort = ReceiptSort(payload["sort"])
         if cursor_sort != sort:
             raise ValueError("cursor sort mismatch")
+        cursor_receipt_id = payload["id"]
+        if not isinstance(cursor_receipt_id, str):
+            raise ValueError("cursor id must be a string")
 
         return _ReceiptCursor(
             sort=cursor_sort,
             value=_parse_cursor_value(sort=cursor_sort, value=payload["value"]),
-            receipt_id=UUID(payload["id"]),
+            receipt_id=UUID(cursor_receipt_id),
         )
     except (
         binascii.Error,
