@@ -131,6 +131,62 @@ async def test_signup_malformed_request_reports_missing_required_fields(
     ]
 
 
+async def test_signup_request_rejects_blank_consent_versions_before_use_case(
+    client: AsyncClient,
+) -> None:
+    command_use_case = FakeSignupCommandUseCase()
+    app.dependency_overrides[get_signup_command_use_case] = lambda: command_use_case
+
+    response = await client.post(
+        "/api/v1/auth/signup",
+        json={
+            "idToken": LOGIN_SAMPLE,
+            "termsAccepted": True,
+            "privacyAccepted": True,
+            "termsVersion": "   ",
+            "privacyVersion": "",
+        },
+    )
+
+    body = response.json()
+    assert response.status_code == 422
+    assert command_use_case.command is None
+    assert body["success"] is False
+    assert body["status"] == 422
+    assert [error["field"] for error in body["data"]["errors"]] == [
+        "termsVersion",
+        "privacyVersion",
+    ]
+
+
+async def test_signup_request_rejects_consent_versions_longer_than_storage_limit(
+    client: AsyncClient,
+) -> None:
+    command_use_case = FakeSignupCommandUseCase()
+    app.dependency_overrides[get_signup_command_use_case] = lambda: command_use_case
+
+    response = await client.post(
+        "/api/v1/auth/signup",
+        json={
+            "idToken": LOGIN_SAMPLE,
+            "termsAccepted": True,
+            "privacyAccepted": True,
+            "termsVersion": "v" * 51,
+            "privacyVersion": "v" * 51,
+        },
+    )
+
+    body = response.json()
+    assert response.status_code == 422
+    assert command_use_case.command is None
+    assert body["success"] is False
+    assert body["status"] == 422
+    assert [error["field"] for error in body["data"]["errors"]] == [
+        "termsVersion",
+        "privacyVersion",
+    ]
+
+
 async def test_signup_provisioning_validation_returns_field_errors(
     client: AsyncClient,
 ) -> None:

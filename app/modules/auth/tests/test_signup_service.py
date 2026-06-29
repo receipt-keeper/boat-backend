@@ -212,6 +212,48 @@ async def test_signup_rejects_missing_required_consent_versions_before_provision
     assert fixture.unit_of_work.commit_count == 0
 
 
+async def test_signup_rejects_blank_required_consent_versions_before_provisioning() -> None:
+    fixture = _build_signup_use_case(_new_identity())
+
+    with pytest.raises(ValidationError) as error:
+        await fixture.use_case.execute(
+            _signup_command(
+                terms_version="   ",
+                privacy_version="",
+            )
+        )
+
+    assert [(detail.field, detail.message) for detail in error.value.details] == [
+        ("termsVersion", "동의한 이용약관 버전이 필요합니다."),
+        ("privacyVersion", "동의한 개인정보 처리방침 버전이 필요합니다."),
+    ]
+    assert fixture.provisioner.requests == []
+    assert fixture.notification_initializer.initialized == []
+    assert fixture.repository.refresh_token_hashes == {}
+    assert fixture.unit_of_work.commit_count == 0
+
+
+async def test_signup_rejects_overlong_consent_versions_before_provisioning() -> None:
+    fixture = _build_signup_use_case(_new_identity())
+
+    with pytest.raises(ValidationError) as error:
+        await fixture.use_case.execute(
+            _signup_command(
+                terms_version="v" * 51,
+                privacy_version="v" * 51,
+            )
+        )
+
+    assert [(detail.field, detail.message) for detail in error.value.details] == [
+        ("termsVersion", "동의한 이용약관 버전은 50자 이하여야 합니다."),
+        ("privacyVersion", "동의한 개인정보 처리방침 버전은 50자 이하여야 합니다."),
+    ]
+    assert fixture.provisioner.requests == []
+    assert fixture.notification_initializer.initialized == []
+    assert fixture.repository.refresh_token_hashes == {}
+    assert fixture.unit_of_work.commit_count == 0
+
+
 async def test_signup_rejects_existing_external_identity_without_side_effects() -> None:
     identity = _new_identity()
     fixture = _build_signup_use_case(identity)

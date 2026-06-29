@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from typing import Final
 
 from app.core.application.unit_of_work import UnitOfWork
 from app.core.domain.exceptions import ErrorDetail, ValidationError
@@ -19,6 +20,8 @@ from app.modules.auth.application.ports.user_provisioner import (
 )
 from app.modules.auth.domain.exceptions import UserAlreadyExistsError
 from app.modules.auth.domain.model import ExternalIdentity
+
+MAX_CONSENT_VERSION_LENGTH: Final = 50
 
 
 class SignupCommandUseCase:
@@ -44,6 +47,8 @@ class SignupCommandUseCase:
         self._unit_of_work = unit_of_work
 
     async def execute(self, command: SignupCommand) -> SignupResult:
+        terms_version = _normalized_consent_version(command.terms_version)
+        privacy_version = _normalized_consent_version(command.privacy_version)
         details: list[ErrorDetail] = []
         if not command.terms_accepted:
             details.append(
@@ -51,9 +56,20 @@ class SignupCommandUseCase:
                     field="termsAccepted", message="이용약관에 동의해야 가입할 수 있습니다."
                 )
             )
-        if command.terms_accepted and command.terms_version is None:
+        if command.terms_accepted and terms_version is None:
             details.append(
                 ErrorDetail(field="termsVersion", message="동의한 이용약관 버전이 필요합니다.")
+            )
+        if (
+            command.terms_accepted
+            and terms_version is not None
+            and len(terms_version) > MAX_CONSENT_VERSION_LENGTH
+        ):
+            details.append(
+                ErrorDetail(
+                    field="termsVersion",
+                    message="동의한 이용약관 버전은 50자 이하여야 합니다.",
+                )
             )
         if not command.privacy_accepted:
             details.append(
@@ -62,10 +78,21 @@ class SignupCommandUseCase:
                     message="개인정보 처리방침에 동의해야 가입할 수 있습니다.",
                 )
             )
-        if command.privacy_accepted and command.privacy_version is None:
+        if command.privacy_accepted and privacy_version is None:
             details.append(
                 ErrorDetail(
                     field="privacyVersion", message="동의한 개인정보 처리방침 버전이 필요합니다."
+                )
+            )
+        if (
+            command.privacy_accepted
+            and privacy_version is not None
+            and len(privacy_version) > MAX_CONSENT_VERSION_LENGTH
+        ):
+            details.append(
+                ErrorDetail(
+                    field="privacyVersion",
+                    message="동의한 개인정보 처리방침 버전은 50자 이하여야 합니다.",
                 )
             )
         if details:
@@ -80,8 +107,8 @@ class SignupCommandUseCase:
                 name=identity.name,
                 email=None if identity.email is None else identity.email.value,
                 profile_image_url=None,
-                terms_version=command.terms_version,
-                privacy_version=command.privacy_version,
+                terms_version=terms_version,
+                privacy_version=privacy_version,
                 terms_accepted=command.terms_accepted,
                 privacy_accepted=command.privacy_accepted,
             )
@@ -140,3 +167,13 @@ def _canonical_email(identity: ExternalIdentity) -> str | None:
     if identity.email is None:
         return None
     return identity.email.value.lower()
+
+
+def _normalized_consent_version(version: str | None) -> str | None:
+    if version is None:
+        return None
+
+    normalized = version.strip()
+    if normalized == "":
+        return None
+    return normalized

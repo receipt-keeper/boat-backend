@@ -216,6 +216,60 @@ async def test_resolve_user_for_login_requires_consent_versions(
     ]
 
 
+async def test_resolve_user_for_login_rejects_blank_consent_versions(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with postgres_session_factory() as session:
+        resolver = ResolveUserForLoginCommandUseCase(
+            user_repository=SqlAlchemyUserRepository(session),
+            unit_of_work=SqlAlchemyUnitOfWork(session),
+        )
+        with pytest.raises(ValidationError) as blank_versions:
+            await resolver.execute(
+                ResolveUserForLoginCommand(
+                    name="동의 버전 공백",
+                    email="blank-version@example.com",
+                    profile_image_url=None,
+                    terms_version="   ",
+                    privacy_version="",
+                    terms_accepted=True,
+                    privacy_accepted=True,
+                )
+            )
+
+    assert [detail.field for detail in blank_versions.value.details] == [
+        "termsVersion",
+        "privacyVersion",
+    ]
+
+
+async def test_resolve_user_for_login_rejects_overlong_consent_versions(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with postgres_session_factory() as session:
+        resolver = ResolveUserForLoginCommandUseCase(
+            user_repository=SqlAlchemyUserRepository(session),
+            unit_of_work=SqlAlchemyUnitOfWork(session),
+        )
+        with pytest.raises(ValidationError) as overlong_versions:
+            await resolver.execute(
+                ResolveUserForLoginCommand(
+                    name="동의 버전 길이 초과",
+                    email="overlong-version@example.com",
+                    profile_image_url=None,
+                    terms_version="v" * 51,
+                    privacy_version="v" * 51,
+                    terms_accepted=True,
+                    privacy_accepted=True,
+                )
+            )
+
+    assert [(detail.field, detail.message) for detail in overlong_versions.value.details] == [
+        ("termsVersion", "동의한 이용약관 버전은 50자 이하여야 합니다."),
+        ("privacyVersion", "동의한 개인정보 처리방침 버전은 50자 이하여야 합니다."),
+    ]
+
+
 async def _count(session: AsyncSession, table: CountableUsersTable) -> int:
     count = await session.scalar(select(func.count()).select_from(table))
     if count is None:

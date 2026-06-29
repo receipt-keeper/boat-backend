@@ -1,6 +1,18 @@
-from pydantic import ConfigDict, Field
+from typing import Annotated, Final
+
+from pydantic import ConfigDict, Field, StringConstraints
 
 from app.core.http.responses import AppBaseModel
+
+MAX_CONSENT_VERSION_LENGTH: Final = 50
+ConsentVersion = Annotated[
+    str,
+    StringConstraints(
+        strip_whitespace=True,
+        min_length=1,
+        max_length=MAX_CONSENT_VERSION_LENGTH,
+    ),
+]
 
 
 class LoginRequest(AppBaseModel):
@@ -54,11 +66,11 @@ class SignupRequest(AppBaseModel):
         alias="privacyAccepted",
         description="개인정보 처리방침 동의 여부.",
     )
-    terms_version: str | None = Field(
+    terms_version: ConsentVersion | None = Field(
         alias="termsVersion",
         description="동의한 이용약관 버전.",
     )
-    privacy_version: str | None = Field(
+    privacy_version: ConsentVersion | None = Field(
         alias="privacyVersion",
         description="동의한 개인정보 처리방침 버전.",
     )

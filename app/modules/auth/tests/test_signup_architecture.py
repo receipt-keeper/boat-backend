@@ -10,13 +10,13 @@ from app.modules.auth.dependencies import (
     get_user_provisioner,
 )
 from app.modules.notifications.dependencies import (
-    build_notification_settings_initializer,
     build_update_notification_settings_command_use_case,
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
 AUTH_ROOT = PROJECT_ROOT / "app" / "modules" / "auth"
 NOTIFICATIONS_DEPENDENCIES = PROJECT_ROOT / "app" / "modules" / "notifications" / "dependencies.py"
+AUTH_DEPENDENCY_ADAPTERS = AUTH_ROOT / "dependency_adapters.py"
 
 
 def _imports(path: Path) -> set[str]:
@@ -63,7 +63,8 @@ def test_signup_cross_module_wiring_defers_inner_commits() -> None:
         "ProvisionUserPortAdapter",
     }.issubset(_function_call_names(auth_dependencies, "get_user_provisioner"))
     assert {
-        "build_notification_settings_initializer",
+        "build_update_notification_settings_command_use_case",
+        "NotificationSettingsInitializerAdapter",
         "DeferredCommitUnitOfWork",
     }.issubset(_function_call_names(auth_dependencies, "get_notification_settings_initializer"))
     assert "SqlAlchemyUnitOfWork" not in _function_call_names(
@@ -76,19 +77,11 @@ def test_signup_cross_module_wiring_defers_inner_commits() -> None:
     )
     assert "SqlAlchemyUnitOfWork" not in _function_call_names(
         NOTIFICATIONS_DEPENDENCIES,
-        "build_notification_settings_initializer",
-    )
-    assert "SqlAlchemyUnitOfWork" not in _function_call_names(
-        NOTIFICATIONS_DEPENDENCIES,
         "build_update_notification_settings_command_use_case",
     )
 
 
 def test_signup_notification_settings_builder_accepts_outer_unit_of_work() -> None:
-    assert list(signature(build_notification_settings_initializer).parameters) == [
-        "session",
-        "unit_of_work",
-    ]
     assert list(signature(build_update_notification_settings_command_use_case).parameters) == [
         "session",
         "unit_of_work",
@@ -105,3 +98,22 @@ def test_auth_module_does_not_import_notifications_infrastructure() -> None:
     ]
 
     assert offending_files == []
+
+
+def test_auth_users_runtime_wiring_stays_in_dependencies() -> None:
+    assert {
+        "app.modules.users.application.commands.resolve_user_for_login.command",
+        "app.modules.users.application.commands.resolve_user_for_login.use_case",
+    }.issubset(_imports(AUTH_ROOT / "dependencies.py"))
+    assert not any(
+        imported.startswith("app.modules.users.") for imported in _imports(AUTH_DEPENDENCY_ADAPTERS)
+    )
+
+
+def test_notifications_dependencies_do_not_import_auth_ports() -> None:
+    forbidden_prefix = ".".join(("app", "modules", "auth"))
+
+    assert not any(
+        imported == forbidden_prefix or imported.startswith(f"{forbidden_prefix}.")
+        for imported in _imports(NOTIFICATIONS_DEPENDENCIES)
+    )

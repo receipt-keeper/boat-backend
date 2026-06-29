@@ -4,45 +4,31 @@ from fastapi import Request
 
 from app.core.db.session import request_async_session
 from app.modules.auth.application.ports.credential_repository import ActiveSessionChecker
-from app.modules.auth.application.ports.user_provisioner import (
-    ProvisionedUser,
-    UserProvisioner,
-    UserProvisioningRequest,
+from app.modules.auth.application.ports.notification_settings_initializer import (
+    NotificationSettingsInitializer,
 )
 from app.modules.auth.infrastructure.persistence.credential_repository import (
     SqlAlchemyCredentialRepository,
 )
-from app.modules.users.application.commands.resolve_user_for_login.command import (
-    ResolveUserForLoginCommand,
+from app.modules.notifications.application.commands.update_notification_settings.command import (
+    UpdateNotificationSettingsCommand,
 )
-from app.modules.users.application.commands.resolve_user_for_login.use_case import (
-    ResolveUserForLoginCommandUseCase,
+from app.modules.notifications.application.commands.update_notification_settings.use_case import (
+    UpdateNotificationSettingsCommandUseCase,
 )
 
 
-class ProvisionUserPortAdapter(UserProvisioner):
-    def __init__(
-        self,
-        command_use_case: ResolveUserForLoginCommandUseCase,
-        *,
-        default_profile_image_url: str | None = None,
-    ) -> None:
+class NotificationSettingsInitializerAdapter(NotificationSettingsInitializer):
+    def __init__(self, command_use_case: UpdateNotificationSettingsCommandUseCase) -> None:
         self._command_use_case = command_use_case
-        self._default_profile_image_url = default_profile_image_url
 
-    async def provision(self, *, request: UserProvisioningRequest) -> ProvisionedUser:
-        result = await self._command_use_case.execute(
-            ResolveUserForLoginCommand(
-                name=request.name,
-                email=request.email,
-                profile_image_url=request.profile_image_url or self._default_profile_image_url,
-                terms_version=request.terms_version,
-                privacy_version=request.privacy_version,
-                terms_accepted=request.terms_accepted,
-                privacy_accepted=request.privacy_accepted,
+    async def initialize(self, *, user_id: UUID, marketing_consent: bool) -> None:
+        await self._command_use_case.execute(
+            UpdateNotificationSettingsCommand(
+                user_id=user_id,
+                marketing_consent=marketing_consent,
             )
         )
-        return ProvisionedUser(user_id=result.user_id)
 
 
 class RequestActiveSessionChecker(ActiveSessionChecker):
