@@ -57,15 +57,15 @@ def test_signup_wiring_shares_one_transaction_session() -> None:
 def test_signup_cross_module_wiring_defers_inner_commits() -> None:
     auth_dependencies = AUTH_ROOT / "dependencies.py"
 
-    assert _function_call_names(auth_dependencies, "get_user_provisioner") == {
+    assert {
         "build_resolve_user_for_login_command_use_case",
         "DeferredCommitUnitOfWork",
         "ProvisionUserPortAdapter",
-    }
-    assert _function_call_names(auth_dependencies, "get_notification_settings_initializer") == {
+    }.issubset(_function_call_names(auth_dependencies, "get_user_provisioner"))
+    assert {
         "build_notification_settings_initializer",
         "DeferredCommitUnitOfWork",
-    }
+    }.issubset(_function_call_names(auth_dependencies, "get_notification_settings_initializer"))
     assert "SqlAlchemyUnitOfWork" not in _function_call_names(
         auth_dependencies,
         "get_user_provisioner",

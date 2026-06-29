@@ -3,6 +3,7 @@ from uuid import UUID, uuid4
 
 import pytest
 
+from app.core.domain.exceptions import ValidationError
 from app.modules.auth.application.commands.signup.command import SignupCommand
 from app.modules.auth.application.commands.signup.use_case import SignupCommandUseCase
 from app.modules.auth.application.ports.notification_settings_initializer import (
@@ -98,13 +99,20 @@ def _build_signup_use_case(identity: ExternalIdentity) -> SignupUseCaseFixture:
     )
 
 
-def _signup_command(*, marketing_consent: bool = False) -> SignupCommand:
+def _signup_command(
+    *,
+    terms_accepted: bool = True,
+    privacy_accepted: bool = True,
+    terms_version: str | None = "2026-06-01",
+    privacy_version: str | None = "2026-06-01",
+    marketing_consent: bool = False,
+) -> SignupCommand:
     return SignupCommand(
         provider_token="firebase-id-token",
-        terms_accepted=True,
-        privacy_accepted=True,
-        terms_version="2026-06-01",
-        privacy_version="2026-06-01",
+        terms_accepted=terms_accepted,
+        privacy_accepted=privacy_accepted,
+        terms_version=terms_version,
+        privacy_version=privacy_version,
         marketing_consent=marketing_consent,
     )
 
@@ -144,6 +152,48 @@ async def test_signup_defaults_marketing_settings_to_false() -> None:
     assert fixture.notification_initializer.initialized == [
         InitializedSettings(user_id=fixture.provisioner.user_id, marketing_consent=False)
     ]
+
+
+async def test_signup_rejects_missing_required_consent_before_provisioning() -> None:
+    fixture = _build_signup_use_case(_new_identity())
+
+    with pytest.raises(ValidationError) as error:
+        await fixture.use_case.execute(
+            _signup_command(
+                terms_accepted=False,
+                privacy_accepted=False,
+            )
+        )
+
+    assert [(detail.field, detail.message) for detail in error.value.details] == [
+        ("termsAccepted", "이용약관에 동의해야 가입할 수 있습니다."),
+        ("privacyAccepted", "개인정보 처리방침에 동의해야 가입할 수 있습니다."),
+    ]
+    assert fixture.provisioner.requests == []
+    assert fixture.notification_initializer.initialized == []
+    assert fixture.repository.refresh_token_hashes == {}
+    assert fixture.unit_of_work.commit_count == 0
+
+
+async def test_signup_rejects_missing_required_consent_versions_before_provisioning() -> None:
+    fixture = _build_signup_use_case(_new_identity())
+
+    with pytest.raises(ValidationError) as error:
+        await fixture.use_case.execute(
+            _signup_command(
+                terms_version=None,
+                privacy_version=None,
+            )
+        )
+
+    assert [(detail.field, detail.message) for detail in error.value.details] == [
+        ("termsVersion", "동의한 이용약관 버전이 필요합니다."),
+        ("privacyVersion", "동의한 개인정보 처리방침 버전이 필요합니다."),
+    ]
+    assert fixture.provisioner.requests == []
+    assert fixture.notification_initializer.initialized == []
+    assert fixture.repository.refresh_token_hashes == {}
+    assert fixture.unit_of_work.commit_count == 0
 
 
 async def test_signup_rejects_existing_external_identity_without_side_effects() -> None:

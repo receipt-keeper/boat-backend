@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 
 from app.core.application.unit_of_work import UnitOfWork
+from app.core.domain.exceptions import ErrorDetail, ValidationError
 from app.modules.auth.application.commands.signup.command import SignupCommand
 from app.modules.auth.application.commands.signup.result import SignupResult
 from app.modules.auth.application.ports.credential_repository import CredentialRepository
@@ -43,6 +44,33 @@ class SignupCommandUseCase:
         self._unit_of_work = unit_of_work
 
     async def execute(self, command: SignupCommand) -> SignupResult:
+        details: list[ErrorDetail] = []
+        if not command.terms_accepted:
+            details.append(
+                ErrorDetail(
+                    field="termsAccepted", message="이용약관에 동의해야 가입할 수 있습니다."
+                )
+            )
+        if command.terms_accepted and command.terms_version is None:
+            details.append(
+                ErrorDetail(field="termsVersion", message="동의한 이용약관 버전이 필요합니다.")
+            )
+        if not command.privacy_accepted:
+            details.append(
+                ErrorDetail(
+                    field="privacyAccepted",
+                    message="개인정보 처리방침에 동의해야 가입할 수 있습니다.",
+                )
+            )
+        if command.privacy_accepted and command.privacy_version is None:
+            details.append(
+                ErrorDetail(
+                    field="privacyVersion", message="동의한 개인정보 처리방침 버전이 필요합니다."
+                )
+            )
+        if details:
+            raise ValidationError(details)
+
         identity = await self._identity_verifier.verify(command.provider_token)
         await self._identity_synchronizer.synchronize(identity=identity)
         await self._ensure_new_user(identity)

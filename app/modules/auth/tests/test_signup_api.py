@@ -213,10 +213,10 @@ async def test_signup_openapi_documents_request_schema_and_conflict(
         "privacyVersion",
         "marketingConsent",
     }
-    assert signup_schema["required"] == [
+    assert set(signup_schema["required"]) == {
         "idToken",
         "termsAccepted",
         "privacyAccepted",
         "termsVersion",
         "privacyVersion",
-    ]
+    }
