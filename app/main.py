@@ -21,6 +21,7 @@ from app.modules.auth.api.router import router as auth_router
 from app.modules.auth.api.security import authenticate_current_principal
 from app.modules.auth.domain.exceptions import AuthenticationError, AuthorizationError
 from app.modules.credits.api.router import router as credits_router
+from app.modules.example.api.router import router as example_router
 from app.modules.files.api.router import router as files_router
 from app.modules.files.dependencies import get_file_reference_guard
 from app.modules.notifications.api.router import router as notifications_router
@@ -110,6 +111,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         prefix=resolved_settings.api_prefix,
         dependencies=[Depends(authenticate_current_principal)],
     )
+    app.include_router(example_router, prefix=resolved_settings.api_prefix)
     app.include_router(
         notifications_router,
         prefix=resolved_settings.api_prefix,
