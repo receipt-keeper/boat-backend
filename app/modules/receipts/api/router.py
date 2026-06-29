@@ -1,8 +1,14 @@
+import base64
+import binascii
+import json
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, Depends, Query, status
 
+from app.core.config.dependencies import get_request_settings
+from app.core.config.settings import Settings
+from app.core.domain.exceptions import ErrorDetail, ValidationError
 from app.core.http.auth import CurrentPrincipalDep
 from app.core.http.responses import ApiErrorData, CommonResponse, CursorPaginationResponse
 from app.modules.receipts.api.examples import (
@@ -36,6 +42,8 @@ from app.modules.receipts.dependencies import (
     ListReceiptsQueryUseCaseDep,
     UpdateReceiptCommandUseCaseDep,
 )
+from app.modules.receipts.domain.value_objects import ReceiptSort, ReceiptStatusFilter
+from app.modules.receipts.mock import SAMPLE_RECEIPTS
 
 _ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
     status.HTTP_401_UNAUTHORIZED: {
@@ -60,7 +68,8 @@ router = APIRouter(
     summary="영수증 목록 조회",
     description=(
         "등록된 영수증을 무상 AS 상태, 카테고리, 검색어 조건에 맞춰 반환한다. "
-        "로그인 사용자에게 등록된 영수증이 없으면 빈 배열을 반환한다."
+        "로그인 사용자에게 등록된 영수증이 없으면 빈 배열을 반환한다. "
+        "단, dev 환경에서는 앱 목록 화면 테스트를 위해 샘플 영수증 목록을 반환한다."
     ),
     responses={
         status.HTTP_200_OK: {
@@ -86,6 +95,7 @@ async def list_receipts(
     query: Annotated[ReceiptListQuery, Query()],
     principal: CurrentPrincipalDep,
     query_use_case: ListReceiptsQueryUseCaseDep,
+    settings: Annotated[Settings, Depends(get_request_settings)],
 ) -> CommonResponse[ReceiptListResponse]:
     result = await query_use_case.execute(
         ListReceiptsQuery(
@@ -98,6 +108,36 @@ async def list_receipts(
             q=query.q,
         )
     )
+    if settings.app_env == "dev" and result.total_count == 0:
+        unfiltered_result = await query_use_case.execute(
+            ListReceiptsQuery(
+                user_id=principal.user_id,
+                status=ReceiptStatusFilter.ALL,
+                sort=ReceiptSort.RECENT,
+                limit=1,
+            )
+        )
+        if unfiltered_result.total_count > 0:
+            return CommonResponse(
+                success=True,
+                status=status.HTTP_200_OK,
+                data=ReceiptListResponse(
+                    receipts=[],
+                    totalCount=result.total_count,
+                    pagination=CursorPaginationResponse(
+                        nextCursor=result.next_cursor,
+                        hasNext=result.has_next,
+                        limit=result.limit,
+                        totalCount=result.total_count,
+                    ),
+                ),
+            )
+        return CommonResponse(
+            success=True,
+            status=status.HTTP_200_OK,
+            data=_dev_mock_receipt_list_response(query),
+        )
+
     return CommonResponse(
         success=True,
         status=status.HTTP_200_OK,
@@ -112,6 +152,142 @@ async def list_receipts(
             ),
         ),
     )
+
+
+def _dev_mock_receipt_list_response(query: ReceiptListQuery) -> ReceiptListResponse:
+    filtered_receipts = _filter_dev_mock_receipts(query)
+    start = _dev_mock_start_index(filtered_receipts, query.cursor, sort=query.sort)
+    end = min(start + query.limit, len(filtered_receipts))
+    page_items = filtered_receipts[start:end]
+    has_next = end < len(filtered_receipts)
+    return ReceiptListResponse(
+        receipts=page_items,
+        totalCount=len(filtered_receipts),
+        pagination=CursorPaginationResponse(
+            nextCursor=(
+                _encode_dev_mock_cursor(sort=query.sort, receipt=page_items[-1])
+                if has_next and page_items
+                else None
+            ),
+            hasNext=has_next,
+            limit=query.limit,
+            totalCount=len(filtered_receipts),
+        ),
+    )
+
+
+def _filter_dev_mock_receipts(query: ReceiptListQuery) -> list[ReceiptResponse]:
+    receipts = list(SAMPLE_RECEIPTS)
+    if query.status is not ReceiptStatusFilter.ALL:
+        receipts = [receipt for receipt in receipts if _matches_status(receipt, query.status)]
+    if query.category is not None:
+        receipts = [receipt for receipt in receipts if receipt.category == query.category]
+    if query.q is not None:
+        keyword = query.q.casefold()
+        receipts = [
+            receipt
+            for receipt in receipts
+            if any(
+                keyword in value.casefold()
+                for value in (
+                    receipt.item_name,
+                    receipt.brand_name,
+                    receipt.payment_location,
+                    receipt.memo,
+                )
+                if value is not None
+            )
+        ]
+    return sorted(
+        receipts,
+        key=_dev_mock_sort_key(query.sort),
+        reverse=_dev_mock_sort_reverse(query.sort),
+    )
+
+
+def _dev_mock_start_index(
+    receipts: list[ReceiptResponse],
+    cursor: str | None,
+    *,
+    sort: ReceiptSort,
+) -> int:
+    if cursor is None:
+        return 0
+    cursor_receipt_id = _decode_dev_mock_cursor_receipt_id(cursor, sort=sort)
+    for index, receipt in enumerate(receipts):
+        if receipt.receipt_id == cursor_receipt_id:
+            return index + 1
+    raise _invalid_dev_mock_cursor_error()
+
+
+def _encode_dev_mock_cursor(*, sort: ReceiptSort, receipt: ReceiptResponse) -> str:
+    payload = {
+        "sort": sort.value,
+        "value": _dev_mock_cursor_value(sort, receipt).isoformat(),
+        "id": str(receipt.receipt_id),
+    }
+    encoded = base64.urlsafe_b64encode(
+        json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    ).decode("ascii")
+    return encoded.rstrip("=")
+
+
+def _decode_dev_mock_cursor_receipt_id(cursor: str, *, sort: ReceiptSort) -> UUID:
+    try:
+        padded_cursor = cursor + "=" * (-len(cursor) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(padded_cursor).decode("utf-8"))
+        cursor_sort = ReceiptSort(payload["sort"])
+        if cursor_sort != sort:
+            raise ValueError("cursor sort mismatch")
+        cursor_receipt_id = payload["id"]
+        if not isinstance(cursor_receipt_id, str):
+            raise ValueError("cursor id must be a string")
+        return UUID(cursor_receipt_id)
+    except (
+        binascii.Error,
+        KeyError,
+        TypeError,
+        ValueError,
+        json.JSONDecodeError,
+        UnicodeDecodeError,
+    ) as exception:
+        raise _invalid_dev_mock_cursor_error() from exception
+
+
+def _invalid_dev_mock_cursor_error() -> ValidationError:
+    return ValidationError([ErrorDetail(field="cursor", message="유효하지 않은 커서입니다.")])
+
+
+def _dev_mock_cursor_value(sort: ReceiptSort, receipt: ReceiptResponse) -> Any:
+    if sort is ReceiptSort.EXPIRES_ON:
+        return receipt.expires_on
+    if sort is ReceiptSort.PURCHASE_DATE:
+        return receipt.payment_date
+    return receipt.registered_at
+
+
+def _matches_status(receipt: ReceiptResponse, status_filter: ReceiptStatusFilter) -> bool:
+    if receipt.warranty_d_day is None:
+        return status_filter is ReceiptStatusFilter.ACTIVE
+    if status_filter is ReceiptStatusFilter.EXPIRED:
+        return receipt.warranty_d_day < 0
+    if status_filter is ReceiptStatusFilter.EXPIRING:
+        return 0 <= receipt.warranty_d_day <= 30
+    if status_filter is ReceiptStatusFilter.ACTIVE:
+        return receipt.warranty_d_day > 30
+    return True
+
+
+def _dev_mock_sort_key(sort: ReceiptSort) -> Any:
+    if sort is ReceiptSort.EXPIRES_ON:
+        return lambda receipt: receipt.expires_on
+    if sort is ReceiptSort.PURCHASE_DATE:
+        return lambda receipt: receipt.payment_date
+    return lambda receipt: receipt.registered_at
+
+
+def _dev_mock_sort_reverse(sort: ReceiptSort) -> bool:
+    return sort is not ReceiptSort.EXPIRES_ON
 
 
 @router.post(
