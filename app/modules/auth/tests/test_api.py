@@ -11,7 +11,10 @@ from app.modules.auth.dependencies import (
     get_logout_command_use_case,
     get_refresh_token_command_use_case,
 )
-from app.modules.auth.domain.exceptions import AuthenticationError, UserNotRegisteredError
+from app.modules.auth.domain.exceptions import (
+    AuthenticationError,
+    UserNotRegisteredError,
+)
 
 LOGIN_SAMPLE = "firebase-sample"
 REFRESH_SAMPLE = "refresh-sample"

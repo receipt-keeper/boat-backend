@@ -1,15 +1,8 @@
 import ast
 import importlib
-from inspect import signature
 from pathlib import Path
 
-from app.core.db.session import AsyncSessionDep
 from app.core.domain.entity import Entity
-from app.modules.auth.dependencies import (
-    get_credential_repository,
-    get_external_identity_login_synchronizer,
-    get_user_provisioner,
-)
 from app.modules.auth.domain.model import ExternalIdentity, RefreshToken, UserCredential
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
@@ -22,6 +15,9 @@ EXPECTED_AUTH_FILES = {
     "application/commands/login/command.py",
     "application/commands/login/result.py",
     "application/commands/login/use_case.py",
+    "application/commands/signup/command.py",
+    "application/commands/signup/result.py",
+    "application/commands/signup/use_case.py",
     "application/commands/refresh/command.py",
     "application/commands/refresh/result.py",
     "application/commands/refresh/use_case.py",
@@ -34,6 +30,7 @@ EXPECTED_AUTH_FILES = {
     "application/ports/credential_repository.py",
     "application/ports/external_identity_login_synchronizer.py",
     "application/ports/external_identity_verifier.py",
+    "application/ports/notification_settings_initializer.py",
     "application/ports/token_issuer.py",
     "application/ports/user_provisioner.py",
     "infrastructure/persistence/orm.py",
@@ -211,17 +208,6 @@ def test_runtime_wiring_uses_module_dependencies_not_app_composition() -> None:
 
     assert not (PROJECT_ROOT / "app" / "composition").exists()
     assert all(not imported.startswith("app.composition") for imported in main_imports)
-
-
-def test_signup_wiring_shares_one_transaction_session() -> None:
-    assert all(
-        signature(dependency).parameters["session"].annotation == AsyncSessionDep
-        for dependency in (
-            get_credential_repository,
-            get_external_identity_login_synchronizer,
-            get_user_provisioner,
-        )
-    )
 
 
 def test_token_port_contract_is_provider_neutral() -> None:

@@ -1,6 +1,7 @@
 from typing import Annotated
 
 from fastapi import Depends
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.application.unit_of_work import UnitOfWork
 from app.core.db.session import AsyncSessionDep
@@ -34,6 +35,16 @@ async def get_notification_repository(session: AsyncSessionDep) -> NotificationR
 
 async def get_unit_of_work(session: AsyncSessionDep) -> UnitOfWork:
     return SqlAlchemyUnitOfWork(session)
+
+
+def build_update_notification_settings_command_use_case(
+    session: AsyncSession,
+    unit_of_work: UnitOfWork,
+) -> UpdateNotificationSettingsCommandUseCase:
+    return UpdateNotificationSettingsCommandUseCase(
+        notification_repository=SqlAlchemyNotificationRepository(session),
+        unit_of_work=unit_of_work,
+    )
 
 
 async def get_create_notification_command_use_case(

@@ -1,6 +1,18 @@
-from pydantic import ConfigDict, Field
+from typing import Annotated, Final
+
+from pydantic import ConfigDict, Field, StringConstraints
 
 from app.core.http.responses import AppBaseModel
+
+MAX_CONSENT_VERSION_LENGTH: Final = 50
+ConsentVersion = Annotated[
+    str,
+    StringConstraints(
+        strip_whitespace=True,
+        min_length=1,
+        max_length=MAX_CONSENT_VERSION_LENGTH,
+    ),
+]
 
 
 class LoginRequest(AppBaseModel):
@@ -20,6 +32,52 @@ class LoginRequest(AppBaseModel):
         alias="idToken",
         min_length=1,
         description="Firebase 로그인 후 앱이 받은 ID 토큰.",
+    )
+
+
+class SignupRequest(AppBaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        populate_by_name=True,
+        json_schema_extra={
+            "examples": [
+                {
+                    "idToken": "firebase-id-token",
+                    "termsAccepted": True,
+                    "privacyAccepted": True,
+                    "termsVersion": "2026-06-01",
+                    "privacyVersion": "2026-06-01",
+                    "marketingConsent": False,
+                }
+            ]
+        },
+    )
+
+    id_token: str = Field(
+        alias="idToken",
+        min_length=1,
+        description="Firebase 로그인 후 앱이 받은 ID 토큰.",
+    )
+    terms_accepted: bool = Field(
+        alias="termsAccepted",
+        description="이용약관 동의 여부.",
+    )
+    privacy_accepted: bool = Field(
+        alias="privacyAccepted",
+        description="개인정보 처리방침 동의 여부.",
+    )
+    terms_version: ConsentVersion | None = Field(
+        alias="termsVersion",
+        description="동의한 이용약관 버전.",
+    )
+    privacy_version: ConsentVersion | None = Field(
+        alias="privacyVersion",
+        description="동의한 개인정보 처리방침 버전.",
+    )
+    marketing_consent: bool = Field(
+        default=False,
+        alias="marketingConsent",
+        description="마케팅 알림 수신 동의 여부.",
     )
 
 
