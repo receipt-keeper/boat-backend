@@ -72,8 +72,8 @@ class SignupCommandUseCase:
             raise ValidationError(details)
 
         identity = await self._identity_verifier.verify(command.provider_token)
-        await self._identity_synchronizer.synchronize(identity=identity)
         await self._ensure_new_user(identity)
+        await self._identity_synchronizer.synchronize(identity=identity)
 
         provisioned_user = await self._user_provisioner.provision(
             request=UserProvisioningRequest(
