@@ -5,16 +5,12 @@ from app.core.http.responses import AppBaseModel
 
 class LoginRequest(AppBaseModel):
     model_config = ConfigDict(
+        extra="forbid",
         populate_by_name=True,
         json_schema_extra={
             "examples": [
                 {
                     "idToken": "firebase-id-token",
-                    "termsVersion": "1.0",
-                    "privacyVersion": "1.0",
-                    "termsAccepted": True,
-                    "privacyAccepted": True,
-                    "marketingConsent": False,
                 }
             ]
         },
@@ -24,33 +20,6 @@ class LoginRequest(AppBaseModel):
         alias="idToken",
         min_length=1,
         description="Firebase 로그인 후 앱이 받은 ID 토큰.",
-    )
-    terms_version: str | None = Field(
-        default=None,
-        alias="termsVersion",
-        description="사용자가 동의한 서비스 약관 버전.",
-        examples=["1.0"],
-    )
-    privacy_version: str | None = Field(
-        default=None,
-        alias="privacyVersion",
-        description="사용자가 동의한 개인정보 처리방침 버전.",
-        examples=["1.0"],
-    )
-    terms_accepted: bool = Field(
-        default=False,
-        alias="termsAccepted",
-        description="서비스 약관 동의 여부. 신규 가입 시 true가 필요하다.",
-    )
-    privacy_accepted: bool = Field(
-        default=False,
-        alias="privacyAccepted",
-        description="개인정보 처리방침 동의 여부. 신규 가입 시 true가 필요하다.",
-    )
-    marketing_consent: bool = Field(
-        default=False,
-        alias="marketingConsent",
-        description="마케팅 알림 수신 선택 동의 여부.",
     )
 
 

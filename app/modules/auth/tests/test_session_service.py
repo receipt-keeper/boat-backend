@@ -15,7 +15,6 @@ from app.modules.auth.domain.model import ExternalIdentity
 from app.modules.auth.tests.credential_repository_fake import FakeCredentialRepository
 from app.modules.auth.tests.service_fakes import (
     FakeExternalIdentityVerifier,
-    FakeUserProvisioner,
     build_access_token_issuer,
     build_login_command_use_case,
     build_logout_command_use_case,
@@ -41,29 +40,29 @@ class StaticActiveSessionChecker(ActiveSessionChecker):
         )
 
 
+def _registered_apple_identity(repository: FakeCredentialRepository) -> ExternalIdentity:
+    identity = ExternalIdentity.create(
+        issuer="apple",
+        subject="firebase-uid",
+        provider="apple",
+        email="user@example.com",
+        name=None,
+        email_verified=True,
+    )
+    repository.seed_existing_external_identity(identity=identity)
+    return identity
+
+
 async def test_refresh_rotates_refresh_token_and_rejects_old_token() -> None:
     repository = FakeCredentialRepository()
+    identity = _registered_apple_identity(repository)
     login_command_use_case = build_login_command_use_case(
-        verifier=FakeExternalIdentityVerifier(
-            ExternalIdentity.create(
-                issuer="apple",
-                subject="firebase-uid",
-                provider="apple",
-                email="user@example.com",
-                name=None,
-                email_verified=True,
-            )
-        ),
+        verifier=FakeExternalIdentityVerifier(identity),
         repository=repository,
-        user_provisioner=FakeUserProvisioner(),
     )
     refresh_command_use_case = build_refresh_command_use_case(repository=repository)
     first_pair = await login_command_use_case.execute(
-        LoginCommand(
-            provider_token="firebase-id-token",
-            terms_accepted=True,
-            privacy_accepted=True,
-        )
+        LoginCommand(provider_token="firebase-id-token")
     )
     old_hashes = set(repository.refresh_token_hashes)
 
@@ -81,28 +80,13 @@ async def test_refresh_rotates_refresh_token_and_rejects_old_token() -> None:
 
 async def test_logout_revokes_only_presented_refresh_token() -> None:
     repository = FakeCredentialRepository()
+    identity = _registered_apple_identity(repository)
     login_command_use_case = build_login_command_use_case(
-        verifier=FakeExternalIdentityVerifier(
-            ExternalIdentity.create(
-                issuer="apple",
-                subject="firebase-uid",
-                provider="apple",
-                email="user@example.com",
-                name=None,
-                email_verified=True,
-            )
-        ),
+        verifier=FakeExternalIdentityVerifier(identity),
         repository=repository,
-        user_provisioner=FakeUserProvisioner(),
     )
     logout_command_use_case = build_logout_command_use_case(repository=repository)
-    tokens = await login_command_use_case.execute(
-        LoginCommand(
-            provider_token="firebase-id-token",
-            terms_accepted=True,
-            privacy_accepted=True,
-        )
-    )
+    tokens = await login_command_use_case.execute(LoginCommand(provider_token="firebase-id-token"))
     token_hash = next(iter(repository.refresh_token_hashes))
 
     await logout_command_use_case.execute(LogoutCommand(refresh_token=tokens.refresh_token))
@@ -113,32 +97,17 @@ async def test_logout_revokes_only_presented_refresh_token() -> None:
 
 async def test_logout_invalidates_same_session_access_token() -> None:
     repository = FakeCredentialRepository()
+    identity = _registered_apple_identity(repository)
     login_command_use_case = build_login_command_use_case(
-        verifier=FakeExternalIdentityVerifier(
-            ExternalIdentity.create(
-                issuer="apple",
-                subject="firebase-uid",
-                provider="apple",
-                email="user@example.com",
-                name=None,
-                email_verified=True,
-            )
-        ),
+        verifier=FakeExternalIdentityVerifier(identity),
         repository=repository,
-        user_provisioner=FakeUserProvisioner(),
     )
     current_principal_query_use_case = CurrentPrincipalQueryUseCase(
         access_token_verifier=build_access_token_issuer(),
         active_session_checker=StaticActiveSessionChecker(repository),
     )
     logout_command_use_case = build_logout_command_use_case(repository=repository)
-    tokens = await login_command_use_case.execute(
-        LoginCommand(
-            provider_token="firebase-id-token",
-            terms_accepted=True,
-            privacy_accepted=True,
-        )
-    )
+    tokens = await login_command_use_case.execute(LoginCommand(provider_token="firebase-id-token"))
 
     principal = await current_principal_query_use_case.execute(
         CurrentPrincipalQuery(token=tokens.access_token)

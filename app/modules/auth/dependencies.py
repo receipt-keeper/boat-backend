@@ -177,7 +177,6 @@ async def get_login_command_use_case(
         ExternalIdentityVerifier,
         Depends(get_external_identity_verifier),
     ],
-    user_provisioner: Annotated[UserProvisioner, Depends(get_user_provisioner)],
     access_token_issuer: Annotated[AccessTokenIssuer, Depends(get_access_token_issuer)],
     refresh_token_issuer: Annotated[
         RefreshTokenIssuer,
@@ -189,7 +188,6 @@ async def get_login_command_use_case(
         identity_verifier=identity_verifier,
         login_synchronizer=login_synchronizer,
         credential_repository=credential_repository,
-        user_provisioner=user_provisioner,
         access_token_issuer=access_token_issuer,
         refresh_token_issuer=refresh_token_issuer,
         unit_of_work=unit_of_work,

@@ -1,6 +1,5 @@
 from httpx import AsyncClient
 
-from app.core.domain.exceptions import ErrorDetail, ValidationError
 from app.main import app
 from app.modules.auth.application.commands.login.command import LoginCommand
 from app.modules.auth.application.commands.login.result import LoginResult
@@ -12,7 +11,7 @@ from app.modules.auth.dependencies import (
     get_logout_command_use_case,
     get_refresh_token_command_use_case,
 )
-from app.modules.auth.domain.exceptions import AuthenticationError
+from app.modules.auth.domain.exceptions import AuthenticationError, UserNotRegisteredError
 
 LOGIN_SAMPLE = "firebase-sample"
 REFRESH_SAMPLE = "refresh-sample"
@@ -37,28 +36,10 @@ class RejectingLoginCommandUseCase(FakeLoginCommandUseCase):
         raise AuthenticationError()
 
 
-class ConsentEnforcingLoginCommandUseCase:
-    def __init__(self) -> None:
-        self.command: LoginCommand | None = None
-
+class UnregisteredLoginCommandUseCase(FakeLoginCommandUseCase):
     async def execute(self, command: LoginCommand) -> LoginResult:
-        self.command = command
-        details: list[ErrorDetail] = []
-        if not command.terms_accepted:
-            details.append(
-                ErrorDetail(field="termsAccepted", message="이용약관에 동의해야 합니다.")
-            )
-        if not command.privacy_accepted:
-            details.append(
-                ErrorDetail(field="privacyAccepted", message="개인정보 처리방침에 동의해야 합니다.")
-            )
-        if details:
-            raise ValidationError(details)
-        return LoginResult(
-            access_token="access-token",
-            refresh_token="refresh-token",
-            expires_in=1800,
-        )
+        self.login_id_token = command.provider_token
+        raise UserNotRegisteredError()
 
 
 class FakeRefreshTokenCommandUseCase:
@@ -102,49 +83,20 @@ async def test_login_endpoint_returns_token_envelope(client: AsyncClient) -> Non
     }
 
 
-async def test_login_with_consent_succeeds(client: AsyncClient) -> None:
-    command_use_case = ConsentEnforcingLoginCommandUseCase()
-    app.dependency_overrides[get_login_command_use_case] = lambda: command_use_case
+async def test_unregistered_login_uses_404_machine_readable_error(
+    client: AsyncClient,
+) -> None:
+    app.dependency_overrides[get_login_command_use_case] = lambda: UnregisteredLoginCommandUseCase()
 
-    response = await client.post(
-        "/api/v1/auth/login",
-        json={
-            "idToken": LOGIN_SAMPLE,
-            "termsVersion": "v1",
-            "privacyVersion": "v1",
-            "termsAccepted": True,
-            "privacyAccepted": True,
-        },
-    )
+    response = await client.post("/api/v1/auth/login", json={"idToken": LOGIN_SAMPLE})
 
     body = response.json()
-    assert response.status_code == 200
-    assert command_use_case.command is not None
-    assert command_use_case.command.terms_accepted is True
-    assert command_use_case.command.privacy_accepted is True
-    assert command_use_case.command.terms_version == "v1"
-    assert body["success"] is True
-    assert body["data"]["accessToken"] == "access-token"
-
-
-async def test_login_missing_terms_consent_uses_422_envelope(client: AsyncClient) -> None:
-    app.dependency_overrides[get_login_command_use_case] = lambda: (
-        ConsentEnforcingLoginCommandUseCase()
-    )
-
-    response = await client.post(
-        "/api/v1/auth/login",
-        json={"idToken": LOGIN_SAMPLE, "privacyAccepted": True},
-    )
-
-    body = response.json()
-    assert response.status_code == 422
+    assert response.status_code == 404
     assert body["success"] is False
-    assert body["status"] == 422
+    assert body["status"] == 404
     assert body["data"]["path"] == "/api/v1/auth/login"
-    assert body["data"]["errors"] == [
-        {"field": "termsAccepted", "message": "이용약관에 동의해야 합니다."}
-    ]
+    assert body["data"]["code"] == "USER_NOT_REGISTERED"
+    assert body["data"]["message"] == "가입되지 않은 사용자입니다."
 
 
 async def test_invalid_firebase_token_uses_401_envelope(client: AsyncClient) -> None:
@@ -188,6 +140,28 @@ async def test_login_rejects_empty_id_token_at_request_boundary(client: AsyncCli
     assert body["data"]["path"] == "/api/v1/auth/login"
     assert body["data"]["errors"] == [
         {"field": "idToken", "message": "String should have at least 1 character"}
+    ]
+
+
+async def test_login_rejects_legacy_consent_fields_at_request_boundary(
+    client: AsyncClient,
+) -> None:
+    command_use_case = FakeLoginCommandUseCase()
+    app.dependency_overrides[get_login_command_use_case] = lambda: command_use_case
+
+    response = await client.post(
+        "/api/v1/auth/login",
+        json={"idToken": LOGIN_SAMPLE, "termsAccepted": True},
+    )
+
+    body = response.json()
+    assert response.status_code == 422
+    assert command_use_case.login_id_token is None
+    assert body["success"] is False
+    assert body["status"] == 422
+    assert body["data"]["path"] == "/api/v1/auth/login"
+    assert body["data"]["errors"] == [
+        {"field": "termsAccepted", "message": "Extra inputs are not permitted"}
     ]
 
 
@@ -241,3 +215,35 @@ async def test_auth_openapi_documents_error_envelopes(client: AsyncClient) -> No
     assert login_responses["401"]["content"]["application/json"]["schema"]["$ref"].endswith(
         "CommonResponse_ApiErrorData_"
     )
+
+
+async def test_auth_openapi_scopes_user_not_registered_to_login_only(
+    client: AsyncClient,
+) -> None:
+    schema = (await client.get("/openapi.json")).json()
+
+    login_responses = schema["paths"]["/api/v1/auth/login"]["post"]["responses"]
+    refresh_responses = schema["paths"]["/api/v1/auth/refresh"]["post"]["responses"]
+    logout_responses = schema["paths"]["/api/v1/auth/logout"]["post"]["responses"]
+
+    assert "404" in login_responses
+    assert "USER_NOT_REGISTERED" in login_responses["404"]["description"]
+    assert "404" not in refresh_responses
+    assert "404" not in logout_responses
+    assert "USER_NOT_REGISTERED" not in str(refresh_responses)
+    assert "USER_NOT_REGISTERED" not in str(logout_responses)
+
+
+async def test_login_openapi_request_schema_only_contains_id_token(
+    client: AsyncClient,
+) -> None:
+    schema = (await client.get("/openapi.json")).json()
+
+    login_schema_ref = schema["paths"]["/api/v1/auth/login"]["post"]["requestBody"]["content"][
+        "application/json"
+    ]["schema"]["$ref"]
+    schema_name = login_schema_ref.rsplit("/", maxsplit=1)[-1]
+    login_schema = schema["components"]["schemas"][schema_name]
+
+    assert login_schema["properties"].keys() == {"idToken"}
+    assert login_schema["required"] == ["idToken"]

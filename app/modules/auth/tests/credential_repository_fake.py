@@ -20,6 +20,21 @@ class FakeCredentialRepository(CredentialRepository):
         self.revoked_hashes: list[str] = []
         self.revoked_session_ids: set[UUID] = set()
 
+    def seed_existing_external_identity(
+        self,
+        *,
+        identity: ExternalIdentity,
+        credentials: UserCredential | None = None,
+    ) -> UserCredential:
+        stored_credentials = credentials or UserCredential.create(user_id=uuid4(), role="user")
+        identity_key = (identity.issuer.value, identity.subject.value)
+        canonical_email = _canonical_email(identity)
+        self.credentials_by_identity[identity_key] = stored_credentials
+        self.credentials_by_user_id[stored_credentials.user_id] = stored_credentials
+        if identity.email_verified and canonical_email is not None:
+            self.credentials_by_verified_email[canonical_email] = stored_credentials
+        return stored_credentials
+
     async def find_by_external_identity(
         self,
         *,

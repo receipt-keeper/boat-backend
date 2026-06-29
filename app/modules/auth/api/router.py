@@ -1,5 +1,3 @@
-from typing import Any
-
 from fastapi import APIRouter, Response, status
 
 from app.core.http.responses import ApiErrorData, CommonResponse
@@ -15,21 +13,19 @@ from app.modules.auth.dependencies import (
     RefreshTokenCommandUseCaseDep,
 )
 
-_ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
-    status.HTTP_401_UNAUTHORIZED: {
-        "model": CommonResponse[ApiErrorData],
-        "description": "인증 실패",
-    },
-    status.HTTP_422_UNPROCESSABLE_CONTENT: {
-        "model": CommonResponse[ApiErrorData],
-        "description": "검증 실패 — 요청 형식 오류 또는 도메인 검증 실패",
-    },
-}
-
 router = APIRouter(
     prefix="/auth",
     tags=["auth"],
-    responses=_ERROR_RESPONSES,
+    responses={
+        status.HTTP_401_UNAUTHORIZED: {
+            "model": CommonResponse[ApiErrorData],
+            "description": "인증 실패",
+        },
+        status.HTTP_422_UNPROCESSABLE_CONTENT: {
+            "model": CommonResponse[ApiErrorData],
+            "description": "검증 실패 — 요청 형식 오류 또는 도메인 검증 실패",
+        },
+    },
 )
 
 
@@ -47,9 +43,15 @@ def _token_response(tokens: LoginResult | RefreshTokenResult) -> AuthTokenRespon
     response_model=CommonResponse[AuthTokenResponse],
     summary="소셜 로그인",
     description=(
-        "Firebase 로그인 후 받은 idToken으로 백엔드 accessToken과 refreshToken을 발급한다. "
-        "신규 사용자는 약관 및 개인정보 처리방침 동의값을 함께 보내야 한다."
+        "가입된 사용자가 Firebase 로그인 후 받은 idToken으로 "
+        "백엔드 accessToken과 refreshToken을 발급한다."
     ),
+    responses={
+        status.HTTP_404_NOT_FOUND: {
+            "model": CommonResponse[ApiErrorData],
+            "description": "USER_NOT_REGISTERED — 가입되지 않은 사용자",
+        },
+    },
 )
 async def login(
     request: LoginRequest,
@@ -58,10 +60,6 @@ async def login(
     tokens = await command_use_case.execute(
         LoginCommand(
             provider_token=request.id_token,
-            terms_version=request.terms_version,
-            privacy_version=request.privacy_version,
-            terms_accepted=request.terms_accepted,
-            privacy_accepted=request.privacy_accepted,
         )
     )
     return CommonResponse(

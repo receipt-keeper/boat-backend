@@ -1,4 +1,4 @@
-from app.core.domain.exceptions import DomainError
+from app.core.domain.exceptions import DomainError, NotFoundError
 
 
 class AuthenticationError(DomainError):
@@ -11,6 +11,15 @@ class AuthenticationError(DomainError):
 class AuthenticationRequiredError(AuthenticationError):
     def __init__(self) -> None:
         super().__init__("인증 정보가 필요합니다.")
+
+
+class UserNotRegisteredError(NotFoundError):
+    def __init__(self) -> None:
+        super().__init__("가입되지 않은 사용자입니다.")
+
+    @property
+    def code(self) -> str:
+        return "USER_NOT_REGISTERED"
 
 
 class AuthorizationError(DomainError):
