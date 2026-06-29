@@ -26,17 +26,6 @@ TEST_SESSION_ID = UUID("00000000-0000-0000-0000-000000000103")
 TEST_FILE_ID = UUID("00000000-0000-0000-0000-000000000201")
 SECOND_TEST_FILE_ID = UUID("00000000-0000-0000-0000-000000000202")
 PNG_BYTES = b"\x89PNG\r\n\x1a\nreceipt-image"
-TEST_SETTINGS = Settings(
-    jwt_secret_key="x" * 48,
-    jwt_issuer="boat-backend-test",
-    jwt_audience="boat-api-test",
-)
-DEV_TEST_SETTINGS = Settings(
-    app_env="dev",
-    jwt_secret_key="x" * 48,
-    jwt_issuer="boat-backend-test",
-    jwt_audience="boat-api-test",
-)
 
 
 @dataclass(frozen=True)
@@ -99,6 +88,23 @@ class CategoryReceiptOcrClient:
         )
 
 
+def _test_settings() -> Settings:
+    return Settings(
+        jwt_secret_key="x" * 48,
+        jwt_issuer="boat-backend-test",
+        jwt_audience="boat-api-test",
+    )
+
+
+def _dev_test_settings() -> Settings:
+    return Settings(
+        app_env="dev",
+        jwt_secret_key="x" * 48,
+        jwt_issuer="boat-backend-test",
+        jwt_audience="boat-api-test",
+    )
+
+
 async def _fake_authenticate_current_principal(request: Request) -> AuthenticatedPrincipal:
     principal = AuthenticatedPrincipal(
         user_id=TEST_USER_ID,
@@ -114,11 +120,11 @@ async def _fake_authenticate_current_principal(request: Request) -> Authenticate
 async def _client(
     session_factory: async_sessionmaker[AsyncSession],
     *,
-    settings: Settings = TEST_SETTINGS,
+    settings: Settings | None = None,
     authenticated: bool = True,
     receipt_ocr_client: _ReceiptOcrClientStub | None = None,
 ) -> AsyncIterator[AsyncClient]:
-    test_app = create_app(settings)
+    test_app = create_app(settings or _test_settings())
     test_app.state.session_factory = session_factory
     if authenticated:
         test_app.dependency_overrides[authenticate_current_principal] = (
@@ -230,7 +236,7 @@ async def test_create_receipt_persists_final_values(
 
 
 def test_receipts_expose_final_registration_route_only() -> None:
-    schema = create_app(TEST_SETTINGS).openapi()
+    schema = create_app(_test_settings()).openapi()
     paths = schema["paths"]
 
     assert set(paths["/api/v1/receipts"]) == {"get", "post"}
@@ -241,7 +247,7 @@ def test_receipts_expose_final_registration_route_only() -> None:
 
 
 def test_receipts_openapi_includes_app_test_examples() -> None:
-    schema = create_app(TEST_SETTINGS).openapi()
+    schema = create_app(_test_settings()).openapi()
     paths = schema["paths"]
 
     list_operation = paths["/api/v1/receipts"]["get"]
@@ -389,7 +395,7 @@ async def test_dev_list_receipts_returns_mock_data_when_user_has_no_receipts(
 ) -> None:
     async with _client(postgres_session_factory) as client:
         local_response = await client.get("/api/v1/receipts")
-    async with _client(postgres_session_factory, settings=DEV_TEST_SETTINGS) as client:
+    async with _client(postgres_session_factory, settings=_dev_test_settings()) as client:
         dev_response = await client.get("/api/v1/receipts?limit=2")
         dev_body = dev_response.json()
         dev_next_response = await client.get(
@@ -400,10 +406,18 @@ async def test_dev_list_receipts_returns_mock_data_when_user_has_no_receipts(
             },
         )
         dev_search_response = await client.get("/api/v1/receipts?q=주방")
+        stale_cursor_response = await client.get(
+            "/api/v1/receipts",
+            params={
+                "q": "주방",
+                "cursor": dev_body["data"]["pagination"]["nextCursor"],
+            },
+        )
 
     local_body = local_response.json()
     dev_next_body = dev_next_response.json()
     dev_search_body = dev_search_response.json()
+    stale_cursor_body = stale_cursor_response.json()
 
     assert local_response.status_code == 200
     assert local_body["data"]["receipts"] == []
@@ -426,6 +440,41 @@ async def test_dev_list_receipts_returns_mock_data_when_user_has_no_receipts(
     assert dev_search_response.status_code == 200
     assert dev_search_body["data"]["totalCount"] == 1
     assert dev_search_body["data"]["receipts"][0]["memo"] == "주방 냉장고"
+
+    assert stale_cursor_response.status_code == 422
+    assert stale_cursor_body["data"]["errors"][0] == {
+        "field": "cursor",
+        "message": "유효하지 않은 커서입니다.",
+    }
+
+
+async def test_dev_list_receipts_keeps_filtered_empty_result_when_user_has_receipts(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with _client(postgres_session_factory, settings=_dev_test_settings()) as client:
+        await _create_receipt(
+            client,
+            item_name="LG 세탁기",
+            brand_name="LG",
+            payment_location="하이마트",
+            payment_date=date(2024, 6, 1),
+            total_amount=1200000,
+            period_months=12,
+            category="생활 가전",
+        )
+        filtered_response = await client.get("/api/v1/receipts?q=없는값")
+
+    filtered_body = filtered_response.json()
+
+    assert filtered_response.status_code == 200
+    assert filtered_body["data"]["receipts"] == []
+    assert filtered_body["data"]["totalCount"] == 0
+    assert filtered_body["data"]["pagination"] == {
+        "nextCursor": None,
+        "hasNext": False,
+        "limit": 20,
+        "totalCount": 0,
+    }
 
 
 async def test_receipt_detail_update_and_delete_use_persisted_data(

@@ -1,4 +1,5 @@
 import base64
+import binascii
 import json
 from typing import Annotated, Any
 from uuid import UUID
@@ -7,6 +8,7 @@ from fastapi import APIRouter, Depends, Query, status
 
 from app.core.config.dependencies import get_request_settings
 from app.core.config.settings import Settings
+from app.core.domain.exceptions import ErrorDetail, ValidationError
 from app.core.http.auth import CurrentPrincipalDep
 from app.core.http.responses import ApiErrorData, CommonResponse, CursorPaginationResponse
 from app.modules.receipts.api.examples import (
@@ -107,6 +109,29 @@ async def list_receipts(
         )
     )
     if settings.app_env == "dev" and result.total_count == 0:
+        unfiltered_result = await query_use_case.execute(
+            ListReceiptsQuery(
+                user_id=principal.user_id,
+                status=ReceiptStatusFilter.ALL,
+                sort=ReceiptSort.RECENT,
+                limit=1,
+            )
+        )
+        if unfiltered_result.total_count > 0:
+            return CommonResponse(
+                success=True,
+                status=status.HTTP_200_OK,
+                data=ReceiptListResponse(
+                    receipts=[],
+                    totalCount=result.total_count,
+                    pagination=CursorPaginationResponse(
+                        nextCursor=result.next_cursor,
+                        hasNext=result.has_next,
+                        limit=result.limit,
+                        totalCount=result.total_count,
+                    ),
+                ),
+            )
         return CommonResponse(
             success=True,
             status=status.HTTP_200_OK,
@@ -131,7 +156,7 @@ async def list_receipts(
 
 def _dev_mock_receipt_list_response(query: ReceiptListQuery) -> ReceiptListResponse:
     filtered_receipts = _filter_dev_mock_receipts(query)
-    start = _dev_mock_start_index(filtered_receipts, query.cursor)
+    start = _dev_mock_start_index(filtered_receipts, query.cursor, sort=query.sort)
     end = min(start + query.limit, len(filtered_receipts))
     page_items = filtered_receipts[start:end]
     has_next = end < len(filtered_receipts)
@@ -180,14 +205,19 @@ def _filter_dev_mock_receipts(query: ReceiptListQuery) -> list[ReceiptResponse]:
     )
 
 
-def _dev_mock_start_index(receipts: list[ReceiptResponse], cursor: str | None) -> int:
+def _dev_mock_start_index(
+    receipts: list[ReceiptResponse],
+    cursor: str | None,
+    *,
+    sort: ReceiptSort,
+) -> int:
     if cursor is None:
         return 0
-    cursor_receipt_id = _decode_dev_mock_cursor_receipt_id(cursor)
+    cursor_receipt_id = _decode_dev_mock_cursor_receipt_id(cursor, sort=sort)
     for index, receipt in enumerate(receipts):
         if receipt.receipt_id == cursor_receipt_id:
             return index + 1
-    return 0
+    raise _invalid_dev_mock_cursor_error()
 
 
 def _encode_dev_mock_cursor(*, sort: ReceiptSort, receipt: ReceiptResponse) -> str:
@@ -202,10 +232,27 @@ def _encode_dev_mock_cursor(*, sort: ReceiptSort, receipt: ReceiptResponse) -> s
     return encoded.rstrip("=")
 
 
-def _decode_dev_mock_cursor_receipt_id(cursor: str) -> UUID:
-    padded_cursor = cursor + "=" * (-len(cursor) % 4)
-    payload = json.loads(base64.urlsafe_b64decode(padded_cursor).decode("utf-8"))
-    return UUID(payload["id"])
+def _decode_dev_mock_cursor_receipt_id(cursor: str, *, sort: ReceiptSort) -> UUID:
+    try:
+        padded_cursor = cursor + "=" * (-len(cursor) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(padded_cursor).decode("utf-8"))
+        cursor_sort = ReceiptSort(payload["sort"])
+        if cursor_sort != sort:
+            raise ValueError("cursor sort mismatch")
+        return UUID(payload["id"])
+    except (
+        binascii.Error,
+        KeyError,
+        TypeError,
+        ValueError,
+        json.JSONDecodeError,
+        UnicodeDecodeError,
+    ) as exception:
+        raise _invalid_dev_mock_cursor_error() from exception
+
+
+def _invalid_dev_mock_cursor_error() -> ValidationError:
+    return ValidationError([ErrorDetail(field="cursor", message="유효하지 않은 커서입니다.")])
 
 
 def _dev_mock_cursor_value(sort: ReceiptSort, receipt: ReceiptResponse) -> Any:
