@@ -282,7 +282,7 @@ def test_receipts_openapi_includes_app_test_examples() -> None:
     assert detail_response_example["data"]["itemName"] == "삼성 냉장고 875L"
     assert {"type": "null"} in receipt_response_properties["imageUrl"]["anyOf"]
     assert update_request_examples["partial_update"]["value"]["item_name"] == "삼성 냉장고 900L"
-    assert "paymentLocation" not in update_response_example["data"]
+    assert update_response_example["data"]["paymentLocation"] == "전자랜드"
     assert delete_response_example == {"success": True, "status": 200}
 
 
