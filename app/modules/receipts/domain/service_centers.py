@@ -1,3 +1,4 @@
+import re
 from dataclasses import dataclass
 from urllib.parse import quote_plus
 
@@ -73,9 +74,26 @@ def resolve_service_center_url(*, brand_name: str | None, item_name: str) -> str
 
 def _find_official_url(text: str) -> str | None:
     for service_center in OFFICIAL_SERVICE_CENTER_LINKS:
-        if any(_normalize(alias) in text for alias in service_center.aliases):
+        if any(_matches_alias(text=text, alias=alias) for alias in service_center.aliases):
             return service_center.url
     return None
+
+
+def _matches_alias(*, text: str, alias: str) -> bool:
+    normalized_alias = _normalize(alias)
+    if not normalized_alias:
+        return False
+    if _is_ascii_alias(normalized_alias):
+        return (
+            re.search(rf"(?<![a-z0-9]){re.escape(normalized_alias)}(?![a-z0-9])", text) is not None
+        )
+    if len(normalized_alias) == 1:
+        return normalized_alias in text.split()
+    return normalized_alias in text
+
+
+def _is_ascii_alias(value: str) -> bool:
+    return value.isascii() and any(character.isalpha() for character in value)
 
 
 def _normalize(value: str | None) -> str:

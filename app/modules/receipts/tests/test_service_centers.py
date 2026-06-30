@@ -31,6 +31,23 @@ def test_resolve_service_center_url_uses_item_name_when_brand_is_missing() -> No
     )
 
 
+def test_resolve_service_center_url_matches_latin_alias_before_korean_product_text() -> None:
+    assert (
+        resolve_service_center_url(brand_name=None, item_name="LG세탁기")
+        == "https://www.lge.co.kr/support"
+    )
+
+
+@pytest.mark.parametrize("item_name", ["신형 모델 세탁기", "Bulgari 스마트워치", "Pegasus 노트북"])
+def test_resolve_service_center_url_does_not_match_short_alias_substrings(
+    item_name: str,
+) -> None:
+    url = resolve_service_center_url(brand_name=None, item_name=item_name)
+
+    assert url.startswith("https://search.naver.com/search.naver")
+    assert _fallback_query(url) == f"{item_name} 서비스센터"
+
+
 def test_resolve_service_center_url_falls_back_to_brand_search() -> None:
     url = resolve_service_center_url(brand_name="보트전자", item_name="전기포트")
 
