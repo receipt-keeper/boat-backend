@@ -222,6 +222,7 @@ async def test_create_receipt_persists_final_values(
     assert data["expiresOn"] == "2026-05-26"
     assert data["requiresPhysicalReceipt"] is True
     assert data["receiptFileIds"] == [str(TEST_FILE_ID), str(SECOND_TEST_FILE_ID)]
+    assert data["supportUrl"] == "https://www.samsungsvc.co.kr"
 
     async with postgres_session_factory() as session:
         record = await session.get(receipt_orm.Receipt, UUID(data["receiptId"]))
@@ -386,6 +387,13 @@ async def test_list_receipts_supports_home_list_and_search_contract(
     assert recent_body["data"]["pagination"]["limit"] == 2
     assert recent_body["data"]["pagination"]["totalCount"] == 3
     assert recent_body["data"]["receipts"][0]["imageUrl"] is None
+    expected_support_urls = {
+        "다이슨 청소기": "https://www.dyson.co.kr/support",
+        "LG 세탁기": "https://www.lge.co.kr/support",
+        "삼성 냉장고 875L": "https://www.samsungsvc.co.kr",
+    }
+    for receipt in recent_body["data"]["receipts"]:
+        assert receipt["supportUrl"] == expected_support_urls[receipt["itemName"]]
     assert next_response.status_code == 200
     assert next_body["data"]["pagination"] == {
         "nextCursor": None,

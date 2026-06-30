@@ -72,6 +72,7 @@ RECEIPT_RESPONSE_EXAMPLE: Final = {
     "memo": "앱 연동 테스트",
     "requiresPhysicalReceipt": True,
     "receiptFileIds": [SAMPLE_RECEIPT_FILE_ID],
+    "supportUrl": "https://www.samsungsvc.co.kr",
     "warrantyDDay": 731,
     "registeredAt": "2026-06-29T12:00:00",
 }
