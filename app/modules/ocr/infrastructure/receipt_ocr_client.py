@@ -17,7 +17,8 @@ You are an information extraction specialist for receipts.
 Extract only information that is clearly supported by the receipt image.
 Do not guess missing or ambiguous values.
 If a field is not visible or uncertain, return null.
-Suggest one broad category only when it is clearly supported by the receipt.
+Suggest category and sub_category only from the configured schema descriptions.
+If a product does not fit a listed sub-category but fits a category, use sub_category "기타".
 Normalize dates to YYYY-MM-DD when clearly readable.
 Normalize total_amount as an integer number only when clearly readable.
 Do not extract serial numbers. Serial number support is out of scope for MVP.
@@ -37,6 +38,7 @@ class ExtractedReceiptOcrFields:
     total_amount: int | None
     period_months: int | None
     category: str | None
+    sub_category: str | None
 
 
 class ReceiptOcrStructuredOutput(BaseModel):
@@ -67,7 +69,21 @@ class ReceiptOcrStructuredOutput(BaseModel):
     category: str | None = Field(
         default=None,
         max_length=100,
-        description="대분류 카테고리 추천값. 예: 가전, 디지털, 생활. 명확하지 않으면 null.",
+        description=(
+            "대분류 카테고리 추천값. 다음 중 하나만 사용: 주방 가전, 세탁/청소, "
+            "리빙/냉난방, IT 기기, 기타 기기. 명확하지 않으면 null."
+        ),
+    )
+    sub_category: str | None = Field(
+        default=None,
+        max_length=100,
+        description=(
+            "소분류 대표 기기명 추천값. 주방 가전: 냉장고, 전자레인지, 밥솥, 정수기. "
+            "세탁/청소: 세탁기, 건조기, 청소기, 로봇청소기. "
+            "리빙/냉난방: 에어컨, 선풍기, 공기청정기, 가습기. "
+            "IT 기기: 태블릿, 게임기, 카메라, 스피커, 무선 이어폰, 노트북, 헤드셋, "
+            "스마트워치, 핸드폰. 없거나 불명확하면 기타."
+        ),
     )
 
     def to_extracted_fields(self) -> ExtractedReceiptOcrFields:
@@ -79,6 +95,7 @@ class ReceiptOcrStructuredOutput(BaseModel):
             total_amount=self.total_amount,
             period_months=self.period_months,
             category=(self.category or "").strip() or None,
+            sub_category=(self.sub_category or "").strip() or None,
         )
 
 
@@ -104,13 +121,14 @@ class ReceiptOcrClient:
         content_type: str,
     ) -> ExtractedReceiptOcrFields:
         structured_output = ReceiptOcrStructuredOutput(
-            item_name="테스트 전자제품",
-            brand_name="BOAT",
+            item_name="삼성 냉장고 875L",
+            brand_name="삼성",
             payment_location="테스트 구매처",
             payment_date=date.today(),
             total_amount=129000,
             period_months=None,
-            category="가전",
+            category="주방 가전",
+            sub_category="냉장고",
         )
         return structured_output.to_extracted_fields()
 

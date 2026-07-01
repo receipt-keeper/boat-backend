@@ -22,7 +22,8 @@ _SUCCESS_EXAMPLE = {
         "total_amount": 5137000,
         "period_months": 12,
         "expires_on": "2025-05-26",
-        "category": "가전",
+        "category": "주방 가전",
+        "sub_category": "냉장고",
         "needs_review": True,
         "warnings": ["무상 AS 기간을 찾지 못해 12개월 기본값을 적용했습니다."],
     },
@@ -74,7 +75,8 @@ router = APIRouter(
     summary="영수증 OCR 분석",
     description=(
         "multipart/form-data로 전달된 영수증 이미지를 저장하지 않고 분석만 수행한다. "
-        "대표 결제 항목, 브랜드, 구매처, 구매일, 금액, AS 기간, 대분류 카테고리 후보를 추출한다. "
+        "대표 결제 항목, 브랜드, 구매처, 구매일, 금액, AS 기간, "
+        "대분류/소분류 카테고리 후보를 추출한다. "
         "영수증 원본 파일 보관 및 연결은 receipts 저장 API의 receipt_file_ids에서 처리한다."
     ),
     response_model=CommonResponse[ReceiptOcrResultResponse],
@@ -144,6 +146,7 @@ async def extract_receipt_ocr(
             period_months=result.period_months.value,
             expires_on=result.expires_on,
             category=result.category,
+            sub_category=result.sub_category,
             needs_review=bool(result.warnings),
             warnings=list(result.warnings),
         ),

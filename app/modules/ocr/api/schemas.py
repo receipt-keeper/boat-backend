@@ -17,7 +17,8 @@ class ReceiptOcrResultResponse(AppBaseModel):
                     "total_amount": 5137000,
                     "period_months": 12,
                     "expires_on": "2025-05-26",
-                    "category": "가전",
+                    "category": "주방 가전",
+                    "sub_category": "냉장고",
                     "needs_review": True,
                     "warnings": ["무상 AS 기간을 찾지 못해 12개월 기본값을 적용했습니다."],
                 }
@@ -34,6 +35,9 @@ class ReceiptOcrResultResponse(AppBaseModel):
     expires_on: date = Field(description="무상 AS 만료일")
     category: str | None = Field(
         description="대분류 카테고리 추천값. 사용자가 수정 후 저장할 수 있다."
+    )
+    sub_category: str | None = Field(
+        description="소분류 대표 기기명 추천값. 사용자가 수정 후 저장할 수 있다."
     )
     needs_review: bool = Field(description="기본값 적용 등 사용자 확인이 필요한지 여부")
     warnings: list[str] = Field(description="사용자 확인이 필요한 항목 안내")
