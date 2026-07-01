@@ -49,7 +49,7 @@ class CreditTransactionResponse(AppBaseModel):
         return cls(
             reason=transaction.reason,
             action=transaction.action,
-            amount=transaction.amount,
+            amount=transaction.amount.value,
             createdAt=transaction.created_at.isoformat(),
         )
 

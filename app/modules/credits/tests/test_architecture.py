@@ -21,6 +21,7 @@ FORBIDDEN_DOMAIN_IMPORT_PREFIXES = (
 )
 EXPECTED_PUBLIC_DOMAIN_SYMBOLS = {
     "CreditAction",
+    "CreditAmount",
     "CreditBalance",
     "CreditCount",
     "CreditReason",

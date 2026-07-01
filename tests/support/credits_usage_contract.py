@@ -17,7 +17,13 @@ from app.modules.credits.application.ports.credit_repository import (
     CreditTransactionListResult,
 )
 from app.modules.credits.dependencies import get_credit_repository
-from app.modules.credits.domain import CreditAction, CreditBalance, CreditReason
+from app.modules.credits.domain import (
+    CreditAction,
+    CreditAmount,
+    CreditBalance,
+    CreditReason,
+    UserCredit,
+)
 from app.modules.users.application.queries.current_user_profile.query import (
     CurrentUserProfileQuery,
 )
@@ -130,6 +136,22 @@ class CreditRepositoryStub(CreditRepository):
             remaining_count=0,
         )
 
+    async def get_user_credit_for_update(self, *, user_id: UUID) -> UserCredit:
+        raise AssertionError("contract read app should not lock credit balance")
+
+    async def save(self, *, user_credit: UserCredit) -> None:
+        raise AssertionError("contract read app should not save credit balance")
+
+    async def append_transaction(
+        self,
+        *,
+        user_id: UUID,
+        reason: CreditReason,
+        action: CreditAction,
+        amount: CreditAmount,
+    ) -> None:
+        raise AssertionError("contract read app should not append credit transactions")
+
     async def list_transactions(
         self,
         *,
@@ -184,7 +206,7 @@ def _credit_transactions_for(user_id: UUID) -> tuple[CreditTransactionListItem, 
             user_id=user_id,
             reason=CreditReason("monthlyOcrAllowance"),
             action=CreditAction.GRANT,
-            amount=12,
+            amount=CreditAmount(value=12, field_name="amount"),
             created_at=datetime(2026, 6, 29, 9, 0, tzinfo=UTC),
         ),
         CreditTransactionListItem(
@@ -192,7 +214,7 @@ def _credit_transactions_for(user_id: UUID) -> tuple[CreditTransactionListItem, 
             user_id=user_id,
             reason=CreditReason("eventOcrAllowance"),
             action=CreditAction.GRANT,
-            amount=3,
+            amount=CreditAmount(value=3, field_name="amount"),
             created_at=datetime(2026, 6, 29, 9, 3, tzinfo=UTC),
         ),
         CreditTransactionListItem(
@@ -200,7 +222,7 @@ def _credit_transactions_for(user_id: UUID) -> tuple[CreditTransactionListItem, 
             user_id=user_id,
             reason=CreditReason("ocrUsage"),
             action=CreditAction.USE,
-            amount=5,
+            amount=CreditAmount(value=5, field_name="amount"),
             created_at=datetime(2026, 6, 29, 9, 5, tzinfo=UTC),
         ),
     )

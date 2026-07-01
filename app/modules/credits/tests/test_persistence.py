@@ -13,7 +13,10 @@ from app.modules.credits.application.queries.list_credit_transactions.use_case i
     InvalidCreditTransactionCursorError,
     ListCreditTransactionsQueryUseCase,
 )
-from app.modules.credits.domain import CreditAction, CreditReason
+from app.modules.credits.domain import (
+    CreditAction,
+    CreditReason,
+)
 from app.modules.credits.infrastructure.persistence import orm
 from app.modules.credits.infrastructure.persistence.repository import (
     SqlAlchemyCreditRepository,
@@ -230,8 +233,5 @@ def _transaction(
     )
 
 
-def _user_credit_orm_type() -> type:
-    user_credit_type = getattr(orm, "UserCredit", None)
-
-    assert user_credit_type is not None, "UserCredit ORM class is missing"
-    return user_credit_type
+def _user_credit_orm_type() -> type[orm.UserCredit]:
+    return orm.UserCredit

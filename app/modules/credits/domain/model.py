@@ -6,8 +6,10 @@ from uuid import UUID
 
 from app.core.domain.entity import Entity
 from app.core.domain.exceptions import ErrorDetail, ValidationError
+from app.modules.credits.domain.exceptions import InsufficientCreditError
 
 _NON_NEGATIVE_COUNT_MESSAGE = "크레딧 횟수는 0 이상이어야 합니다."
+_POSITIVE_AMOUNT_MESSAGE = "크레딧 수량은 1 이상이어야 합니다."
 
 
 class CreditReason(StrEnum):
@@ -37,6 +39,23 @@ class CreditCount:
                     ErrorDetail(
                         field=field_name,
                         message=_NON_NEGATIVE_COUNT_MESSAGE,
+                    )
+                ]
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class CreditAmount:
+    value: int
+    field_name: InitVar[str] = "amount"
+
+    def __post_init__(self, field_name: str) -> None:
+        if self.value < 1:
+            raise ValidationError(
+                [
+                    ErrorDetail(
+                        field=field_name,
+                        message=_POSITIVE_AMOUNT_MESSAGE,
                     )
                 ]
             )
@@ -86,7 +105,7 @@ class CreditBalance:
     def remaining_count(self) -> int:
         return self.remaining.value
 
-    def can_cover(self, amount: CreditCount) -> bool:
+    def can_cover(self, amount: CreditAmount) -> bool:
         return self.remaining.value >= amount.value
 
 
@@ -95,7 +114,7 @@ class CreditTransaction:
     feature_key: FeatureKey
     reason: CreditReason
     action: CreditAction
-    amount: int
+    amount: CreditAmount
     created_at: datetime
 
 
@@ -137,10 +156,17 @@ class UserCredit(Entity[UUID]):
     def remaining_count(self) -> int:
         return self.balance.remaining_count
 
-    def can_use(self, amount: int) -> bool:
-        if amount <= 0:
-            return False
-        return self.balance.can_cover(CreditCount(value=amount, field_name="amount"))
+    def can_use(self, amount: CreditAmount) -> bool:
+        return self.balance.can_cover(amount)
+
+    def use(self, amount: CreditAmount) -> None:
+        if not self.can_use(amount):
+            raise InsufficientCreditError()
+        self.balance = CreditBalance(
+            total_granted_count=self.total_granted_count,
+            used_count=self.used_count + amount.value,
+            remaining_count=self.remaining_count - amount.value,
+        )
 
 
 def _credit_count_for(value: int | CreditCount, *, field_name: str) -> CreditCount:

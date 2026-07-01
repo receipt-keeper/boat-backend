@@ -8,7 +8,14 @@ from app.modules.credits.application.ports.credit_repository import (
     CreditTransactionCursor,
     CreditTransactionListResult,
 )
-from app.modules.credits.domain import CreditBalance, FeatureKey
+from app.modules.credits.domain import (
+    CreditAction,
+    CreditAmount,
+    CreditBalance,
+    CreditReason,
+    FeatureKey,
+    UserCredit,
+)
 from app.modules.credits.infrastructure.persistence import mapper, orm
 
 
@@ -22,6 +29,56 @@ class SqlAlchemyCreditRepository(CreditRepository):
             {"user_id": user_id, "feature_key": FeatureKey.OCR.value},
         )
         return mapper.user_credit_to_balance(record, user_id=user_id)
+
+    async def get_user_credit_for_update(self, *, user_id: UUID) -> UserCredit:
+        record = await self._session.scalar(
+            select(orm.UserCredit)
+            .where(
+                orm.UserCredit.user_id == user_id,
+                orm.UserCredit.feature_key == FeatureKey.OCR.value,
+            )
+            .with_for_update()
+        )
+        return mapper.user_credit_to_domain(record, user_id=user_id)
+
+    async def save(self, *, user_credit: UserCredit) -> None:
+        record = await self._session.get(
+            orm.UserCredit,
+            {"user_id": user_credit.id, "feature_key": user_credit.feature_key.value},
+        )
+        if record is None:
+            self._session.add(
+                orm.UserCredit(
+                    user_id=user_credit.id,
+                    feature_key=user_credit.feature_key.value,
+                    total_granted_count=user_credit.total_granted_count,
+                    used_count=user_credit.used_count,
+                    remaining_count=user_credit.remaining_count,
+                )
+            )
+            return
+
+        record.total_granted_count = user_credit.total_granted_count
+        record.used_count = user_credit.used_count
+        record.remaining_count = user_credit.remaining_count
+
+    async def append_transaction(
+        self,
+        *,
+        user_id: UUID,
+        reason: CreditReason,
+        action: CreditAction,
+        amount: CreditAmount,
+    ) -> None:
+        self._session.add(
+            orm.CreditTransaction(
+                user_id=user_id,
+                feature_key=FeatureKey.OCR.value,
+                reason=reason.value,
+                action=action.value,
+                amount=amount.value,
+            )
+        )
 
     async def list_transactions(
         self,

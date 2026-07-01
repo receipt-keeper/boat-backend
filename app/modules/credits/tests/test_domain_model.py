@@ -4,6 +4,7 @@ import pytest
 
 from app.core.domain.exceptions import ValidationError
 from app.modules.credits.domain import (
+    CreditAmount,
     CreditBalance,
     CreditCount,
     CreditReason,
@@ -100,9 +101,17 @@ def test_user_credit_can_use_when_remaining_count_covers_positive_amount() -> No
     user_credit = _restore_user_credit(total_granted_count=12, used_count=5, remaining_count=7)
 
     # When/Then: 양수 사용량만 남은 횟수 범위 안에서 허용된다.
-    assert user_credit.can_use(7) is True
-    assert user_credit.can_use(8) is False
-    assert user_credit.can_use(0) is False
+    assert user_credit.can_use(CreditAmount(value=7)) is True
+    assert user_credit.can_use(CreditAmount(value=8)) is False
+
+
+def test_credit_amount_rejects_zero_value_with_field_message() -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        CreditAmount(value=0, field_name="amount")
+
+    assert [(detail.field, detail.message) for detail in exc_info.value.details] == [
+        ("amount", "크레딧 수량은 1 이상이어야 합니다.")
+    ]
 
 
 @pytest.mark.parametrize(

@@ -1,0 +1,200 @@
+from uuid import UUID
+
+import pytest
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from app.core.db.unit_of_work import SqlAlchemyUnitOfWork
+from app.modules.credits.application.commands.finalize_credit_usage.use_case import (
+    FinalizeCreditUsageCommandUseCase,
+)
+from app.modules.credits.application.commands.reserve_credit.use_case import (
+    ReserveCreditCommandUseCase,
+)
+from app.modules.credits.application.commands.use_credit.command import UseCreditCommand
+from app.modules.credits.application.commands.use_credit.use_case import UseCreditCommandUseCase
+from app.modules.credits.domain import (
+    CreditAction,
+    CreditAmount,
+    CreditReason,
+    InsufficientCreditError,
+)
+from app.modules.credits.infrastructure.persistence import orm
+from app.modules.credits.infrastructure.persistence.repository import (
+    SqlAlchemyCreditRepository,
+)
+
+USER_ID = UUID("00000000-0000-0000-0000-000000000101")
+
+
+async def test_use_credit_command_decrements_balance_and_appends_ledger(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with postgres_session_factory() as session:
+        session.add(
+            orm.UserCredit(
+                user_id=USER_ID,
+                feature_key="ocr",
+                total_granted_count=5,
+                used_count=2,
+                remaining_count=3,
+            )
+        )
+        await session.commit()
+
+    async with postgres_session_factory() as session:
+        use_case = UseCreditCommandUseCase(
+            credit_repository=SqlAlchemyCreditRepository(session),
+            unit_of_work=SqlAlchemyUnitOfWork(session),
+        )
+
+        await use_case.execute(
+            UseCreditCommand(
+                user_id=USER_ID,
+                amount=CreditAmount(value=1, field_name="amount"),
+                reason=CreditReason.OCR_USAGE,
+            )
+        )
+
+    async with postgres_session_factory() as session:
+        saved_credit = await session.get(
+            orm.UserCredit,
+            {"user_id": USER_ID, "feature_key": "ocr"},
+        )
+        saved_transactions = tuple(
+            await session.scalars(
+                select(orm.CreditTransaction)
+                .where(orm.CreditTransaction.user_id == USER_ID)
+                .order_by(orm.CreditTransaction.created_at, orm.CreditTransaction.id)
+            )
+        )
+
+    assert saved_credit is not None
+    assert saved_credit.total_granted_count == 5
+    assert saved_credit.used_count == 3
+    assert saved_credit.remaining_count == 2
+    assert len(saved_transactions) == 1
+    assert saved_transactions[0].reason == CreditReason.OCR_USAGE.value
+    assert saved_transactions[0].action == CreditAction.USE.value
+    assert saved_transactions[0].amount == 1
+
+
+async def test_use_credit_command_rejects_insufficient_remaining_count(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with postgres_session_factory() as session:
+        session.add(
+            orm.UserCredit(
+                user_id=USER_ID,
+                feature_key="ocr",
+                total_granted_count=5,
+                used_count=5,
+                remaining_count=0,
+            )
+        )
+        await session.commit()
+
+    async with postgres_session_factory() as session:
+        use_case = UseCreditCommandUseCase(
+            credit_repository=SqlAlchemyCreditRepository(session),
+            unit_of_work=SqlAlchemyUnitOfWork(session),
+        )
+
+        with pytest.raises(InsufficientCreditError):
+            await use_case.execute(
+                UseCreditCommand(
+                    user_id=USER_ID,
+                    amount=CreditAmount(value=1, field_name="amount"),
+                    reason=CreditReason.OCR_USAGE,
+                )
+            )
+
+
+async def test_reserved_credit_rolls_back_without_usage_ledger(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with postgres_session_factory() as session:
+        session.add(
+            orm.UserCredit(
+                user_id=USER_ID,
+                feature_key="ocr",
+                total_granted_count=5,
+                used_count=2,
+                remaining_count=3,
+            )
+        )
+        await session.commit()
+
+    async with postgres_session_factory() as session:
+        command = UseCreditCommand(
+            user_id=USER_ID,
+            amount=CreditAmount(value=1, field_name="amount"),
+            reason=CreditReason.OCR_USAGE,
+        )
+        await ReserveCreditCommandUseCase(
+            credit_repository=SqlAlchemyCreditRepository(session)
+        ).execute(command)
+        await SqlAlchemyUnitOfWork(session).rollback()
+
+    async with postgres_session_factory() as session:
+        saved_credit = await session.get(
+            orm.UserCredit,
+            {"user_id": USER_ID, "feature_key": "ocr"},
+        )
+        saved_transactions = tuple(
+            await session.scalars(
+                select(orm.CreditTransaction).where(orm.CreditTransaction.user_id == USER_ID)
+            )
+        )
+
+    assert saved_credit is not None
+    assert saved_credit.used_count == 2
+    assert saved_credit.remaining_count == 3
+    assert saved_transactions == ()
+
+
+async def test_finalize_credit_usage_commits_reserved_credit_and_usage_ledger(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with postgres_session_factory() as session:
+        session.add(
+            orm.UserCredit(
+                user_id=USER_ID,
+                feature_key="ocr",
+                total_granted_count=5,
+                used_count=2,
+                remaining_count=3,
+            )
+        )
+        await session.commit()
+
+    async with postgres_session_factory() as session:
+        command = UseCreditCommand(
+            user_id=USER_ID,
+            amount=CreditAmount(value=1, field_name="amount"),
+            reason=CreditReason.OCR_USAGE,
+        )
+        repository = SqlAlchemyCreditRepository(session)
+        unit_of_work = SqlAlchemyUnitOfWork(session)
+        await ReserveCreditCommandUseCase(credit_repository=repository).execute(command)
+        await FinalizeCreditUsageCommandUseCase(
+            credit_repository=repository,
+            unit_of_work=unit_of_work,
+        ).execute(command)
+
+    async with postgres_session_factory() as session:
+        saved_credit = await session.get(
+            orm.UserCredit,
+            {"user_id": USER_ID, "feature_key": "ocr"},
+        )
+        saved_transactions = tuple(
+            await session.scalars(
+                select(orm.CreditTransaction).where(orm.CreditTransaction.user_id == USER_ID)
+            )
+        )
+
+    assert saved_credit is not None
+    assert saved_credit.used_count == 3
+    assert saved_credit.remaining_count == 2
+    assert len(saved_transactions) == 1
+    assert saved_transactions[0].reason == CreditReason.OCR_USAGE.value

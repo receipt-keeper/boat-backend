@@ -8,7 +8,13 @@ from app.modules.credits.application.ports.credit_repository import (
 from app.modules.credits.application.queries.get_credit_balance.use_case import (
     GetCreditBalanceQueryUseCase,
 )
-from app.modules.credits.domain import CreditBalance
+from app.modules.credits.domain import (
+    CreditAction,
+    CreditAmount,
+    CreditBalance,
+    CreditReason,
+    UserCredit,
+)
 from app.modules.usage.application.queries.get_usage_snapshot.query import (
     GetUsageSnapshotQuery,
 )
@@ -25,6 +31,22 @@ class CreditRepositoryStub(CreditRepository):
 
     async def get_balance(self, *, user_id: UUID) -> CreditBalance:
         return self._balance
+
+    async def get_user_credit_for_update(self, *, user_id: UUID) -> UserCredit:
+        raise AssertionError("usage snapshot should not lock credit balance")
+
+    async def save(self, *, user_credit: UserCredit) -> None:
+        raise AssertionError("usage snapshot should not save credit balance")
+
+    async def append_transaction(
+        self,
+        *,
+        user_id: UUID,
+        reason: CreditReason,
+        action: CreditAction,
+        amount: CreditAmount,
+    ) -> None:
+        raise AssertionError("usage snapshot should not append credit transactions")
 
     async def list_transactions(
         self,

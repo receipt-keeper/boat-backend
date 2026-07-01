@@ -3,7 +3,13 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
-from app.modules.credits.domain import CreditAction, CreditBalance, CreditReason
+from app.modules.credits.domain import (
+    CreditAction,
+    CreditAmount,
+    CreditBalance,
+    CreditReason,
+    UserCredit,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -18,7 +24,7 @@ class CreditTransactionListItem:
     user_id: UUID
     reason: CreditReason
     action: CreditAction
-    amount: int
+    amount: CreditAmount
     created_at: datetime
 
 
@@ -32,6 +38,25 @@ class CreditTransactionListResult:
 class CreditRepository(ABC):
     @abstractmethod
     async def get_balance(self, *, user_id: UUID) -> CreditBalance:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def get_user_credit_for_update(self, *, user_id: UUID) -> UserCredit:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def save(self, *, user_credit: UserCredit) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def append_transaction(
+        self,
+        *,
+        user_id: UUID,
+        reason: CreditReason,
+        action: CreditAction,
+        amount: CreditAmount,
+    ) -> None:
         raise NotImplementedError
 
     @abstractmethod
