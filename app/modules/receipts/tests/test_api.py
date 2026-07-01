@@ -285,6 +285,9 @@ def test_receipts_openapi_includes_app_test_examples() -> None:
     create_request_properties = schema["components"]["schemas"]["CreateReceiptRequest"][
         "properties"
     ]
+    update_request_properties = schema["components"]["schemas"]["UpdateReceiptRequest"][
+        "properties"
+    ]
     receipt_response_properties = schema["components"]["schemas"]["ReceiptResponse"]["properties"]
     create_response_example = create_operation["responses"]["201"]["content"]["application/json"][
         "example"
@@ -308,6 +311,8 @@ def test_receipts_openapi_includes_app_test_examples() -> None:
     ]
     assert "total_amount" not in create_request_examples["manual_nullable"]["value"]
     assert {"type": "null"} in create_request_properties["total_amount"]["anyOf"]
+    assert "0 이상" in create_request_properties["total_amount"]["description"]
+    assert "0 이상" in update_request_properties["total_amount"]["description"]
     assert create_response_example["status"] == 201
     assert create_response_example["data"]["receiptFileIds"] == [
         "00000000-0000-0000-0000-000000000201"

@@ -73,7 +73,7 @@ class CreateReceiptRequest(AppBaseModel):
     payment_date: date = Field(description="구매일 또는 결제일.")
     total_amount: int | None = Field(
         default=None,
-        description="총 결제 금액.",
+        description="총 결제 금액. 전달하는 경우 0 이상이어야 한다.",
     )
     period_months: int | None = Field(
         default=None,
@@ -175,7 +175,10 @@ class UpdateReceiptRequest(AppBaseModel):
         max_length=500,
     )
     payment_date: date | None = Field(default=None, description="구매일 또는 결제일.")
-    total_amount: int | None = Field(default=None, description="총 결제 금액.")
+    total_amount: int | None = Field(
+        default=None,
+        description="총 결제 금액. 전달하는 경우 0 이상이어야 한다.",
+    )
     period_months: int | None = Field(
         default=None,
         description="무상 AS 기간.",
