@@ -2,11 +2,15 @@ from typing import Annotated
 
 from fastapi import APIRouter, File, UploadFile, status
 
+from app.core.http.auth import CurrentPrincipalDep
 from app.core.http.responses import ApiErrorData, CommonResponse
 from app.modules.files.api.upload_validation import read_and_validate_uploads
 from app.modules.ocr.api.schemas import ReceiptOcrResultResponse
 from app.modules.ocr.api.upload_policy import RECEIPT_OCR_UPLOAD_POLICY
-from app.modules.ocr.dependencies import ReceiptOcrServiceDep
+from app.modules.ocr.application.commands.extract_receipt_ocr.command import (
+    ExtractReceiptOcrCommand,
+)
+from app.modules.ocr.dependencies import ExtractReceiptOcrCommandUseCaseDep
 
 _UNREADABLE_RECEIPT_MESSAGE = (
     "영수증 이미지를 인식하지 못했습니다. 다시 촬영하거나 수동 입력해 주세요."
@@ -110,6 +114,7 @@ router = APIRouter(
     },
 )
 async def extract_receipt_ocr(
+    principal: CurrentPrincipalDep,
     files: Annotated[
         list[UploadFile],
         File(
@@ -119,7 +124,7 @@ async def extract_receipt_ocr(
             ),
         ),
     ],
-    service: ReceiptOcrServiceDep,
+    use_case: ExtractReceiptOcrCommandUseCaseDep,
 ) -> CommonResponse[ReceiptOcrResultResponse]:
     validated_upload = (
         await read_and_validate_uploads(
@@ -127,9 +132,12 @@ async def extract_receipt_ocr(
             policy=RECEIPT_OCR_UPLOAD_POLICY,
         )
     )[0]
-    result = await service.extract_receipt(
-        image_content=validated_upload.content,
-        content_type=validated_upload.content_type,
+    result = await use_case.execute(
+        ExtractReceiptOcrCommand(
+            user_id=principal.user_id,
+            image_content=validated_upload.content,
+            content_type=validated_upload.content_type,
+        )
     )
 
     return CommonResponse(

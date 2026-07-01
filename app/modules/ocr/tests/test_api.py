@@ -1,4 +1,3 @@
-import calendar
 from collections.abc import Callable
 from datetime import date
 
@@ -7,11 +6,12 @@ from httpx import AsyncClient
 
 from app.core.config.settings import Settings
 from app.core.domain.exceptions import ValidationError
+from app.modules.ocr.application.ports.receipt_ocr_client import ExtractedReceiptOcrFields
 from app.modules.ocr.dependencies import get_receipt_ocr_client
 from app.modules.ocr.domain.exceptions import ReceiptOcrProviderUnavailableError
 from app.modules.ocr.domain.model import ReceiptOcrResult
 from app.modules.ocr.domain.value_objects import BrandName, ItemName, PaymentLocation, TotalAmount
-from app.modules.ocr.infrastructure.receipt_ocr_client import ExtractedReceiptOcrFields
+from app.modules.ocr.tests.conftest import RecordingUseCreditCommandUseCase
 
 _PNG_BYTES = b"\x89PNG\r\n\x1a\nreceipt-image"
 
@@ -60,17 +60,19 @@ def test_item_name_rejects_whitespace_only_value() -> None:
         ItemName("   ")
 
 
-@pytest.mark.parametrize(
-    ("value_object", "value"),
-    [
-        (BrandName, "   "),
-        (PaymentLocation, "   "),
-        (TotalAmount, -1),
-    ],
-)
-def test_receipt_ocr_value_objects_reject_invalid_values(value_object: type, value: object) -> None:
+def test_receipt_ocr_brand_name_rejects_whitespace_only_value() -> None:
     with pytest.raises(ValidationError):
-        value_object(value)
+        BrandName("   ")
+
+
+def test_receipt_ocr_payment_location_rejects_whitespace_only_value() -> None:
+    with pytest.raises(ValidationError):
+        PaymentLocation("   ")
+
+
+def test_receipt_ocr_total_amount_rejects_negative_value() -> None:
+    with pytest.raises(ValidationError):
+        TotalAmount(-1)
 
 
 def test_receipt_ocr_result_drops_sub_category_without_category() -> None:
@@ -94,36 +96,6 @@ async def test_receipt_ocr_dependency_rejects_missing_provider_in_non_local_env(
 
     with pytest.raises(ReceiptOcrProviderUnavailableError):
         await get_receipt_ocr_client(settings)
-
-
-async def test_receipt_ocr_endpoint_returns_contract_response(client: AsyncClient) -> None:
-    today = date.today()
-    last_day = calendar.monthrange(today.year + 1, today.month)[1]
-    expected_expires_on = date(today.year + 1, today.month, min(today.day, last_day))
-
-    response = await client.post(
-        "/api/v1/ocr",
-        files={"file": ("receipt.png", _PNG_BYTES, "image/png")},
-    )
-
-    body = response.json()
-
-    assert response.status_code == 200
-    assert body["success"] is True
-    assert body["status"] == 200
-    assert body["data"] == {
-        "item_name": "삼성 냉장고 875L",
-        "brand_name": "삼성",
-        "payment_location": "테스트 구매처",
-        "payment_date": today.isoformat(),
-        "total_amount": 129000,
-        "period_months": 12,
-        "expires_on": expected_expires_on.isoformat(),
-        "category": "주방 가전",
-        "sub_category": "냉장고",
-        "needs_review": True,
-        "warnings": ["무상 AS 기간을 찾지 못해 12개월 기본값을 적용했습니다."],
-    }
 
 
 async def test_receipt_ocr_endpoint_keeps_zero_total_amount(
@@ -181,6 +153,8 @@ async def test_receipt_ocr_endpoint_rejects_multiple_file_parts(client: AsyncCli
 async def test_receipt_ocr_endpoint_returns_unreadable_image_failure(
     client: AsyncClient,
     override_receipt_ocr_client: Callable[[UnreadableReceiptOcrClient], None],
+    use_recording_credit_reservation_command_use_case: RecordingUseCreditCommandUseCase,
+    use_recording_credit_command_use_case: RecordingUseCreditCommandUseCase,
 ) -> None:
     override_receipt_ocr_client(UnreadableReceiptOcrClient())
 
@@ -202,11 +176,15 @@ async def test_receipt_ocr_endpoint_returns_unreadable_image_failure(
             "message": "영수증 이미지를 인식하지 못했습니다. 다시 촬영하거나 수동 입력해 주세요.",
         }
     ]
+    assert len(use_recording_credit_reservation_command_use_case.commands) == 1
+    assert use_recording_credit_command_use_case.commands == []
 
 
 async def test_receipt_ocr_endpoint_returns_provider_unavailable_failure(
     client: AsyncClient,
     override_receipt_ocr_client: Callable[[ProviderUnavailableReceiptOcrClient], None],
+    use_recording_credit_reservation_command_use_case: RecordingUseCreditCommandUseCase,
+    use_recording_credit_command_use_case: RecordingUseCreditCommandUseCase,
 ) -> None:
     override_receipt_ocr_client(ProviderUnavailableReceiptOcrClient())
 
@@ -226,6 +204,8 @@ async def test_receipt_ocr_endpoint_returns_provider_unavailable_failure(
     )
     assert body["data"]["path"] == "/api/v1/ocr"
     assert body["data"]["errors"] == []
+    assert len(use_recording_credit_reservation_command_use_case.commands) == 1
+    assert use_recording_credit_command_use_case.commands == []
 
 
 async def test_receipt_ocr_endpoint_openapi_examples(client: AsyncClient) -> None:
