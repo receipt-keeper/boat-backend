@@ -28,4 +28,5 @@ class ReceiptOcrService:
             total_amount=extracted.total_amount,
             period_months=extracted.period_months,
             category=extracted.category,
+            sub_category=extracted.sub_category,
         )

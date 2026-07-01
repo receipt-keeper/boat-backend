@@ -9,6 +9,7 @@ from app.core.config.settings import Settings
 from app.core.domain.exceptions import ValidationError
 from app.modules.ocr.dependencies import get_receipt_ocr_client
 from app.modules.ocr.domain.exceptions import ReceiptOcrProviderUnavailableError
+from app.modules.ocr.domain.model import ReceiptOcrResult
 from app.modules.ocr.domain.value_objects import BrandName, ItemName, PaymentLocation, TotalAmount
 from app.modules.ocr.infrastructure.receipt_ocr_client import ExtractedReceiptOcrFields
 
@@ -27,6 +28,7 @@ class UnreadableReceiptOcrClient:
             total_amount=None,
             period_months=None,
             category=None,
+            sub_category=None,
         )
 
 
@@ -49,6 +51,7 @@ class ZeroTotalAmountReceiptOcrClient:
             total_amount=0,
             period_months=12,
             category=None,
+            sub_category=None,
         )
 
 
@@ -68,6 +71,22 @@ def test_item_name_rejects_whitespace_only_value() -> None:
 def test_receipt_ocr_value_objects_reject_invalid_values(value_object: type, value: object) -> None:
     with pytest.raises(ValidationError):
         value_object(value)
+
+
+def test_receipt_ocr_result_drops_sub_category_without_category() -> None:
+    result = ReceiptOcrResult.create(
+        item_name="삼성 냉장고 875L",
+        brand_name="삼성",
+        payment_location="전자랜드",
+        payment_date=date.today(),
+        total_amount=5137000,
+        period_months=12,
+        category=None,
+        sub_category="냉장고",
+    )
+
+    assert result.category is None
+    assert result.sub_category is None
 
 
 async def test_receipt_ocr_dependency_rejects_missing_provider_in_non_local_env() -> None:
@@ -93,14 +112,15 @@ async def test_receipt_ocr_endpoint_returns_contract_response(client: AsyncClien
     assert body["success"] is True
     assert body["status"] == 200
     assert body["data"] == {
-        "item_name": "테스트 전자제품",
-        "brand_name": "BOAT",
+        "item_name": "삼성 냉장고 875L",
+        "brand_name": "삼성",
         "payment_location": "테스트 구매처",
         "payment_date": today.isoformat(),
         "total_amount": 129000,
         "period_months": 12,
         "expires_on": expected_expires_on.isoformat(),
-        "category": "가전",
+        "category": "주방 가전",
+        "sub_category": "냉장고",
         "needs_review": True,
         "warnings": ["무상 AS 기간을 찾지 못해 12개월 기본값을 적용했습니다."],
     }
@@ -220,7 +240,8 @@ async def test_receipt_ocr_endpoint_openapi_examples(client: AsyncClient) -> Non
 
     assert operation["summary"] == "영수증 OCR 분석"
     assert success_example["data"]["item_name"] == "삼성 냉장고 875L"
-    assert success_example["data"]["category"] == "가전"
+    assert success_example["data"]["category"] == "주방 가전"
+    assert success_example["data"]["sub_category"] == "냉장고"
     assert success_example["data"]["needs_review"] is True
     assert unreadable_example["data"]["errors"][0]["field"] == "file"
     assert provider_unavailable_example["status"] == 503

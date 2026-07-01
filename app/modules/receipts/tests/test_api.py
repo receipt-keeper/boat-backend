@@ -40,6 +40,7 @@ class _ExtractedReceiptOcrFields:
     total_amount: int | None
     period_months: int | None
     category: str | None
+    sub_category: str | None
 
 
 class _ReceiptOcrClientStub(Protocol):
@@ -68,6 +69,7 @@ class UnreadableReceiptOcrClient:
             total_amount=None,
             period_months=None,
             category=None,
+            sub_category=None,
         )
 
 
@@ -87,7 +89,8 @@ class CategoryReceiptOcrClient:
             payment_date=date(2024, 5, 26),
             total_amount=5137000,
             period_months=24,
-            category="가전",
+            category="주방 가전",
+            sub_category="냉장고",
         )
 
 
@@ -712,9 +715,10 @@ async def test_ocr_auto_fill_category_can_be_saved(
         )
 
     save_body = save_response.json()
-    assert ocr_data["category"] == "가전"
+    assert ocr_data["category"] == "주방 가전"
+    assert ocr_data["sub_category"] == "냉장고"
     assert save_response.status_code == 201
-    assert save_body["data"]["category"] == "가전"
+    assert save_body["data"]["category"] == "주방 가전"
 
 
 async def test_create_receipt_calculates_expiration_on_month_end(
