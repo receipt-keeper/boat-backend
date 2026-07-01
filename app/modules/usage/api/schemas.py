@@ -1,18 +1,18 @@
 from pydantic import ConfigDict, Field
 
 from app.core.http.responses import AppBaseModel
-from app.modules.usage.domain import ReceiptAnalysisUsage, UsageSnapshot
+from app.modules.usage.domain import OcrUsage, UsageSnapshot
 
 
-class ReceiptAnalysisUsageResponse(AppBaseModel):
-    remaining_count: int = Field(alias="remainingCount", description="남은 영수증 분석 횟수.")
+class OcrUsageResponse(AppBaseModel):
+    remaining_count: int = Field(alias="remainingCount", description="남은 OCR 기능 사용 횟수.")
     can_analyze: bool = Field(
         alias="canAnalyze",
-        description="영수증 분석을 바로 실행할 수 있는지 여부.",
+        description="OCR 기능을 바로 사용할 수 있는지 여부.",
     )
 
     @classmethod
-    def from_domain(cls, usage: ReceiptAnalysisUsage) -> "ReceiptAnalysisUsageResponse":
+    def from_domain(cls, usage: OcrUsage) -> "OcrUsageResponse":
         return cls(remainingCount=usage.remaining_count, canAnalyze=usage.can_analyze)
 
 
@@ -30,11 +30,11 @@ class UsageResponse(AppBaseModel):
         },
     )
 
-    receipt_analysis: ReceiptAnalysisUsageResponse = Field(
+    ocr: OcrUsageResponse = Field(
         alias="ocr",
-        description="영수증 분석 횟수와 사용 가능 여부.",
+        description="OCR 기능 사용 가능 여부와 남은 OCR 횟수.",
     )
 
     @classmethod
     def from_domain(cls, usage: UsageSnapshot) -> "UsageResponse":
-        return cls(ocr=ReceiptAnalysisUsageResponse.from_domain(usage.receipt_analysis))
+        return cls(ocr=OcrUsageResponse.from_domain(usage.ocr))
