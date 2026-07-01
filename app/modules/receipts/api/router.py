@@ -42,6 +42,7 @@ from app.modules.receipts.dependencies import (
     ListReceiptsQueryUseCaseDep,
     UpdateReceiptCommandUseCaseDep,
 )
+from app.modules.receipts.domain.service_centers import resolve_service_center_url
 from app.modules.receipts.domain.value_objects import ReceiptSort, ReceiptStatusFilter
 from app.modules.receipts.mock import SAMPLE_RECEIPTS
 
@@ -344,6 +345,10 @@ async def create_receipt(
             memo=result.memo,
             requiresPhysicalReceipt=result.requires_physical_receipt,
             receiptFileIds=list(result.receipt_file_ids),
+            supportUrl=resolve_service_center_url(
+                brand_name=result.brand_name,
+                item_name=result.item_name,
+            ),
         ),
     )
 
@@ -470,6 +475,9 @@ def _receipt_response(receipt: ReceiptReadModel) -> ReceiptResponse:
         imageUrl=None,
         warrantyDDay=receipt.warranty_d_day,
         serialNumber=None,
-        supportUrl=None,
+        supportUrl=resolve_service_center_url(
+            brand_name=receipt.brand_name,
+            item_name=receipt.item_name,
+        ),
         registeredAt=receipt.registered_at,
     )
