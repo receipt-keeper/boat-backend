@@ -108,6 +108,7 @@ class SqlAlchemyReceiptRepository(ReceiptRepository):
         record.period_months = receipt.period_months.value
         record.expires_on = receipt.expires_on
         record.category = receipt.category
+        record.sub_category = receipt.sub_category
         record.memo = receipt.memo
         record.requires_physical_receipt = receipt.requires_physical_receipt
 

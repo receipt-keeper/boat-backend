@@ -18,6 +18,7 @@ class ReceiptReadModel:
     period_months: int
     expires_on: date
     category: str | None
+    sub_category: str | None
     memo: str | None
     requires_physical_receipt: bool
     receipt_file_ids: tuple[UUID, ...]

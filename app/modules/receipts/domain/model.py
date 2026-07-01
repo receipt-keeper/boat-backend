@@ -29,6 +29,7 @@ class Receipt(Entity[UUID]):
     period_months: WarrantyPeriodMonths
     expires_on: date
     category: str | None
+    sub_category: str | None
     memo: str | None
     requires_physical_receipt: bool
     receipt_file_ids: tuple[UUID, ...]
@@ -46,6 +47,7 @@ class Receipt(Entity[UUID]):
         total_amount: int | None = None,
         period_months: int | None = None,
         category: str | None = None,
+        sub_category: str | None = None,
         memo: str | None = None,
         requires_physical_receipt: bool | None = False,
         receipt_file_ids: tuple[UUID, ...] | None = None,
@@ -89,6 +91,14 @@ class Receipt(Entity[UUID]):
                 max_length=100,
             )
         )
+        new_sub_category = notification.collect(
+            lambda: _optional_text(
+                value=sub_category,
+                field="sub_category",
+                label="소분류 카테고리",
+                max_length=100,
+            )
+        )
         new_memo = notification.collect(
             lambda: _optional_text(
                 value=memo,
@@ -120,6 +130,7 @@ class Receipt(Entity[UUID]):
             period_months=new_period_months,
             expires_on=_add_months(new_payment_date.value, new_period_months.value),
             category=new_category,
+            sub_category=new_sub_category,
             memo=new_memo,
             requires_physical_receipt=new_requires_physical_receipt,
             receipt_file_ids=new_file_references.value,

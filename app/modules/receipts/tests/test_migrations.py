@@ -64,5 +64,17 @@ async def _assert_tables_exist(database_url: str) -> None:
                 )
             )
             assert column_type == "bigint"
+            sub_category_column_type = await connection.scalar(
+                text(
+                    """
+                    SELECT data_type
+                    FROM information_schema.columns
+                    WHERE table_schema = 'public'
+                      AND table_name = 'receipts'
+                      AND column_name = 'sub_category'
+                    """
+                )
+            )
+            assert sub_category_column_type == "character varying"
     finally:
         await engine.dispose()

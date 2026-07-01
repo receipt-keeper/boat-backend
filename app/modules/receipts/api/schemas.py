@@ -86,6 +86,11 @@ class CreateReceiptRequest(AppBaseModel):
         description="대분류 카테고리.",
         max_length=100,
     )
+    sub_category: str | None = Field(
+        default=None,
+        description="소분류 대표 기기명.",
+        max_length=100,
+    )
     memo: str | None = Field(
         default=None,
         description="사용자 메모.",
@@ -119,6 +124,7 @@ class ReceiptResponse(AppBaseModel):
     period_months: int = Field(alias="periodMonths", description="저장된 무상 AS 기간.")
     expires_on: date = Field(alias="expiresOn", description="서버가 계산한 무상 AS 만료일.")
     category: str | None = Field(description="저장된 대분류 카테고리.")
+    sub_category: str | None = Field(alias="subCategory", description="저장된 소분류 대표 기기명.")
     memo: str | None = Field(description="저장된 사용자 메모.")
     requires_physical_receipt: bool = Field(
         alias="requiresPhysicalReceipt", description="실물 영수증 보관 필요 여부."
@@ -177,6 +183,11 @@ class UpdateReceiptRequest(AppBaseModel):
         le=60,
     )
     category: str | None = Field(default=None, description="대분류 카테고리.", max_length=100)
+    sub_category: str | None = Field(
+        default=None,
+        description="소분류 대표 기기명.",
+        max_length=100,
+    )
     memo: str | None = Field(default=None, description="사용자 메모.", max_length=1000)
     requires_physical_receipt: bool | None = Field(
         default=None,

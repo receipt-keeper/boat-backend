@@ -15,6 +15,7 @@ class UpdateReceiptCommand:
     total_amount: int | None = None
     period_months: int | None = None
     category: str | None = None
+    sub_category: str | None = None
     memo: str | None = None
     requires_physical_receipt: bool | None = None
     receipt_file_ids: tuple[UUID, ...] | None = None

@@ -55,6 +55,7 @@ class Receipt(Base):
     )
     expires_on: Mapped[date] = mapped_column(type_=Date, nullable=False)
     category: Mapped[str | None] = mapped_column(type_=String(100), nullable=True)
+    sub_category: Mapped[str | None] = mapped_column(type_=String(100), nullable=True)
     memo: Mapped[str | None] = mapped_column(type_=String(1000), nullable=True)
     requires_physical_receipt: Mapped[bool] = mapped_column(
         type_=Boolean,
