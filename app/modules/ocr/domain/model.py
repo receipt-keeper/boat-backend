@@ -61,7 +61,9 @@ class ReceiptOcrResult:
         normalized_brand_name = _blank_to_none(brand_name)
         normalized_payment_location = _blank_to_none(payment_location)
         normalized_category = _blank_to_none(category)
-        normalized_sub_category = _blank_to_none(sub_category)
+        normalized_sub_category = (
+            _blank_to_none(sub_category) if normalized_category is not None else None
+        )
         new_brand_name = (
             notification.collect(lambda: BrandName(normalized_brand_name))
             if normalized_brand_name is not None

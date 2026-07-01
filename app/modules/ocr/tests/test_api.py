@@ -9,6 +9,7 @@ from app.core.config.settings import Settings
 from app.core.domain.exceptions import ValidationError
 from app.modules.ocr.dependencies import get_receipt_ocr_client
 from app.modules.ocr.domain.exceptions import ReceiptOcrProviderUnavailableError
+from app.modules.ocr.domain.model import ReceiptOcrResult
 from app.modules.ocr.domain.value_objects import BrandName, ItemName, PaymentLocation, TotalAmount
 from app.modules.ocr.infrastructure.receipt_ocr_client import ExtractedReceiptOcrFields
 
@@ -70,6 +71,22 @@ def test_item_name_rejects_whitespace_only_value() -> None:
 def test_receipt_ocr_value_objects_reject_invalid_values(value_object: type, value: object) -> None:
     with pytest.raises(ValidationError):
         value_object(value)
+
+
+def test_receipt_ocr_result_drops_sub_category_without_category() -> None:
+    result = ReceiptOcrResult.create(
+        item_name="삼성 냉장고 875L",
+        brand_name="삼성",
+        payment_location="전자랜드",
+        payment_date=date.today(),
+        total_amount=5137000,
+        period_months=12,
+        category=None,
+        sub_category="냉장고",
+    )
+
+    assert result.category is None
+    assert result.sub_category is None
 
 
 async def test_receipt_ocr_dependency_rejects_missing_provider_in_non_local_env() -> None:

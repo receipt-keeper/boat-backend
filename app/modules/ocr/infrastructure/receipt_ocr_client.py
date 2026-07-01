@@ -3,7 +3,7 @@ from __future__ import annotations
 import base64
 from dataclasses import dataclass
 from datetime import date
-from typing import Protocol
+from typing import Literal, Protocol
 
 import httpx
 from pydantic import BaseModel, Field
@@ -27,6 +27,31 @@ Write text values in Korean when applicable.
 """
 _HTTP_TIMEOUT_SECONDS = 10.0
 _OPENROUTER_CHAT_COMPLETIONS_URL = "https://openrouter.ai/api/v1/chat/completions"
+CategoryLiteral = Literal["주방 가전", "세탁/청소", "리빙/냉난방", "IT 기기", "기타 기기"]
+SubCategoryLiteral = Literal[
+    "냉장고",
+    "전자레인지",
+    "밥솥",
+    "정수기",
+    "세탁기",
+    "건조기",
+    "청소기",
+    "로봇청소기",
+    "에어컨",
+    "선풍기",
+    "공기청정기",
+    "가습기",
+    "태블릿",
+    "게임기",
+    "카메라",
+    "스피커",
+    "무선 이어폰",
+    "노트북",
+    "헤드셋",
+    "스마트워치",
+    "핸드폰",
+    "기타",
+]
 
 
 @dataclass(frozen=True)
@@ -66,17 +91,15 @@ class ReceiptOcrStructuredOutput(BaseModel):
         default=None,
         description="무상 AS/보증 기간 개월 수. 영수증에서 명확히 확인되지 않으면 null.",
     )
-    category: str | None = Field(
+    category: CategoryLiteral | None = Field(
         default=None,
-        max_length=100,
         description=(
             "대분류 카테고리 추천값. 다음 중 하나만 사용: 주방 가전, 세탁/청소, "
             "리빙/냉난방, IT 기기, 기타 기기. 명확하지 않으면 null."
         ),
     )
-    sub_category: str | None = Field(
+    sub_category: SubCategoryLiteral | None = Field(
         default=None,
-        max_length=100,
         description=(
             "소분류 대표 기기명 추천값. 주방 가전: 냉장고, 전자레인지, 밥솥, 정수기. "
             "세탁/청소: 세탁기, 건조기, 청소기, 로봇청소기. "
