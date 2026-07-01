@@ -3,6 +3,7 @@ from typing import Final
 from uuid import UUID
 
 from app.modules.receipts.api.schemas import ReceiptResponse
+from app.modules.receipts.domain.service_centers import resolve_service_center_url
 
 SAMPLE_RECEIPT_ID: Final = UUID("00000000-0000-0000-0000-000000000301")
 SAMPLE_FILE_ID: Final = UUID("00000000-0000-0000-0000-000000000201")
@@ -28,7 +29,7 @@ SAMPLE_RECEIPTS: Final[tuple[ReceiptResponse, ...]] = (
         imageUrl=SAMPLE_IMAGE_URL_LARGE,
         warrantyDDay=14,
         serialNumber="SN-20240526-001",
-        supportUrl="https://www.samsungsvc.co.kr",
+        supportUrl=resolve_service_center_url(brand_name="삼성", item_name="삼성 냉장고 875L"),
         registeredAt=datetime(2026, 6, 12, 9, 0),
     ),
     ReceiptResponse(
@@ -47,7 +48,7 @@ SAMPLE_RECEIPTS: Final[tuple[ReceiptResponse, ...]] = (
         imageUrl=SAMPLE_IMAGE_URL_SQUARE,
         warrantyDDay=-6,
         serialNumber=None,
-        supportUrl="https://www.lge.co.kr/support",
+        supportUrl=resolve_service_center_url(brand_name="LG", item_name="LG 세탁기"),
         registeredAt=datetime(2026, 6, 10, 14, 30),
     ),
     ReceiptResponse(
@@ -66,7 +67,7 @@ SAMPLE_RECEIPTS: Final[tuple[ReceiptResponse, ...]] = (
         imageUrl=SAMPLE_IMAGE_URL_PORTRAIT,
         warrantyDDay=615,
         serialNumber=None,
-        supportUrl="https://www.dyson.co.kr/support",
+        supportUrl=resolve_service_center_url(brand_name="Dyson", item_name="다이슨 청소기"),
         registeredAt=datetime(2026, 6, 8, 11, 15),
     ),
 )
@@ -102,7 +103,7 @@ def sample_receipt(
         imageUrl=SAMPLE_IMAGE_URL_LARGE,
         warrantyDDay=14,
         serialNumber="SN-20240526-001",
-        supportUrl="https://www.samsungsvc.co.kr",
+        supportUrl=resolve_service_center_url(brand_name=brand_name, item_name=item_name),
         registeredAt=datetime(2026, 6, 12, 9, 0),
     )
 

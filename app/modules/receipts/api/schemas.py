@@ -136,7 +136,7 @@ class ReceiptResponse(AppBaseModel):
         default=None, alias="serialNumber", description="시리얼 넘버."
     )
     support_url: str | None = Field(
-        default=None, alias="supportUrl", description="제조사 고객지원 링크."
+        default=None, alias="supportUrl", description="서비스센터 검색 링크."
     )
     registered_at: datetime | None = Field(
         default=None, alias="registeredAt", description="등록 시각."

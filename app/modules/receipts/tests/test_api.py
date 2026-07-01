@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Protocol
+from urllib.parse import parse_qs, urlparse
 from uuid import UUID, uuid4
 
 import pytest
@@ -222,7 +223,7 @@ async def test_create_receipt_persists_final_values(
     assert data["expiresOn"] == "2026-05-26"
     assert data["requiresPhysicalReceipt"] is True
     assert data["receiptFileIds"] == [str(TEST_FILE_ID), str(SECOND_TEST_FILE_ID)]
-    assert data["supportUrl"] == "https://www.samsungsvc.co.kr"
+    assert _support_query(data["supportUrl"]) == "삼성 서비스센터"
 
     async with postgres_session_factory() as session:
         record = await session.get(receipt_orm.Receipt, UUID(data["receiptId"]))
@@ -387,13 +388,15 @@ async def test_list_receipts_supports_home_list_and_search_contract(
     assert recent_body["data"]["pagination"]["limit"] == 2
     assert recent_body["data"]["pagination"]["totalCount"] == 3
     assert recent_body["data"]["receipts"][0]["imageUrl"] is None
-    expected_support_urls = {
-        "다이슨 청소기": "https://www.dyson.co.kr/support",
-        "LG 세탁기": "https://www.lge.co.kr/support",
-        "삼성 냉장고 875L": "https://www.samsungsvc.co.kr",
+    expected_support_queries = {
+        "다이슨 청소기": "Dyson 서비스센터",
+        "LG 세탁기": "LG 서비스센터",
+        "삼성 냉장고 875L": "삼성 서비스센터",
     }
     for receipt in recent_body["data"]["receipts"]:
-        assert receipt["supportUrl"] == expected_support_urls[receipt["itemName"]]
+        assert (
+            _support_query(receipt["supportUrl"]) == expected_support_queries[receipt["itemName"]]
+        )
     assert next_response.status_code == 200
     assert next_body["data"]["pagination"] == {
         "nextCursor": None,
@@ -904,3 +907,11 @@ async def test_create_receipt_requires_bearer_token(
             assert body["success"] is False
             assert body["status"] == 401
             assert body["data"]["path"] == "/api/v1/receipts"
+
+
+def _support_query(url: str) -> str:
+    parsed = urlparse(url)
+    assert parsed.scheme == "https"
+    assert parsed.netloc == "search.naver.com"
+    assert parsed.path == "/search.naver"
+    return parse_qs(parsed.query)["query"][0]

@@ -72,7 +72,7 @@ RECEIPT_RESPONSE_EXAMPLE: Final = {
     "memo": "앱 연동 테스트",
     "requiresPhysicalReceipt": True,
     "receiptFileIds": [SAMPLE_RECEIPT_FILE_ID],
-    "supportUrl": "https://www.samsungsvc.co.kr",
+    "supportUrl": "https://search.naver.com/search.naver?query=%EC%82%BC%EC%84%B1+%EC%84%9C%EB%B9%84%EC%8A%A4%EC%84%BC%ED%84%B0",
     "warrantyDDay": 731,
     "registeredAt": "2026-06-29T12:00:00",
 }
