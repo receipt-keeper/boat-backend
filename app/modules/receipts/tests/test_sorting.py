@@ -35,6 +35,7 @@ def _receipt_read_model(
         period_months=12,
         expires_on=expires_on,
         category=None,
+        sub_category=None,
         memo=None,
         requires_physical_receipt=False,
         receipt_file_ids=(UUID("00000000-0000-0000-0000-000000000201"),),

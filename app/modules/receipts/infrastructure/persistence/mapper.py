@@ -17,6 +17,7 @@ def receipt_to_record(receipt: DomainReceipt) -> orm.Receipt:
         period_months=receipt.period_months.value,
         expires_on=receipt.expires_on,
         category=receipt.category,
+        sub_category=receipt.sub_category,
         memo=receipt.memo,
         requires_physical_receipt=receipt.requires_physical_receipt,
     )
@@ -42,6 +43,7 @@ def record_to_read_model(
         period_months=record.period_months,
         expires_on=record.expires_on,
         category=record.category,
+        sub_category=record.sub_category,
         memo=record.memo,
         requires_physical_receipt=record.requires_physical_receipt,
         receipt_file_ids=receipt_file_ids,

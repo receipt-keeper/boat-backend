@@ -166,6 +166,7 @@ async def _create_receipt(
     total_amount: int | None = None,
     period_months: int | None = None,
     category: str | None = None,
+    sub_category: str | None = None,
     memo: str | None = None,
     requires_physical_receipt: bool = True,
     receipt_file_ids: list[UUID] | None = None,
@@ -180,6 +181,7 @@ async def _create_receipt(
             "total_amount": total_amount,
             "period_months": period_months,
             "category": category,
+            "sub_category": sub_category,
             "memo": memo,
             "requires_physical_receipt": requires_physical_receipt,
             "receipt_file_ids": [
@@ -205,7 +207,8 @@ async def test_create_receipt_persists_final_values(
         "payment_date": "2024-05-26",
         "total_amount": 5137000,
         "period_months": 24,
-        "category": "가전",
+        "category": "주방 가전",
+        "sub_category": "냉장고",
         "memo": "OCR 결과 확인 후 저장",
         "requires_physical_receipt": True,
         "receipt_file_ids": [str(TEST_FILE_ID), str(SECOND_TEST_FILE_ID)],
@@ -224,6 +227,8 @@ async def test_create_receipt_persists_final_values(
     assert data["totalAmount"] == 5137000
     assert data["periodMonths"] == 24
     assert data["expiresOn"] == "2026-05-26"
+    assert data["category"] == "주방 가전"
+    assert data["subCategory"] == "냉장고"
     assert data["requiresPhysicalReceipt"] is True
     assert data["receiptFileIds"] == [str(TEST_FILE_ID), str(SECOND_TEST_FILE_ID)]
     assert _support_query(data["supportUrl"]) == "삼성 서비스센터"
@@ -307,10 +312,13 @@ def test_receipts_openapi_includes_app_test_examples() -> None:
     assert create_response_example["data"]["receiptFileIds"] == [
         "00000000-0000-0000-0000-000000000201"
     ]
+    assert create_response_example["data"]["subCategory"] == "냉장고"
     assert detail_response_example["data"]["itemName"] == "삼성 냉장고 875L"
+    assert "subCategory" in receipt_response_properties
     assert {"type": "null"} in receipt_response_properties["imageUrl"]["anyOf"]
     assert update_request_examples["partial_update"]["value"]["item_name"] == "삼성 냉장고 900L"
     assert update_response_example["data"]["paymentLocation"] == "전자랜드"
+    assert update_response_example["data"]["subCategory"] == "냉장고"
     assert delete_response_example == {"success": True, "status": 200}
 
 
@@ -499,7 +507,8 @@ async def test_dev_list_receipts_keeps_filtered_empty_result_when_user_has_recei
             payment_date=date(2024, 6, 1),
             total_amount=1200000,
             period_months=12,
-            category="생활 가전",
+            category="세탁/청소",
+            sub_category="세탁기",
         )
         filtered_response = await client.get("/api/v1/receipts?q=없는값")
 
@@ -529,6 +538,7 @@ async def test_receipt_detail_update_and_delete_use_persisted_data(
             total_amount=5137000,
             period_months=24,
             category="주방 가전",
+            sub_category="냉장고",
             memo="등록 메모",
             requires_physical_receipt=True,
         )
@@ -541,7 +551,8 @@ async def test_receipt_detail_update_and_delete_use_persisted_data(
                 "item_name": "삼성 냉장고 900L",
                 "payment_location": None,
                 "total_amount": None,
-                "category": "가전",
+                "category": "기타 기기",
+                "sub_category": "기타",
                 "memo": "수정 메모",
                 "period_months": 36,
                 "receipt_file_ids": [str(SECOND_TEST_FILE_ID)],
@@ -564,7 +575,8 @@ async def test_receipt_detail_update_and_delete_use_persisted_data(
     assert update_body["data"]["totalAmount"] is None
     assert update_body["data"]["periodMonths"] == 36
     assert update_body["data"]["expiresOn"] == "2027-05-26"
-    assert update_body["data"]["category"] == "가전"
+    assert update_body["data"]["category"] == "기타 기기"
+    assert update_body["data"]["subCategory"] == "기타"
     assert update_body["data"]["memo"] == "수정 메모"
     assert update_body["data"]["receiptFileIds"] == [str(SECOND_TEST_FILE_ID)]
     assert delete_response.status_code == 200
@@ -710,6 +722,7 @@ async def test_ocr_auto_fill_category_can_be_saved(
                 "total_amount": ocr_data["total_amount"],
                 "period_months": ocr_data["period_months"],
                 "category": ocr_data["category"],
+                "sub_category": ocr_data["sub_category"],
                 "receipt_file_ids": [str(TEST_FILE_ID)],
             },
         )
@@ -719,6 +732,7 @@ async def test_ocr_auto_fill_category_can_be_saved(
     assert ocr_data["sub_category"] == "냉장고"
     assert save_response.status_code == 201
     assert save_body["data"]["category"] == "주방 가전"
+    assert save_body["data"]["subCategory"] == "냉장고"
 
 
 async def test_create_receipt_calculates_expiration_on_month_end(

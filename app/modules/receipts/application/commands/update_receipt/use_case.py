@@ -47,6 +47,11 @@ class UpdateReceiptCommandUseCase:
                 "무상 AS 기간",
             ),
             category=command.category if _has_update(command, "category") else current.category,
+            sub_category=(
+                command.sub_category
+                if _has_update(command, "sub_category")
+                else current.sub_category
+            ),
             memo=command.memo if _has_update(command, "memo") else current.memo,
             requires_physical_receipt=_updated_value(
                 command,
