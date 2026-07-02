@@ -103,6 +103,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(
         ocr_router,
         prefix=resolved_settings.api_prefix,
+        dependencies=[Depends(authenticate_current_principal)],
     )
     app.include_router(
         receipts_router,

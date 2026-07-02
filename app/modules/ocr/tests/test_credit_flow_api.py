@@ -1,10 +1,13 @@
 import calendar
 from collections.abc import Callable
 from datetime import date
+from uuid import UUID
 
+from fastapi import Request
 from httpx import AsyncClient
 
-from app.core.http.auth import get_current_principal
+from app.core.http.auth import get_current_principal, set_current_principal
+from app.core.security.principal import AuthenticatedPrincipal
 from app.main import app
 from app.modules.auth.api.security import authenticate_current_principal
 from app.modules.credits.application.commands.use_credit.command import UseCreditCommand
@@ -59,6 +62,33 @@ async def test_receipt_ocr_endpoint_requires_authentication(client: AsyncClient)
     assert body["status"] == 401
 
     app.dependency_overrides.pop(get_current_principal, None)
+
+
+async def test_receipt_ocr_endpoint_runs_router_authentication_before_principal_lookup(
+    client: AsyncClient,
+) -> None:
+    app.dependency_overrides.pop(get_current_principal, None)
+
+    async def authenticate(request: Request) -> AuthenticatedPrincipal:
+        principal = AuthenticatedPrincipal(
+            user_id=UUID("00000000-0000-0000-0000-000000000301"),
+            credentials_id=UUID("00000000-0000-0000-0000-000000000302"),
+            session_id=UUID("00000000-0000-0000-0000-000000000303"),
+            role="user",
+        )
+        set_current_principal(request, principal)
+        return principal
+
+    app.dependency_overrides[authenticate_current_principal] = authenticate
+
+    response = await client.post(
+        "/api/v1/ocr",
+        files={"file": ("receipt.png", _PNG_BYTES, "image/png")},
+        headers={"Authorization": "Bearer backend-access-token"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["success"] is True
 
 
 async def test_receipt_ocr_endpoint_returns_contract_response_and_finalizes_credit(
