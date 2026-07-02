@@ -6,6 +6,7 @@ import pytest
 from app.core.domain.exceptions import ValidationError
 from app.modules.auth.application.commands.signup.command import SignupCommand
 from app.modules.auth.application.commands.signup.use_case import SignupCommandUseCase
+from app.modules.auth.application.ports.credit_lifecycle import CreditInitializer
 from app.modules.auth.application.ports.external_identity_login_synchronizer import (
     ExternalIdentityLoginSynchronizer,
 )
@@ -34,6 +35,11 @@ class InitializedSettings:
     marketing_consent: bool
 
 
+@dataclass(frozen=True, slots=True)
+class InitializedCredits:
+    user_id: UUID
+
+
 class FakeUserProvisioner(UserProvisioner):
     def __init__(self) -> None:
         self.requests: list[UserProvisioningRequest] = []
@@ -57,6 +63,14 @@ class FakeNotificationSettingsInitializer(NotificationSettingsInitializer):
         )
 
 
+class FakeCreditInitializer(CreditInitializer):
+    def __init__(self) -> None:
+        self.initialized: list[InitializedCredits] = []
+
+    async def initialize(self, *, user_id: UUID) -> None:
+        self.initialized.append(InitializedCredits(user_id=user_id))
+
+
 class RecordingExternalIdentityLoginSynchronizer(ExternalIdentityLoginSynchronizer):
     def __init__(self) -> None:
         self.identities: list[ExternalIdentity] = []
@@ -71,6 +85,7 @@ class SignupUseCaseFixture:
     repository: FakeCredentialRepository
     provisioner: FakeUserProvisioner
     notification_initializer: FakeNotificationSettingsInitializer
+    credit_initializer: FakeCreditInitializer
     identity_synchronizer: RecordingExternalIdentityLoginSynchronizer
     unit_of_work: FakeUnitOfWork
 
@@ -90,6 +105,7 @@ def _build_signup_use_case(identity: ExternalIdentity) -> SignupUseCaseFixture:
     repository = FakeCredentialRepository()
     provisioner = FakeUserProvisioner()
     notification_initializer = FakeNotificationSettingsInitializer()
+    credit_initializer = FakeCreditInitializer()
     identity_synchronizer = RecordingExternalIdentityLoginSynchronizer()
     unit_of_work = FakeUnitOfWork()
     refresh_token_service = build_refresh_token_service()
@@ -100,6 +116,7 @@ def _build_signup_use_case(identity: ExternalIdentity) -> SignupUseCaseFixture:
             credential_repository=repository,
             user_provisioner=provisioner,
             notification_settings_initializer=notification_initializer,
+            credit_initializer=credit_initializer,
             access_token_issuer=build_access_token_issuer(),
             refresh_token_issuer=refresh_token_service,
             unit_of_work=unit_of_work,
@@ -107,6 +124,7 @@ def _build_signup_use_case(identity: ExternalIdentity) -> SignupUseCaseFixture:
         repository=repository,
         provisioner=provisioner,
         notification_initializer=notification_initializer,
+        credit_initializer=credit_initializer,
         identity_synchronizer=identity_synchronizer,
         unit_of_work=unit_of_work,
     )
@@ -153,6 +171,9 @@ async def test_signup_creates_new_credentials_tokens_and_marketing_settings() ->
     assert fixture.notification_initializer.initialized == [
         InitializedSettings(user_id=fixture.provisioner.user_id, marketing_consent=True)
     ]
+    assert fixture.credit_initializer.initialized == [
+        InitializedCredits(user_id=fixture.provisioner.user_id)
+    ]
     assert fixture.identity_synchronizer.identities == [identity]
     assert len(fixture.repository.credentials_by_identity) == 1
     assert len(fixture.repository.refresh_token_hashes) == 1
@@ -166,6 +187,9 @@ async def test_signup_defaults_marketing_settings_to_false() -> None:
 
     assert fixture.notification_initializer.initialized == [
         InitializedSettings(user_id=fixture.provisioner.user_id, marketing_consent=False)
+    ]
+    assert fixture.credit_initializer.initialized == [
+        InitializedCredits(user_id=fixture.provisioner.user_id)
     ]
 
 
@@ -186,6 +210,7 @@ async def test_signup_rejects_missing_required_consent_before_provisioning() -> 
     ]
     assert fixture.provisioner.requests == []
     assert fixture.notification_initializer.initialized == []
+    assert fixture.credit_initializer.initialized == []
     assert fixture.identity_synchronizer.identities == []
     assert fixture.repository.refresh_token_hashes == {}
     assert fixture.unit_of_work.commit_count == 0
@@ -208,6 +233,7 @@ async def test_signup_rejects_missing_required_consent_versions_before_provision
     ]
     assert fixture.provisioner.requests == []
     assert fixture.notification_initializer.initialized == []
+    assert fixture.credit_initializer.initialized == []
     assert fixture.repository.refresh_token_hashes == {}
     assert fixture.unit_of_work.commit_count == 0
 
@@ -229,6 +255,7 @@ async def test_signup_rejects_blank_required_consent_versions_before_provisionin
     ]
     assert fixture.provisioner.requests == []
     assert fixture.notification_initializer.initialized == []
+    assert fixture.credit_initializer.initialized == []
     assert fixture.repository.refresh_token_hashes == {}
     assert fixture.unit_of_work.commit_count == 0
 
@@ -265,6 +292,7 @@ async def test_signup_rejects_existing_external_identity_without_side_effects() 
     assert error.value.code == "USER_ALREADY_EXISTS"
     assert fixture.provisioner.requests == []
     assert fixture.notification_initializer.initialized == []
+    assert fixture.credit_initializer.initialized == []
     assert fixture.identity_synchronizer.identities == []
     assert fixture.repository.refresh_token_hashes == {}
     assert fixture.unit_of_work.commit_count == 0
@@ -288,4 +316,5 @@ async def test_signup_rejects_verified_email_existing_credential_without_attach_
     assert fixture.repository.refresh_token_hashes == {}
     assert fixture.provisioner.requests == []
     assert fixture.notification_initializer.initialized == []
+    assert fixture.credit_initializer.initialized == []
     assert fixture.identity_synchronizer.identities == []

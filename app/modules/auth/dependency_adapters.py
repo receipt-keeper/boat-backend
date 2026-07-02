@@ -4,18 +4,55 @@ from fastapi import Request
 
 from app.core.db.session import request_async_session
 from app.modules.auth.application.ports.credential_repository import ActiveSessionChecker
+from app.modules.auth.application.ports.credit_lifecycle import (
+    CreditInitializer,
+    CreditWithdrawalCleaner,
+)
 from app.modules.auth.application.ports.notification_settings_initializer import (
     NotificationSettingsInitializer,
 )
 from app.modules.auth.infrastructure.persistence.credential_repository import (
     SqlAlchemyCredentialRepository,
 )
+from app.modules.credits.application.commands.delete_user_credits.command import (
+    DeleteUserCreditsCommand,
+)
+from app.modules.credits.application.commands.delete_user_credits.use_case import (
+    DeleteUserCreditsCommandUseCase,
+)
+from app.modules.credits.application.commands.grant_credit.command import GrantCreditCommand
+from app.modules.credits.application.commands.grant_credit.use_case import GrantCreditCommandUseCase
+from app.modules.credits.domain import CreditAmount, CreditReason
 from app.modules.notifications.application.commands.update_notification_settings.command import (
     UpdateNotificationSettingsCommand,
 )
 from app.modules.notifications.application.commands.update_notification_settings.use_case import (
     UpdateNotificationSettingsCommandUseCase,
 )
+
+_INITIAL_MONTHLY_OCR_CREDIT_COUNT = 5
+
+
+class CreditInitializerAdapter(CreditInitializer):
+    def __init__(self, command_use_case: GrantCreditCommandUseCase) -> None:
+        self._command_use_case = command_use_case
+
+    async def initialize(self, *, user_id: UUID) -> None:
+        await self._command_use_case.execute(
+            GrantCreditCommand(
+                user_id=user_id,
+                amount=CreditAmount(value=_INITIAL_MONTHLY_OCR_CREDIT_COUNT),
+                reason=CreditReason.MONTHLY_OCR_ALLOWANCE,
+            )
+        )
+
+
+class CreditWithdrawalCleanerAdapter(CreditWithdrawalCleaner):
+    def __init__(self, command_use_case: DeleteUserCreditsCommandUseCase) -> None:
+        self._command_use_case = command_use_case
+
+    async def delete_account_state(self, *, user_id: UUID) -> None:
+        await self._command_use_case.execute(DeleteUserCreditsCommand(user_id=user_id))
 
 
 class NotificationSettingsInitializerAdapter(NotificationSettingsInitializer):
