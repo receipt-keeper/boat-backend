@@ -4,14 +4,42 @@ from typing import Final
 
 EXPECTED_DOMAIN_MODELS: Final[dict[str, frozenset[str]]] = {
     "app.modules.credits.domain": frozenset(
-        {"CreditBalance", "CreditTransaction", "CreditAction", "CreditReason"}
+        {
+            "CreditAction",
+            "CreditBalance",
+            "CreditCount",
+            "CreditReason",
+            "CreditTransaction",
+            "FeatureKey",
+            "UserCredit",
+        }
     ),
-    "app.modules.usage.domain": frozenset({"UsageSnapshot", "ReceiptAnalysisUsage"}),
+    "app.modules.usage.domain": frozenset({"OcrUsage", "UsageSnapshot"}),
     "app.modules.notifications.domain.model": frozenset(
         {"NotificationSettings", "UserNotification"}
     ),
 }
+EXPECTED_DOMAIN_PACKAGE_LAYOUT: Final[dict[str, frozenset[str]]] = {
+    "app/modules/credits": frozenset({"domain/__init__.py", "domain/model.py"}),
+    "app/modules/usage": frozenset({"domain/__init__.py", "domain/model.py"}),
+}
+FORBIDDEN_DOMAIN_MODULE_FILES: Final[tuple[Path, ...]] = (
+    Path("app/modules", "credits", "domain.py"),
+    Path("app/modules", "usage", "domain.py"),
+)
 EXPECTED_PERSISTENCE_BACKED_DATA: Final[dict[str, frozenset[str]]] = {
+    "app.modules.credits.dependencies": frozenset(
+        {
+            "GetCreditBalanceQueryUseCaseDep",
+            "ListCreditTransactionsQueryUseCaseDep",
+            "get_credit_balance_query_use_case",
+            "get_credit_repository",
+            "get_list_credit_transactions_query_use_case",
+        }
+    ),
+    "app.modules.credits.infrastructure.persistence.repository": frozenset(
+        {"SqlAlchemyCreditRepository"}
+    ),
     "app.modules.notifications.dependencies": frozenset(
         {
             "ListNotificationsQueryUseCaseDep",
@@ -26,13 +54,17 @@ EXPECTED_PERSISTENCE_BACKED_DATA: Final[dict[str, frozenset[str]]] = {
     "app.modules.notifications.infrastructure.persistence.repository": frozenset(
         {"SqlAlchemyNotificationRepository"}
     ),
+    "app.modules.usage.dependencies": frozenset(
+        {
+            "GetUsageSnapshotQueryUseCaseDep",
+            "get_usage_snapshot_query_use_case",
+        }
+    ),
 }
 EXPECTED_MOCK_DATA: Final[dict[str, frozenset[str]]] = {
-    "app.modules.credits.mock": frozenset({"SAMPLE_CREDIT_BALANCE", "SAMPLE_CREDIT_TRANSACTIONS"}),
     "app.modules.receipts.mock": frozenset(
         {"SAMPLE_FILE_ID", "SAMPLE_RECEIPTS", "receipt_with_id", "sample_receipt"}
     ),
-    "app.modules.usage.mock": frozenset({"SAMPLE_USAGE"}),
 }
 
 
@@ -41,6 +73,27 @@ def test_mvp_bc_modules_expose_domain_models() -> None:
         module = import_module(module_name)
         missing_names = [name for name in model_names if not hasattr(module, name)]
         assert missing_names == []
+
+
+def test_credits_usage_domain_modules_use_package_layout() -> None:
+    missing_files = [
+        f"{module_root}/{relative_path}"
+        for module_root, relative_paths in EXPECTED_DOMAIN_PACKAGE_LAYOUT.items()
+        for relative_path in relative_paths
+        if not Path(module_root, relative_path).is_file()
+    ]
+    forbidden_files = [path.as_posix() for path in FORBIDDEN_DOMAIN_MODULE_FILES if path.exists()]
+
+    assert {"missing": missing_files, "forbidden": forbidden_files} == {
+        "missing": [],
+        "forbidden": [],
+    }
+
+
+def test_credits_domain_does_not_export_persistence_credit_account() -> None:
+    domain_module = import_module("app.modules.credits.domain")
+
+    assert not hasattr(domain_module, "Credit" + "Account")
 
 
 def test_mvp_incomplete_api_modules_expose_mock_data() -> None:
@@ -57,7 +110,8 @@ def test_persistence_backed_api_modules_expose_application_contracts() -> None:
         assert missing_names == []
 
 
-def test_alembic_env_imports_persistence_backed_notification_models() -> None:
+def test_alembic_env_imports_persistence_backed_models() -> None:
     env_source = Path("alembic/env.py").read_text(encoding="utf-8")
 
+    assert "app.modules.credits.infrastructure.persistence" in env_source
     assert "app.modules.notifications.infrastructure.persistence" in env_source

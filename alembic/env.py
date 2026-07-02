@@ -8,6 +8,7 @@ from alembic import context
 from app.core.config.settings import get_settings
 from app.core.db.base import Base
 from app.modules.auth.infrastructure.persistence import orm as auth_orm  # noqa: F401
+from app.modules.credits.infrastructure.persistence import orm as credits_orm  # noqa: F401
 from app.modules.files.infrastructure.persistence import orm as files_orm  # noqa: F401
 from app.modules.notifications.infrastructure.persistence import (
     orm as notifications_orm,  # noqa: F401

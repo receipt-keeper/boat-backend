@@ -2,11 +2,15 @@ from typing import Annotated
 
 from fastapi import APIRouter, File, UploadFile, status
 
+from app.core.http.auth import CurrentPrincipalDep
 from app.core.http.responses import ApiErrorData, CommonResponse
 from app.modules.files.api.upload_validation import read_and_validate_uploads
 from app.modules.ocr.api.schemas import ReceiptOcrResultResponse
 from app.modules.ocr.api.upload_policy import RECEIPT_OCR_UPLOAD_POLICY
-from app.modules.ocr.dependencies import ReceiptOcrServiceDep
+from app.modules.ocr.application.commands.extract_receipt_ocr.command import (
+    ExtractReceiptOcrCommand,
+)
+from app.modules.ocr.dependencies import ExtractReceiptOcrCommandUseCaseDep
 
 _UNREADABLE_RECEIPT_MESSAGE = (
     "영수증 이미지를 인식하지 못했습니다. 다시 촬영하거나 수동 입력해 주세요."
@@ -53,6 +57,16 @@ _PROVIDER_UNAVAILABLE_EXAMPLE = {
         "errors": [],
     },
 }
+_INSUFFICIENT_CREDIT_EXAMPLE = {
+    "success": False,
+    "status": status.HTTP_409_CONFLICT,
+    "data": {
+        "timestamp": "2026-06-21T00:00:00",
+        "message": "사용 가능한 크레딧이 부족합니다.",
+        "path": "/api/v1/ocr",
+        "errors": [],
+    },
+}
 
 router = APIRouter(
     prefix="/ocr",
@@ -61,6 +75,10 @@ router = APIRouter(
         status.HTTP_422_UNPROCESSABLE_CONTENT: {
             "model": CommonResponse[ApiErrorData],
             "description": "검증 실패 - 요청 형식 오류 또는 도메인 검증 실패",
+        },
+        status.HTTP_409_CONFLICT: {
+            "model": CommonResponse[ApiErrorData],
+            "description": "OCR 분석에 사용할 크레딧 부족",
         },
         status.HTTP_503_SERVICE_UNAVAILABLE: {
             "model": CommonResponse[ApiErrorData],
@@ -103,6 +121,10 @@ router = APIRouter(
             "description": "영수증 이미지 인식 실패",
             "content": {"application/json": {"example": _UNREADABLE_RECEIPT_EXAMPLE}},
         },
+        status.HTTP_409_CONFLICT: {
+            "description": "OCR 분석에 사용할 크레딧 부족",
+            "content": {"application/json": {"example": _INSUFFICIENT_CREDIT_EXAMPLE}},
+        },
         status.HTTP_503_SERVICE_UNAVAILABLE: {
             "description": "외부 OCR 서비스 일시 사용 불가",
             "content": {"application/json": {"example": _PROVIDER_UNAVAILABLE_EXAMPLE}},
@@ -110,6 +132,7 @@ router = APIRouter(
     },
 )
 async def extract_receipt_ocr(
+    principal: CurrentPrincipalDep,
     files: Annotated[
         list[UploadFile],
         File(
@@ -119,7 +142,7 @@ async def extract_receipt_ocr(
             ),
         ),
     ],
-    service: ReceiptOcrServiceDep,
+    use_case: ExtractReceiptOcrCommandUseCaseDep,
 ) -> CommonResponse[ReceiptOcrResultResponse]:
     validated_upload = (
         await read_and_validate_uploads(
@@ -127,9 +150,12 @@ async def extract_receipt_ocr(
             policy=RECEIPT_OCR_UPLOAD_POLICY,
         )
     )[0]
-    result = await service.extract_receipt(
-        image_content=validated_upload.content,
-        content_type=validated_upload.content_type,
+    result = await use_case.execute(
+        ExtractReceiptOcrCommand(
+            user_id=principal.user_id,
+            image_content=validated_upload.content,
+            content_type=validated_upload.content_type,
+        )
     )
 
     return CommonResponse(

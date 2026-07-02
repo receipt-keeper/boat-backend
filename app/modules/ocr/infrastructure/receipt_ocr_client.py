@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import base64
-from dataclasses import dataclass
 from datetime import date
-from typing import Literal, Protocol
+from typing import Literal
 
 import httpx
 from pydantic import BaseModel, Field
 from pydantic import ValidationError as PydanticValidationError
 
+from app.modules.ocr.application.ports.receipt_ocr_client import (
+    ExtractedReceiptOcrFields,
+    ReceiptOcrClientPort,
+)
 from app.modules.ocr.domain.exceptions import ReceiptOcrProviderUnavailableError
 
 _RECEIPT_OCR_PROMPT = """
@@ -52,18 +55,6 @@ SubCategoryLiteral = Literal[
     "핸드폰",
     "기타",
 ]
-
-
-@dataclass(frozen=True)
-class ExtractedReceiptOcrFields:
-    item_name: str
-    brand_name: str | None
-    payment_location: str | None
-    payment_date: date | None
-    total_amount: int | None
-    period_months: int | None
-    category: str | None
-    sub_category: str | None
 
 
 class ReceiptOcrStructuredOutput(BaseModel):
@@ -122,16 +113,7 @@ class ReceiptOcrStructuredOutput(BaseModel):
         )
 
 
-class ReceiptOcrClientProtocol(Protocol):
-    async def extract(
-        self,
-        *,
-        image_content: bytes,
-        content_type: str,
-    ) -> ExtractedReceiptOcrFields: ...
-
-
-class ReceiptOcrClient:
+class ReceiptOcrClient(ReceiptOcrClientPort):
     """계약 확인용 OCR client.
 
     실제 AI OCR 연동 전까지 Swagger와 앱 연동 흐름을 먼저 맞추기 위한 구현이다.
@@ -156,7 +138,7 @@ class ReceiptOcrClient:
         return structured_output.to_extracted_fields()
 
 
-class OpenRouterReceiptOcrClient:
+class OpenRouterReceiptOcrClient(ReceiptOcrClientPort):
     def __init__(self, *, api_key: str, model: str) -> None:
         self._api_key = api_key
         self._model = model

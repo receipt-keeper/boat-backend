@@ -2,15 +2,24 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query, status
 
-from app.core.http.pagination import paginate_by_cursor
-from app.core.http.responses import ApiErrorData, CommonResponse
+from app.core.http.auth import CurrentPrincipalDep
+from app.core.http.responses import ApiErrorData, CommonResponse, CursorPaginationResponse
 from app.modules.credits.api.schemas import (
     CreditsResponse,
     CreditTransactionListQuery,
     CreditTransactionResponse,
     CreditTransactionsResponse,
 )
-from app.modules.credits.mock import SAMPLE_CREDIT_BALANCE, SAMPLE_CREDIT_TRANSACTIONS
+from app.modules.credits.application.queries.get_credit_balance.query import (
+    GetCreditBalanceQuery,
+)
+from app.modules.credits.application.queries.list_credit_transactions.query import (
+    ListCreditTransactionsQuery,
+)
+from app.modules.credits.dependencies import (
+    GetCreditBalanceQueryUseCaseDep,
+    ListCreditTransactionsQueryUseCaseDep,
+)
 
 _OpenApiResponse = dict[str, type[CommonResponse[ApiErrorData]] | str]
 
@@ -35,14 +44,21 @@ router = APIRouter(
 @router.get(
     "",
     response_model=CommonResponse[CreditsResponse],
-    summary="크레딧 잔여 횟수 조회",
-    description="무료 영수증 분석에 쓸 수 있는 전체 지급 횟수, 사용 횟수, 남은 횟수를 반환한다.",
+    summary="크레딧 잔액 조회",
+    description=(
+        "기능 크레딧의 전체 지급 횟수, 사용 횟수, 남은 횟수를 반환한다. "
+        "현재 MVP는 featureKey=ocr 기준으로 조회한다."
+    ),
 )
-async def get_credits() -> CommonResponse[CreditsResponse]:
+async def get_credits(
+    principal: CurrentPrincipalDep,
+    query_use_case: GetCreditBalanceQueryUseCaseDep,
+) -> CommonResponse[CreditsResponse]:
+    balance = await query_use_case.execute(GetCreditBalanceQuery(user_id=principal.user_id))
     return CommonResponse(
         success=True,
         status=status.HTTP_200_OK,
-        data=CreditsResponse.from_domain(SAMPLE_CREDIT_BALANCE),
+        data=CreditsResponse.from_domain(balance),
     )
 
 
@@ -50,26 +66,36 @@ async def get_credits() -> CommonResponse[CreditsResponse]:
     "/transactions",
     response_model=CommonResponse[CreditTransactionsResponse],
     summary="크레딧 지급/사용 내역 조회",
-    description="퀴즈 보상처럼 크레딧이 추가되거나 사용된 내역을 반환한다.",
+    description=(
+        "기능 크레딧이 지급되거나 사용된 내역을 커서 페이지로 반환한다. "
+        "현재 MVP는 featureKey=ocr 기준으로 조회한다."
+    ),
 )
 async def list_credit_transactions(
     query: Annotated[CreditTransactionListQuery, Query()],
+    principal: CurrentPrincipalDep,
+    query_use_case: ListCreditTransactionsQueryUseCaseDep,
 ) -> CommonResponse[CreditTransactionsResponse]:
-    transaction_responses = [
-        CreditTransactionResponse.from_domain(transaction)
-        for transaction in SAMPLE_CREDIT_TRANSACTIONS
-    ]
-    page = paginate_by_cursor(
-        transaction_responses,
-        cursor=query.cursor,
-        limit=query.limit,
-        total_count=len(transaction_responses),
+    page = await query_use_case.execute(
+        ListCreditTransactionsQuery(
+            user_id=principal.user_id,
+            cursor=query.cursor,
+            limit=query.limit,
+        )
     )
     return CommonResponse(
         success=True,
         status=status.HTTP_200_OK,
         data=CreditTransactionsResponse(
-            transactions=page.items,
-            pagination=page.pagination,
+            transactions=[
+                CreditTransactionResponse.from_list_item(transaction)
+                for transaction in page.transactions
+            ],
+            pagination=CursorPaginationResponse(
+                nextCursor=page.next_cursor,
+                hasNext=page.has_next,
+                limit=page.limit,
+                totalCount=page.total_count,
+            ),
         ),
     )

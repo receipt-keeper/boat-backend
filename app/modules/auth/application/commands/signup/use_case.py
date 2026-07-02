@@ -6,6 +6,7 @@ from app.core.domain.exceptions import ErrorDetail, ValidationError
 from app.modules.auth.application.commands.signup.command import SignupCommand
 from app.modules.auth.application.commands.signup.result import SignupResult
 from app.modules.auth.application.ports.credential_repository import CredentialRepository
+from app.modules.auth.application.ports.credit_lifecycle import CreditInitializer
 from app.modules.auth.application.ports.external_identity_login_synchronizer import (
     ExternalIdentityLoginSynchronizer,
 )
@@ -33,6 +34,7 @@ class SignupCommandUseCase:
         credential_repository: CredentialRepository,
         user_provisioner: UserProvisioner,
         notification_settings_initializer: NotificationSettingsInitializer,
+        credit_initializer: CreditInitializer,
         access_token_issuer: AccessTokenIssuer,
         refresh_token_issuer: RefreshTokenIssuer,
         unit_of_work: UnitOfWork,
@@ -42,6 +44,7 @@ class SignupCommandUseCase:
         self._credential_repository = credential_repository
         self._user_provisioner = user_provisioner
         self._notification_settings_initializer = notification_settings_initializer
+        self._credit_initializer = credit_initializer
         self._access_token_issuer = access_token_issuer
         self._refresh_token_issuer = refresh_token_issuer
         self._unit_of_work = unit_of_work
@@ -117,6 +120,7 @@ class SignupCommandUseCase:
             user_id=provisioned_user.user_id,
             marketing_consent=command.marketing_consent,
         )
+        await self._credit_initializer.initialize(user_id=provisioned_user.user_id)
         logged_in_at = datetime.now(UTC)
         credentials = await self._credential_repository.create_for_external_identity(
             identity=identity,

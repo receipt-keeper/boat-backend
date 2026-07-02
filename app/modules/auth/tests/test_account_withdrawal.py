@@ -19,6 +19,7 @@ from app.modules.auth.infrastructure.persistence.credential_repository import (
     SqlAlchemyCredentialRepository,
 )
 from app.modules.auth.infrastructure.tokens.jwt import JwtAccessTokenService
+from app.modules.credits.infrastructure.persistence import orm as credit_orm
 from app.modules.users.application.commands.withdrawal_cleanup.command import (
     WithdrawalCleanupCommand,
 )
@@ -79,6 +80,24 @@ async def _seed_full_account(
             credentials_id=credentials.credentials_id,
         )
     )
+    session.add(
+        credit_orm.UserCredit(
+            user_id=user.id,
+            feature_key="ocr",
+            total_granted_count=5,
+            used_count=1,
+            remaining_count=4,
+        )
+    )
+    session.add(
+        credit_orm.CreditTransaction(
+            user_id=user.id,
+            feature_key="ocr",
+            reason="monthlyOcrAllowance",
+            action="grant",
+            amount=5,
+        )
+    )
     await SqlAlchemyCredentialRepository(session).save_refresh_token(
         credentials_id=credentials.credentials_id,
         session_id=session_id,
@@ -129,6 +148,12 @@ async def _count_all_rows(
         settings_count = await session.scalar(
             select(func.count()).select_from(users_orm.UserSettings)
         )
+        user_credits_count = await session.scalar(
+            select(func.count()).select_from(credit_orm.UserCredit)
+        )
+        credit_transactions_count = await session.scalar(
+            select(func.count()).select_from(credit_orm.CreditTransaction)
+        )
 
     def _req(v: int | None) -> int:
         if v is None:
@@ -142,6 +167,8 @@ async def _count_all_rows(
         "auth_sessions": _req(auth_sessions_count),
         "refresh_tokens": _req(refresh_tokens_count),
         "user_settings": _req(settings_count),
+        "user_credits": _req(user_credits_count),
+        "credit_transactions": _req(credit_transactions_count),
     }
 
 
@@ -263,10 +290,23 @@ async def test_delete_me_withdraws_full_account(
             )
         )
         current_settings = await session.get(users_orm.UserSettings, current.user_id)
+        current_credit = await session.get(
+            credit_orm.UserCredit,
+            {"user_id": current.user_id, "feature_key": "ocr"},
+        )
+        current_credit_transactions = list(
+            await session.scalars(
+                select(credit_orm.CreditTransaction).where(
+                    credit_orm.CreditTransaction.user_id == current.user_id
+                )
+            )
+        )
 
         assert current_identities == []
         assert current_refresh_tokens == []
         assert current_settings is None
+        assert current_credit is None
+        assert current_credit_transactions == []
 
         # other account fully intact
         assert await persisted_user_exists(session, other.user_id)
@@ -279,6 +319,13 @@ async def test_delete_me_withdraws_full_account(
             )
         )
         assert len(other_identities) == 1
+        assert (
+            await session.get(
+                credit_orm.UserCredit,
+                {"user_id": other.user_id, "feature_key": "ocr"},
+            )
+            is not None
+        )
 
     counts = await _count_all_rows(postgres_session_factory)
     assert counts == {
@@ -288,6 +335,8 @@ async def test_delete_me_withdraws_full_account(
         "auth_sessions": 1,
         "refresh_tokens": 1,
         "user_settings": 1,
+        "user_credits": 1,
+        "credit_transactions": 1,
     }
 
 
@@ -323,4 +372,6 @@ async def test_delete_me_rolls_back_when_users_cleanup_fails(
         "auth_sessions": 1,
         "refresh_tokens": 1,
         "user_settings": 1,
+        "user_credits": 1,
+        "credit_transactions": 1,
     }, f"Expected all rows intact after rollback but got: {counts}"

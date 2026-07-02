@@ -1,11 +1,11 @@
 from pydantic import ConfigDict, Field
 
 from app.core.http.responses import AppBaseModel, CursorPaginationResponse
+from app.modules.credits.application.ports.credit_repository import CreditTransactionListItem
 from app.modules.credits.domain import (
     CreditAction,
     CreditBalance,
     CreditReason,
-    CreditTransaction,
 )
 
 
@@ -14,17 +14,20 @@ class CreditsResponse(AppBaseModel):
         json_schema_extra={
             "examples": [
                 {
-                    "totalGrantedCount": 10,
-                    "usedCount": 7,
-                    "remainingCount": 3,
+                    "totalGrantedCount": 12,
+                    "usedCount": 5,
+                    "remainingCount": 7,
                 }
             ]
         },
     )
 
-    total_granted_count: int = Field(alias="totalGrantedCount", description="지금까지 받은 횟수.")
-    used_count: int = Field(alias="usedCount", description="이미 사용한 횟수.")
-    remaining_count: int = Field(alias="remainingCount", description="남은 횟수.")
+    total_granted_count: int = Field(
+        alias="totalGrantedCount",
+        description="지금까지 지급된 기능 크레딧 횟수.",
+    )
+    used_count: int = Field(alias="usedCount", description="이미 사용한 기능 크레딧 횟수.")
+    remaining_count: int = Field(alias="remainingCount", description="남은 기능 크레딧 횟수.")
 
     @classmethod
     def from_domain(cls, balance: CreditBalance) -> "CreditsResponse":
@@ -36,17 +39,17 @@ class CreditsResponse(AppBaseModel):
 
 
 class CreditTransactionResponse(AppBaseModel):
-    reason: CreditReason = Field(description="크레딧이 바뀐 이유.")
-    action: CreditAction = Field(description="크레딧 변화 방향. grant는 추가 지급을 뜻한다.")
-    amount: int = Field(description="추가되거나 차감된 횟수.")
-    created_at: str = Field(alias="createdAt", description="반영 시각.")
+    reason: CreditReason = Field(description="기능 크레딧이 바뀐 이유.")
+    action: CreditAction = Field(description="기능 크레딧 변화 방향. grant는 지급을 뜻한다.")
+    amount: int = Field(description="지급되거나 사용된 기능 크레딧 횟수.")
+    created_at: str = Field(alias="createdAt", description="기능 크레딧 반영 시각.")
 
     @classmethod
-    def from_domain(cls, transaction: CreditTransaction) -> "CreditTransactionResponse":
+    def from_list_item(cls, transaction: CreditTransactionListItem) -> "CreditTransactionResponse":
         return cls(
             reason=transaction.reason,
             action=transaction.action,
-            amount=transaction.amount,
+            amount=transaction.amount.value,
             createdAt=transaction.created_at.isoformat(),
         )
 
@@ -70,22 +73,30 @@ class CreditTransactionsResponse(AppBaseModel):
                 {
                     "transactions": [
                         {
-                            "reason": "quizReward",
+                            "reason": "monthlyOcrAllowance",
                             "action": "grant",
-                            "amount": 10,
+                            "amount": 12,
                             "createdAt": "2026-06-26T00:00:00",
-                        }
+                        },
+                        {
+                            "reason": "ocrUsage",
+                            "action": "use",
+                            "amount": 5,
+                            "createdAt": "2026-06-26T00:05:00",
+                        },
                     ],
                     "pagination": {
                         "nextCursor": None,
                         "hasNext": False,
                         "limit": 20,
-                        "totalCount": 1,
+                        "totalCount": 2,
                     },
                 }
             ]
         },
     )
 
-    transactions: list[CreditTransactionResponse] = Field(description="크레딧 지급/사용 내역.")
+    transactions: list[CreditTransactionResponse] = Field(
+        description="기능 크레딧 지급/사용 내역.",
+    )
     pagination: CursorPaginationResponse = Field(description="커서 기반 목록 정보.")
