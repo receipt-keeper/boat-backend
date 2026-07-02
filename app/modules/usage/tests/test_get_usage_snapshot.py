@@ -48,6 +48,9 @@ class CreditRepositoryStub(CreditRepository):
     ) -> None:
         raise AssertionError("usage snapshot should not append credit transactions")
 
+    async def delete_by_user_id(self, *, user_id: UUID) -> None:
+        raise AssertionError("usage snapshot should not delete credit state")
+
     async def list_transactions(
         self,
         *,

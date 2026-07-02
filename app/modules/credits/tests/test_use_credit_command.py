@@ -5,8 +5,18 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.db.unit_of_work import SqlAlchemyUnitOfWork
+from app.modules.credits.application.commands.delete_user_credits.command import (
+    DeleteUserCreditsCommand,
+)
+from app.modules.credits.application.commands.delete_user_credits.use_case import (
+    DeleteUserCreditsCommandUseCase,
+)
 from app.modules.credits.application.commands.finalize_credit_usage.use_case import (
     FinalizeCreditUsageCommandUseCase,
+)
+from app.modules.credits.application.commands.grant_credit.command import GrantCreditCommand
+from app.modules.credits.application.commands.grant_credit.use_case import (
+    GrantCreditCommandUseCase,
 )
 from app.modules.credits.application.commands.reserve_credit.use_case import (
     ReserveCreditCommandUseCase,
@@ -77,6 +87,44 @@ async def test_use_credit_command_decrements_balance_and_appends_ledger(
     assert saved_transactions[0].reason == CreditReason.OCR_USAGE.value
     assert saved_transactions[0].action == CreditAction.USE.value
     assert saved_transactions[0].amount == 1
+
+
+async def test_grant_credit_command_creates_snapshot_and_appends_ledger(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with postgres_session_factory() as session:
+        use_case = GrantCreditCommandUseCase(
+            credit_repository=SqlAlchemyCreditRepository(session),
+            unit_of_work=SqlAlchemyUnitOfWork(session),
+        )
+
+        await use_case.execute(
+            GrantCreditCommand(
+                user_id=USER_ID,
+                amount=CreditAmount(value=5, field_name="amount"),
+                reason=CreditReason.MONTHLY_OCR_ALLOWANCE,
+            )
+        )
+
+    async with postgres_session_factory() as session:
+        saved_credit = await session.get(
+            orm.UserCredit,
+            {"user_id": USER_ID, "feature_key": "ocr"},
+        )
+        saved_transactions = tuple(
+            await session.scalars(
+                select(orm.CreditTransaction).where(orm.CreditTransaction.user_id == USER_ID)
+            )
+        )
+
+    assert saved_credit is not None
+    assert saved_credit.total_granted_count == 5
+    assert saved_credit.used_count == 0
+    assert saved_credit.remaining_count == 5
+    assert len(saved_transactions) == 1
+    assert saved_transactions[0].reason == CreditReason.MONTHLY_OCR_ALLOWANCE.value
+    assert saved_transactions[0].action == CreditAction.GRANT.value
+    assert saved_transactions[0].amount == 5
 
 
 async def test_use_credit_command_rejects_insufficient_remaining_count(
@@ -198,3 +246,48 @@ async def test_finalize_credit_usage_commits_reserved_credit_and_usage_ledger(
     assert saved_credit.remaining_count == 2
     assert len(saved_transactions) == 1
     assert saved_transactions[0].reason == CreditReason.OCR_USAGE.value
+
+
+async def test_delete_user_credits_command_removes_snapshot_and_ledger(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with postgres_session_factory() as session:
+        session.add(
+            orm.UserCredit(
+                user_id=USER_ID,
+                feature_key="ocr",
+                total_granted_count=5,
+                used_count=1,
+                remaining_count=4,
+            )
+        )
+        session.add(
+            orm.CreditTransaction(
+                user_id=USER_ID,
+                feature_key="ocr",
+                reason=CreditReason.MONTHLY_OCR_ALLOWANCE.value,
+                action=CreditAction.GRANT.value,
+                amount=5,
+            )
+        )
+        await session.commit()
+
+    async with postgres_session_factory() as session:
+        await DeleteUserCreditsCommandUseCase(
+            credit_repository=SqlAlchemyCreditRepository(session),
+            unit_of_work=SqlAlchemyUnitOfWork(session),
+        ).execute(DeleteUserCreditsCommand(user_id=USER_ID))
+
+    async with postgres_session_factory() as session:
+        saved_credit = await session.get(
+            orm.UserCredit,
+            {"user_id": USER_ID, "feature_key": "ocr"},
+        )
+        saved_transactions = tuple(
+            await session.scalars(
+                select(orm.CreditTransaction).where(orm.CreditTransaction.user_id == USER_ID)
+            )
+        )
+
+    assert saved_credit is None
+    assert saved_transactions == ()

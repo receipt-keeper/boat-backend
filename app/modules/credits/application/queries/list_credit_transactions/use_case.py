@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from typing import Final
 from uuid import UUID
 
-from app.core.domain.exceptions import DomainError
+from app.core.domain.exceptions import ErrorDetail, ValidationError
 from app.modules.credits.application.ports.credit_repository import (
     CreditRepository,
     CreditTransactionCursor,
@@ -18,9 +18,9 @@ from app.modules.credits.application.queries.list_credit_transactions.result imp
 _CURSOR_SEPARATOR: Final = "|"
 
 
-class InvalidCreditTransactionCursorError(DomainError):
+class InvalidCreditTransactionCursorError(ValidationError):
     def __init__(self) -> None:
-        super().__init__("크레딧 내역 cursor가 올바르지 않습니다.")
+        super().__init__([ErrorDetail(field="cursor", message="유효하지 않은 커서입니다.")])
 
 
 class ListCreditTransactionsQueryUseCase:

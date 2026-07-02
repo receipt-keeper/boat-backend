@@ -96,6 +96,11 @@ def upgrade() -> None:
             name=op.f("ck_credit_transactions_action_allowed"),
         ),
         sa.CheckConstraint(
+            "(reason IN ('monthlyOcrAllowance', 'eventOcrAllowance') AND action = 'grant') "
+            "OR (reason = 'ocrUsage' AND action = 'use')",
+            name=op.f("ck_credit_transactions_reason_action_pair"),
+        ),
+        sa.CheckConstraint(
             "amount > 0",
             name=op.f("ck_credit_transactions_amount_positive"),
         ),

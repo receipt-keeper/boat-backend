@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.credits.application.ports.credit_repository import (
@@ -79,6 +79,12 @@ class SqlAlchemyCreditRepository(CreditRepository):
                 amount=amount.value,
             )
         )
+
+    async def delete_by_user_id(self, *, user_id: UUID) -> None:
+        await self._session.execute(
+            delete(orm.CreditTransaction).where(orm.CreditTransaction.user_id == user_id)
+        )
+        await self._session.execute(delete(orm.UserCredit).where(orm.UserCredit.user_id == user_id))
 
     async def list_transactions(
         self,

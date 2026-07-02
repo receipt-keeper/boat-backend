@@ -9,6 +9,7 @@ from app.modules.credits.domain import (
     CreditCount,
     CreditReason,
     FeatureKey,
+    InsufficientCreditError,
     UserCredit,
 )
 
@@ -103,6 +104,43 @@ def test_user_credit_can_use_when_remaining_count_covers_positive_amount() -> No
     # When/Then: 양수 사용량만 남은 횟수 범위 안에서 허용된다.
     assert user_credit.can_use(CreditAmount(value=7)) is True
     assert user_credit.can_use(CreditAmount(value=8)) is False
+
+
+def test_user_credit_use_moves_remaining_count_to_used_count() -> None:
+    user_credit = _restore_user_credit(total_granted_count=12, used_count=5, remaining_count=7)
+
+    user_credit.use(CreditAmount(value=3))
+
+    assert user_credit.balance == CreditBalance(
+        total_granted_count=12,
+        used_count=8,
+        remaining_count=4,
+    )
+
+
+def test_user_credit_use_rejects_insufficient_remaining_count() -> None:
+    user_credit = _restore_user_credit(total_granted_count=12, used_count=10, remaining_count=2)
+
+    with pytest.raises(InsufficientCreditError):
+        user_credit.use(CreditAmount(value=3))
+
+    assert user_credit.balance == CreditBalance(
+        total_granted_count=12,
+        used_count=10,
+        remaining_count=2,
+    )
+
+
+def test_user_credit_grant_increases_total_and_remaining_count() -> None:
+    user_credit = _restore_user_credit(total_granted_count=12, used_count=5, remaining_count=7)
+
+    user_credit.grant(CreditAmount(value=5))
+
+    assert user_credit.balance == CreditBalance(
+        total_granted_count=17,
+        used_count=5,
+        remaining_count=12,
+    )
 
 
 def test_credit_amount_rejects_zero_value_with_field_message() -> None:

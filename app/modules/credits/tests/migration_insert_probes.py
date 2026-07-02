@@ -12,7 +12,7 @@ class InvalidCreditTransactionProbe:
     reason: str
     action: str
     amount: int
-    expected_constraint: str
+    expected_constraint: str | tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,14 +46,20 @@ async def assert_credit_transaction_insert_probes(connection: AsyncConnection) -
             reason="quizReward",
             action="grant",
             amount=1,
-            expected_constraint="ck_credit_transactions_reason_allowed",
+            expected_constraint=(
+                "ck_credit_transactions_reason_allowed",
+                "ck_credit_transactions_reason_action_pair",
+            ),
         ),
         InvalidCreditTransactionProbe(
             feature_key="ocr",
             reason="monthlyOcrAllowance",
             action="refund",
             amount=1,
-            expected_constraint="ck_credit_transactions_action_allowed",
+            expected_constraint=(
+                "ck_credit_transactions_action_allowed",
+                "ck_credit_transactions_reason_action_pair",
+            ),
         ),
         InvalidCreditTransactionProbe(
             feature_key="ocr",
@@ -61,6 +67,20 @@ async def assert_credit_transaction_insert_probes(connection: AsyncConnection) -
             action="grant",
             amount=0,
             expected_constraint="ck_credit_transactions_amount_positive",
+        ),
+        InvalidCreditTransactionProbe(
+            feature_key="ocr",
+            reason="monthlyOcrAllowance",
+            action="use",
+            amount=1,
+            expected_constraint="ck_credit_transactions_reason_action_pair",
+        ),
+        InvalidCreditTransactionProbe(
+            feature_key="ocr",
+            reason="ocrUsage",
+            action="grant",
+            amount=1,
+            expected_constraint="ck_credit_transactions_reason_action_pair",
         ),
     ):
         await _assert_invalid_credit_transaction_is_rejected(connection, probe)
@@ -153,7 +173,14 @@ async def _assert_invalid_credit_transaction_is_rejected(
                     "amount": probe.amount,
                 },
             )
-        assert probe.expected_constraint in str(exc_info.value.orig)
+        failed_constraint = str(exc_info.value.orig)
+        if isinstance(probe.expected_constraint, str):
+            assert probe.expected_constraint in failed_constraint
+        else:
+            assert any(
+                expected_constraint in failed_constraint
+                for expected_constraint in probe.expected_constraint
+            )
     finally:
         await connection.rollback()
 

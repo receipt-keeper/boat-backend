@@ -1,12 +1,19 @@
 from typing import Annotated
 
 from fastapi import Depends
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.application.unit_of_work import UnitOfWork
 from app.core.db.session import AsyncSessionDep
 from app.core.db.unit_of_work import SqlAlchemyUnitOfWork
+from app.modules.credits.application.commands.delete_user_credits.use_case import (
+    DeleteUserCreditsCommandUseCase,
+)
 from app.modules.credits.application.commands.finalize_credit_usage.use_case import (
     FinalizeCreditUsageCommandUseCase,
+)
+from app.modules.credits.application.commands.grant_credit.use_case import (
+    GrantCreditCommandUseCase,
 )
 from app.modules.credits.application.commands.reserve_credit.use_case import (
     ReserveCreditCommandUseCase,
@@ -24,6 +31,26 @@ from app.modules.credits.application.queries.list_credit_transactions.use_case i
 from app.modules.credits.infrastructure.persistence.repository import (
     SqlAlchemyCreditRepository,
 )
+
+
+def build_grant_credit_command_use_case(
+    session: AsyncSession,
+    unit_of_work: UnitOfWork,
+) -> GrantCreditCommandUseCase:
+    return GrantCreditCommandUseCase(
+        credit_repository=SqlAlchemyCreditRepository(session),
+        unit_of_work=unit_of_work,
+    )
+
+
+def build_delete_user_credits_command_use_case(
+    session: AsyncSession,
+    unit_of_work: UnitOfWork,
+) -> DeleteUserCreditsCommandUseCase:
+    return DeleteUserCreditsCommandUseCase(
+        credit_repository=SqlAlchemyCreditRepository(session),
+        unit_of_work=unit_of_work,
+    )
 
 
 async def get_credit_repository(session: AsyncSessionDep) -> CreditRepository:

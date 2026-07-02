@@ -60,6 +60,10 @@ class CreditRepository(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    async def delete_by_user_id(self, *, user_id: UUID) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
     async def list_transactions(
         self,
         *,

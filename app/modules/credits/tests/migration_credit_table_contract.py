@@ -18,6 +18,7 @@ EXPECTED_TRANSACTION_CHECKS = {
     "ck_credit_transactions_feature_key_allowed",
     "ck_credit_transactions_reason_allowed",
     "ck_credit_transactions_action_allowed",
+    "ck_credit_transactions_reason_action_pair",
     "ck_credit_transactions_amount_positive",
 }
 

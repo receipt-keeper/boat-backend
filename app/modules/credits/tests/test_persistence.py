@@ -30,6 +30,10 @@ EXPECTED_REASON_CONSTRAINTS = {
         "reason IN ('monthlyOcrAllowance', 'eventOcrAllowance', 'ocrUsage')"
     ),
     "ck_credit_transactions_action_allowed": "action IN ('grant', 'use')",
+    "ck_credit_transactions_reason_action_pair": (
+        "(reason IN ('monthlyOcrAllowance', 'eventOcrAllowance') AND action = 'grant') "
+        "OR (reason = 'ocrUsage' AND action = 'use')"
+    ),
     "ck_credit_transactions_amount_positive": "amount > 0",
 }
 
@@ -204,13 +208,14 @@ async def test_credit_transaction_query_rejects_invalid_cursor(
             credit_repository=SqlAlchemyCreditRepository(session)
         )
 
-        # When/Then: 형식이 맞지 않는 cursor는 도메인 에러로 거절된다.
         with pytest.raises(InvalidCreditTransactionCursorError) as exc_info:
             await use_case.execute(
                 ListCreditTransactionsQuery(user_id=USER_ID, cursor="not-a-cursor")
             )
 
-    assert exc_info.value.message == "크레딧 내역 cursor가 올바르지 않습니다."
+    assert [(detail.field, detail.message) for detail in exc_info.value.details] == [
+        ("cursor", "유효하지 않은 커서입니다.")
+    ]
 
 
 def _transaction(

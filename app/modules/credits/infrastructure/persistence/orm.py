@@ -89,6 +89,11 @@ class CreditTransaction(Base):
             name=conv("ck_credit_transactions_action_allowed"),
         ),
         CheckConstraint(
+            "(reason IN ('monthlyOcrAllowance', 'eventOcrAllowance') AND action = 'grant') "
+            "OR (reason = 'ocrUsage' AND action = 'use')",
+            name=conv("ck_credit_transactions_reason_action_pair"),
+        ),
+        CheckConstraint(
             "amount > 0",
             name=conv("ck_credit_transactions_amount_positive"),
         ),

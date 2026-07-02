@@ -168,6 +168,13 @@ class UserCredit(Entity[UUID]):
             remaining_count=self.remaining_count - amount.value,
         )
 
+    def grant(self, amount: CreditAmount) -> None:
+        self.balance = CreditBalance(
+            total_granted_count=self.total_granted_count + amount.value,
+            used_count=self.used_count,
+            remaining_count=self.remaining_count + amount.value,
+        )
+
 
 def _credit_count_for(value: int | CreditCount, *, field_name: str) -> CreditCount:
     match value:
