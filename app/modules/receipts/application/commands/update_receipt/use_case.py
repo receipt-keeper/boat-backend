@@ -29,6 +29,11 @@ class UpdateReceiptCommandUseCase:
             brand_name=(
                 command.brand_name if _has_update(command, "brand_name") else current.brand_name
             ),
+            serial_number=(
+                command.serial_number
+                if _has_update(command, "serial_number")
+                else current.serial_number
+            ),
             payment_location=(
                 command.payment_location
                 if _has_update(command, "payment_location")

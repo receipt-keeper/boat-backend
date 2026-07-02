@@ -10,6 +10,7 @@ class UpdateReceiptCommand:
     updated_fields: frozenset[str]
     item_name: str | None = None
     brand_name: str | None = None
+    serial_number: str | None = None
     payment_location: str | None = None
     payment_date: date | None = None
     total_amount: int | None = None

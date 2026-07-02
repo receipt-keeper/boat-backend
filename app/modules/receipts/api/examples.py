@@ -8,6 +8,7 @@ CREATE_RECEIPT_REQUEST_EXAMPLES: Final = [
     {
         "item_name": "삼성 냉장고 875L",
         "brand_name": "삼성",
+        "serial_number": "SN-20240526-001",
         "payment_location": "전자랜드",
         "payment_date": "2026-06-29",
         "total_amount": 1200000,
@@ -45,6 +46,7 @@ UPDATE_RECEIPT_REQUEST_EXAMPLES: Final = [
     {
         "item_name": "삼성 냉장고 900L",
         "brand_name": "삼성",
+        "serial_number": "SN-20240526-002",
         "payment_date": "2026-06-29",
         "period_months": 36,
         "category": "주방 가전",
@@ -66,6 +68,7 @@ RECEIPT_RESPONSE_EXAMPLE: Final = {
     "receiptId": "00000000-0000-0000-0000-000000000301",
     "itemName": "삼성 냉장고 875L",
     "brandName": "삼성",
+    "serialNumber": "SN-20240526-001",
     "paymentLocation": "전자랜드",
     "paymentDate": "2026-06-29",
     "totalAmount": 1200000,
@@ -84,6 +87,7 @@ RECEIPT_RESPONSE_EXAMPLE: Final = {
 UPDATED_RECEIPT_RESPONSE_EXAMPLE: Final = {
     **RECEIPT_RESPONSE_EXAMPLE,
     "itemName": "삼성 냉장고 900L",
+    "serialNumber": "SN-20240526-002",
     "periodMonths": 36,
     "expiresOn": "2029-06-29",
     "category": "주방 가전",

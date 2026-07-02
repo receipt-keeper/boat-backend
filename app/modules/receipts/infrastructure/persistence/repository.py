@@ -102,6 +102,7 @@ class SqlAlchemyReceiptRepository(ReceiptRepository):
 
         record.item_name = receipt.item_name.value
         record.brand_name = receipt.brand_name
+        record.serial_number = receipt.serial_number
         record.payment_location = receipt.payment_location
         record.payment_date = receipt.payment_date.value
         record.total_amount = None if receipt.total_amount is None else receipt.total_amount.value

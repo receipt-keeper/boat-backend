@@ -21,6 +21,7 @@ _SUCCESS_EXAMPLE = {
     "data": {
         "item_name": "삼성 냉장고 875L",
         "brand_name": "삼성",
+        "serial_number": "SN-20240526-001",
         "payment_location": "전자랜드",
         "payment_date": "2024-05-26",
         "total_amount": 5137000,
@@ -94,7 +95,7 @@ router = APIRouter(
     description=(
         "multipart/form-data로 전달된 영수증 이미지를 저장하지 않고 분석만 수행한다. "
         "대표 결제 항목, 브랜드, 구매처, 구매일, 금액, AS 기간, "
-        "대분류/소분류 카테고리 후보를 추출한다. "
+        "시리얼 넘버, 대분류/소분류 카테고리 후보를 추출한다. "
         "영수증 원본 파일 보관 및 연결은 receipts 저장 API의 receipt_file_ids에서 처리한다."
     ),
     response_model=CommonResponse[ReceiptOcrResultResponse],
@@ -164,6 +165,7 @@ async def extract_receipt_ocr(
         data=ReceiptOcrResultResponse(
             item_name=result.item_name.value,
             brand_name=result.brand_name.value if result.brand_name is not None else None,
+            serial_number=result.serial_number,
             payment_location=(
                 result.payment_location.value if result.payment_location is not None else None
             ),

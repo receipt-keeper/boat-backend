@@ -42,12 +42,13 @@ class ExtractReceiptOcrCommandUseCase:
                 image_content=command.image_content,
                 content_type=command.content_type,
             )
-            if not extracted.item_name.strip():
+            if not (extracted.item_name or "").strip():
                 raise ReceiptImageUnreadableError()
 
             result = ReceiptOcrResult.create(
                 item_name=extracted.item_name,
                 brand_name=extracted.brand_name,
+                serial_number=extracted.serial_number,
                 payment_location=extracted.payment_location,
                 payment_date=extracted.payment_date,
                 total_amount=extracted.total_amount,

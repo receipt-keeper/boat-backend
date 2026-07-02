@@ -23,6 +23,7 @@ class Receipt(Entity[UUID]):
     user_id: UUID
     item_name: ItemName
     brand_name: str | None
+    serial_number: str | None
     payment_location: str | None
     payment_date: PaymentDate
     total_amount: TotalAmount | None
@@ -43,6 +44,7 @@ class Receipt(Entity[UUID]):
         payment_date: date | None,
         receipt_id: UUID | None = None,
         brand_name: str | None = None,
+        serial_number: str | None = None,
         payment_location: str | None = None,
         total_amount: int | None = None,
         period_months: int | None = None,
@@ -72,6 +74,14 @@ class Receipt(Entity[UUID]):
                 value=brand_name,
                 field="brand_name",
                 label="브랜드명",
+                max_length=255,
+            )
+        )
+        new_serial_number = notification.collect(
+            lambda: _optional_text(
+                value=serial_number,
+                field="serial_number",
+                label="시리얼 넘버",
                 max_length=255,
             )
         )
@@ -124,6 +134,7 @@ class Receipt(Entity[UUID]):
             user_id=user_id,
             item_name=new_item_name,
             brand_name=new_brand_name,
+            serial_number=new_serial_number,
             payment_location=new_payment_location,
             payment_date=new_payment_date,
             total_amount=new_total_amount,
