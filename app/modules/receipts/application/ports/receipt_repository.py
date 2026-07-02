@@ -18,7 +18,7 @@ class ReceiptListPage:
 
 class ReceiptRepository(ABC):
     @abstractmethod
-    async def create(self, *, receipt: Receipt) -> Receipt:
+    async def create(self, *, receipt: Receipt) -> ReceiptReadModel:
         raise NotImplementedError
 
     @abstractmethod

@@ -3,7 +3,7 @@ import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Protocol
 from urllib.parse import parse_qs, urlparse
 from uuid import UUID, uuid4
@@ -262,6 +262,7 @@ async def test_create_receipt_persists_final_values(
     assert data["subCategory"] == "냉장고"
     assert data["requiresPhysicalReceipt"] is True
     assert data["receiptFileIds"] == [str(TEST_FILE_ID), str(SECOND_TEST_FILE_ID)]
+    assert data["registeredAt"] is not None
     assert _support_query(data["supportUrl"]) == "삼성 서비스센터"
 
     async with postgres_session_factory() as session:
@@ -280,6 +281,8 @@ async def test_create_receipt_persists_final_values(
     assert record.payment_location == "전자랜드"
     assert record.total_amount == 5137000
     assert record.requires_physical_receipt is True
+    registered_at = datetime.fromisoformat(data["registeredAt"].replace("Z", "+00:00"))
+    assert registered_at == record.created_at
     assert {attachment.file_id for attachment in attachments} == {
         TEST_FILE_ID,
         SECOND_TEST_FILE_ID,
