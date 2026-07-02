@@ -29,18 +29,19 @@ class CreateReceiptCommandUseCase:
         saved = await self._receipt_repository.create(receipt=receipt)
         await self._unit_of_work.commit()
         return CreateReceiptResult(
-            receipt_id=saved.id,
-            item_name=saved.item_name.value,
+            receipt_id=saved.receipt_id,
+            item_name=saved.item_name,
             brand_name=saved.brand_name,
             serial_number=saved.serial_number,
             payment_location=saved.payment_location,
-            payment_date=saved.payment_date.value,
-            total_amount=None if saved.total_amount is None else saved.total_amount.value,
-            period_months=saved.period_months.value,
+            payment_date=saved.payment_date,
+            total_amount=saved.total_amount,
+            period_months=saved.period_months,
             expires_on=saved.expires_on,
             category=saved.category,
             sub_category=saved.sub_category,
             memo=saved.memo,
             requires_physical_receipt=saved.requires_physical_receipt,
             receipt_file_ids=saved.receipt_file_ids,
+            registered_at=saved.registered_at,
         )

@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from uuid import UUID
 
 
@@ -19,3 +19,4 @@ class CreateReceiptResult:
     memo: str | None
     requires_physical_receipt: bool
     receipt_file_ids: tuple[UUID, ...]
+    registered_at: datetime

@@ -353,6 +353,7 @@ async def create_receipt(
                 brand_name=result.brand_name,
                 item_name=result.item_name,
             ),
+            registeredAt=result.registered_at,
         ),
     )
 
