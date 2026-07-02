@@ -21,7 +21,7 @@ app/
 | DB state | `main.py` | lifespan에서 `engine`과 `session_factory`를 만들어 `app.state`에 둔다. |
 | Router registration | `main.py` | business router는 `resolved_settings.api_prefix`를 쓴다. health는 API prefix 밖이다. |
 | Protected routers | `main.py` | `users`, `files`, `receipts`, `credits`, `notifications`, `usage`는 include 시점에 `authenticate_current_principal`가 붙는다. |
-| Public auth/OCR routers | `main.py` | `auth`, `ocr`는 global bearer dependency 없이 include한다. endpoint-level behavior는 각 모듈 소유. |
+| Public/protected routers | `main.py` | `auth`는 public router로 include한다. `ocr`는 credit 차감과 사용자별 사용량 추적을 위해 bearer dependency를 붙여 include한다. |
 | File delete guard override | `main.py` | files의 `get_file_reference_guard`를 users의 `get_profile_image_file_reference_guard`로 override한다. |
 | Exception mapping | `main.py` | 구체 handler를 generic `DomainError`, catch-all보다 먼저 등록한다. |
 | Shared primitives | `core/` | module은 core에 의존할 수 있다. |
