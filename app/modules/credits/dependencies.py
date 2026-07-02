@@ -87,6 +87,16 @@ async def get_finalize_credit_usage_command_use_case(
     )
 
 
+async def get_grant_credit_command_use_case(
+    credit_repository: Annotated[CreditRepository, Depends(get_credit_repository)],
+    unit_of_work: Annotated[UnitOfWork, Depends(get_unit_of_work)],
+) -> GrantCreditCommandUseCase:
+    return GrantCreditCommandUseCase(
+        credit_repository=credit_repository,
+        unit_of_work=unit_of_work,
+    )
+
+
 async def get_credit_balance_query_use_case(
     credit_repository: Annotated[CreditRepository, Depends(get_credit_repository)],
 ) -> GetCreditBalanceQueryUseCase:
@@ -114,6 +124,10 @@ ReserveCreditCommandUseCaseDep = Annotated[
 FinalizeCreditUsageCommandUseCaseDep = Annotated[
     FinalizeCreditUsageCommandUseCase,
     Depends(get_finalize_credit_usage_command_use_case),
+]
+GrantCreditCommandUseCaseDep = Annotated[
+    GrantCreditCommandUseCase,
+    Depends(get_grant_credit_command_use_case),
 ]
 ListCreditTransactionsQueryUseCaseDep = Annotated[
     ListCreditTransactionsQueryUseCase,
