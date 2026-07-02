@@ -44,6 +44,7 @@ class Receipt(Base):
     )
     item_name: Mapped[str] = mapped_column(type_=String(255), nullable=False)
     brand_name: Mapped[str | None] = mapped_column(type_=String(255), nullable=True)
+    serial_number: Mapped[str | None] = mapped_column(type_=String(255), nullable=True)
     payment_location: Mapped[str | None] = mapped_column(type_=String(500), nullable=True)
     payment_date: Mapped[date] = mapped_column(type_=Date, nullable=False)
     total_amount: Mapped[int | None] = mapped_column(type_=BigInteger, nullable=True)

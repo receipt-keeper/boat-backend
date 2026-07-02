@@ -12,6 +12,7 @@ class ReceiptOcrResultResponse(AppBaseModel):
                 {
                     "item_name": "삼성 냉장고 875L",
                     "brand_name": "삼성",
+                    "serial_number": "SN-20240526-001",
                     "payment_location": "전자랜드",
                     "payment_date": "2024-05-26",
                     "total_amount": 5137000,
@@ -28,6 +29,7 @@ class ReceiptOcrResultResponse(AppBaseModel):
 
     item_name: str = Field(description="대표 결제 항목명")
     brand_name: str | None = Field(description="브랜드명")
+    serial_number: str | None = Field(description="시리얼 넘버 후보값. 명확히 확인되지 않으면 null")
     payment_location: str | None = Field(description="구매처")
     payment_date: date = Field(description="구매일")
     total_amount: int | None = Field(description="총 결제 금액")

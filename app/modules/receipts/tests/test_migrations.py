@@ -52,29 +52,24 @@ async def _assert_tables_exist(database_url: str) -> None:
                     {"table_name": table_name},
                 )
                 assert result.scalar_one() is True
-            column_type = await connection.scalar(
-                text(
-                    """
-                    SELECT data_type
-                    FROM information_schema.columns
-                    WHERE table_schema = 'public'
-                      AND table_name = 'receipts'
-                      AND column_name = 'total_amount'
-                    """
+            expected_column_types = {
+                "total_amount": "bigint",
+                "sub_category": "character varying",
+                "serial_number": "character varying",
+            }
+            for column_name, expected_type in expected_column_types.items():
+                column_type = await connection.scalar(
+                    text(
+                        """
+                        SELECT data_type
+                        FROM information_schema.columns
+                        WHERE table_schema = 'public'
+                          AND table_name = 'receipts'
+                          AND column_name = :column_name
+                        """
+                    ),
+                    {"column_name": column_name},
                 )
-            )
-            assert column_type == "bigint"
-            sub_category_column_type = await connection.scalar(
-                text(
-                    """
-                    SELECT data_type
-                    FROM information_schema.columns
-                    WHERE table_schema = 'public'
-                      AND table_name = 'receipts'
-                      AND column_name = 'sub_category'
-                    """
-                )
-            )
-            assert sub_category_column_type == "character varying"
+                assert column_type == expected_type
     finally:
         await engine.dispose()

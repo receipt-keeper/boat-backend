@@ -28,6 +28,7 @@ class CountingReceiptOcrClient:
         return ExtractedReceiptOcrFields(
             item_name="삼성 냉장고",
             brand_name="삼성",
+            serial_number="SN-20240526-001",
             payment_location="전자랜드",
             payment_date=date.today(),
             total_amount=129000,
@@ -81,6 +82,7 @@ async def test_receipt_ocr_endpoint_returns_contract_response_and_finalizes_cred
     assert body["data"] == {
         "item_name": "삼성 냉장고 875L",
         "brand_name": "삼성",
+        "serial_number": "SN-20240526-001",
         "payment_location": "테스트 구매처",
         "payment_date": today.isoformat(),
         "total_amount": 129000,

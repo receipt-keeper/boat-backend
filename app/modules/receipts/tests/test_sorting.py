@@ -29,6 +29,7 @@ def _receipt_read_model(
         user_id=UUID("00000000-0000-0000-0000-000000000101"),
         item_name=item_name,
         brand_name=None,
+        serial_number=None,
         payment_location=None,
         payment_date=date(2024, 5, 26),
         total_amount=None,

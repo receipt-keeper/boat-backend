@@ -9,6 +9,7 @@ class CreateReceiptCommand:
     item_name: str
     payment_date: date
     brand_name: str | None = None
+    serial_number: str | None = None
     payment_location: str | None = None
     total_amount: int | None = None
     period_months: int | None = None

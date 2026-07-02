@@ -13,12 +13,15 @@ from app.modules.ocr.domain.value_objects import (
 )
 
 DEFAULT_WARRANTY_PERIOD_MONTHS = 12
+DEFAULT_CATEGORY = "기타 기기"
+DEFAULT_SUB_CATEGORY = "기타"
 
 
 @dataclass(frozen=True)
 class ReceiptOcrResult:
     item_name: ItemName
     brand_name: BrandName | None
+    serial_number: str | None
     payment_location: PaymentLocation | None
     payment_date: PaymentDate
     total_amount: TotalAmount | None
@@ -34,6 +37,7 @@ class ReceiptOcrResult:
         *,
         item_name: str | None,
         brand_name: str | None,
+        serial_number: str | None,
         payment_location: str | None,
         payment_date: date | None,
         total_amount: int | None,
@@ -58,12 +62,11 @@ class ReceiptOcrResult:
         new_period_months = notification.collect(
             lambda: WarrantyPeriodMonths(resolved_period_months)
         )
-        normalized_brand_name = _blank_to_none(brand_name)
-        normalized_payment_location = _blank_to_none(payment_location)
-        normalized_category = _blank_to_none(category)
-        normalized_sub_category = (
-            _blank_to_none(sub_category) if normalized_category is not None else None
-        )
+        normalized_brand_name = blank_to_none(brand_name)
+        normalized_serial_number = blank_to_none(serial_number)
+        normalized_payment_location = blank_to_none(payment_location)
+        normalized_category = blank_to_none(category) or DEFAULT_CATEGORY
+        normalized_sub_category = blank_to_none(sub_category) or DEFAULT_SUB_CATEGORY
         new_brand_name = (
             notification.collect(lambda: BrandName(normalized_brand_name))
             if normalized_brand_name is not None
@@ -84,6 +87,7 @@ class ReceiptOcrResult:
         return cls(
             item_name=new_item_name,
             brand_name=new_brand_name,
+            serial_number=normalized_serial_number,
             payment_location=new_payment_location,
             payment_date=new_payment_date,
             total_amount=new_total_amount,
@@ -95,7 +99,7 @@ class ReceiptOcrResult:
         )
 
 
-def _blank_to_none(value: str | None) -> str | None:
+def blank_to_none(value: str | None) -> str | None:
     if value is None:
         return None
 

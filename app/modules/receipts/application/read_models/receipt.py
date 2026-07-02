@@ -12,6 +12,7 @@ class ReceiptReadModel:
     user_id: UUID
     item_name: str
     brand_name: str | None
+    serial_number: str | None
     payment_location: str | None
     payment_date: date
     total_amount: int | None

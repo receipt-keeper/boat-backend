@@ -36,6 +36,7 @@ PNG_BYTES = b"\x89PNG\r\n\x1a\nreceipt-image"
 class _ExtractedReceiptOcrFields:
     item_name: str
     brand_name: str | None
+    serial_number: str | None
     payment_location: str | None
     payment_date: date | None
     total_amount: int | None
@@ -65,6 +66,7 @@ class UnreadableReceiptOcrClient:
         return _ExtractedReceiptOcrFields(
             item_name="",
             brand_name=None,
+            serial_number=None,
             payment_location=None,
             payment_date=None,
             total_amount=None,
@@ -86,6 +88,7 @@ class CategoryReceiptOcrClient:
         return _ExtractedReceiptOcrFields(
             item_name="삼성 냉장고 875L",
             brand_name="삼성",
+            serial_number="SN-20240526-001",
             payment_location="전자랜드",
             payment_date=date(2024, 5, 26),
             total_amount=5137000,
@@ -186,6 +189,7 @@ async def _create_receipt(
     item_name: str,
     payment_date: date,
     brand_name: str | None = None,
+    serial_number: str | None = None,
     payment_location: str | None = None,
     total_amount: int | None = None,
     period_months: int | None = None,
@@ -200,6 +204,7 @@ async def _create_receipt(
         json={
             "item_name": item_name,
             "brand_name": brand_name,
+            "serial_number": serial_number,
             "payment_location": payment_location,
             "payment_date": payment_date.isoformat(),
             "total_amount": total_amount,
@@ -227,6 +232,7 @@ async def test_create_receipt_persists_final_values(
     payload = {
         "item_name": "삼성 냉장고 875L",
         "brand_name": "삼성",
+        "serial_number": "SN-20240526-001",
         "payment_location": "전자랜드",
         "payment_date": "2024-05-26",
         "total_amount": 5137000,
@@ -247,6 +253,7 @@ async def test_create_receipt_persists_final_values(
     assert body["status"] == 201
     data = body["data"]
     assert data["itemName"] == "삼성 냉장고 875L"
+    assert data["serialNumber"] == "SN-20240526-001"
     assert data["paymentDate"] == "2024-05-26"
     assert data["totalAmount"] == 5137000
     assert data["periodMonths"] == 24
@@ -269,6 +276,7 @@ async def test_create_receipt_persists_final_values(
     assert record is not None
     assert record.user_id == TEST_USER_ID
     assert record.item_name == "삼성 냉장고 875L"
+    assert record.serial_number == "SN-20240526-001"
     assert record.payment_location == "전자랜드"
     assert record.total_amount == 5137000
     assert record.requires_physical_receipt is True
@@ -333,7 +341,9 @@ def test_receipts_openapi_includes_app_test_examples() -> None:
     assert create_request_examples["ocr_reviewed"]["value"]["receipt_file_ids"] == [
         "00000000-0000-0000-0000-000000000201"
     ]
+    assert create_request_examples["ocr_reviewed"]["value"]["serial_number"] == ("SN-20240526-001")
     assert "total_amount" not in create_request_examples["manual_nullable"]["value"]
+    assert "serial_number" in create_request_properties
     assert {"type": "null"} in create_request_properties["total_amount"]["anyOf"]
     assert "0 이상" in create_request_properties["total_amount"]["description"]
     assert "0 이상" in update_request_properties["total_amount"]["description"]
@@ -341,9 +351,11 @@ def test_receipts_openapi_includes_app_test_examples() -> None:
     assert create_response_example["data"]["receiptFileIds"] == [
         "00000000-0000-0000-0000-000000000201"
     ]
+    assert create_response_example["data"]["serialNumber"] == "SN-20240526-001"
     assert create_response_example["data"]["subCategory"] == "냉장고"
     assert detail_response_example["data"]["itemName"] == "삼성 냉장고 875L"
     assert "subCategory" in receipt_response_properties
+    assert "serialNumber" in receipt_response_properties
     assert {"type": "null"} in receipt_response_properties["imageUrl"]["anyOf"]
     assert update_request_examples["partial_update"]["value"]["item_name"] == "삼성 냉장고 900L"
     assert update_response_example["data"]["paymentLocation"] == "전자랜드"
@@ -359,6 +371,7 @@ async def test_list_receipts_supports_home_list_and_search_contract(
             client,
             item_name="삼성 냉장고 875L",
             brand_name="삼성",
+            serial_number="SN-20240526-001",
             payment_location="전자랜드",
             payment_date=date.today() - timedelta(days=16),
             total_amount=5137000,
@@ -562,6 +575,7 @@ async def test_receipt_detail_update_and_delete_use_persisted_data(
             client,
             item_name="삼성 냉장고 875L",
             brand_name="삼성",
+            serial_number="SN-20240526-001",
             payment_location="전자랜드",
             payment_date=date(2024, 5, 26),
             total_amount=5137000,
@@ -578,6 +592,7 @@ async def test_receipt_detail_update_and_delete_use_persisted_data(
             f"/api/v1/receipts/{receipt_id}",
             json={
                 "item_name": "삼성 냉장고 900L",
+                "serial_number": None,
                 "payment_location": None,
                 "total_amount": None,
                 "category": "기타 기기",
@@ -598,8 +613,10 @@ async def test_receipt_detail_update_and_delete_use_persisted_data(
     assert detail_response.status_code == 200
     assert detail_body["data"]["receiptId"] == receipt_id
     assert detail_body["data"]["itemName"] == "삼성 냉장고 875L"
+    assert detail_body["data"]["serialNumber"] == "SN-20240526-001"
     assert update_response.status_code == 200
     assert update_body["data"]["itemName"] == "삼성 냉장고 900L"
+    assert update_body["data"]["serialNumber"] is None
     assert update_body["data"]["paymentLocation"] is None
     assert update_body["data"]["totalAmount"] is None
     assert update_body["data"]["periodMonths"] == 36
@@ -746,6 +763,7 @@ async def test_ocr_auto_fill_category_can_be_saved(
             json={
                 "item_name": ocr_data["item_name"],
                 "brand_name": ocr_data["brand_name"],
+                "serial_number": ocr_data["serial_number"],
                 "payment_location": ocr_data["payment_location"],
                 "payment_date": ocr_data["payment_date"],
                 "total_amount": ocr_data["total_amount"],
@@ -759,9 +777,11 @@ async def test_ocr_auto_fill_category_can_be_saved(
     save_body = save_response.json()
     assert ocr_data["category"] == "주방 가전"
     assert ocr_data["sub_category"] == "냉장고"
+    assert ocr_data["serial_number"] == "SN-20240526-001"
     assert save_response.status_code == 201
     assert save_body["data"]["category"] == "주방 가전"
     assert save_body["data"]["subCategory"] == "냉장고"
+    assert save_body["data"]["serialNumber"] == "SN-20240526-001"
 
 
 async def test_create_receipt_calculates_expiration_on_month_end(

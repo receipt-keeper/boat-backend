@@ -15,6 +15,9 @@ PROJECT_ROOT = Path(__file__).parents[4]
 CREDIT_MIGRATION_PATH = (
     PROJECT_ROOT / "alembic" / "versions" / "20260701_0011_create_credit_tables.py"
 )
+RECEIPT_SERIAL_MIGRATION_PATH = (
+    PROJECT_ROOT / "alembic" / "versions" / "20260702_0011_add_receipt_serial_number.py"
+)
 
 
 def test_credit_migration_revision_is_linear_after_receipt_sub_category() -> None:
@@ -25,13 +28,21 @@ def test_credit_migration_revision_is_linear_after_receipt_sub_category() -> Non
     # When: Alembic revision graph와 credit migration 파일을 확인한다.
     heads = script_directory.get_heads()
 
-    # Then: 단일 head는 credit migration이고 superseded 20260629 credit head는 남지 않는다.
-    assert heads == ["20260701_0011"]
+    # Then: 단일 head는 최신 receipt serial migration이고 credit migration은 그 앞에 남는다.
+    assert heads == ["20260702_0011"]
     assert CREDIT_MIGRATION_PATH.is_file()
+    assert RECEIPT_SERIAL_MIGRATION_PATH.is_file()
 
     migration_source = CREDIT_MIGRATION_PATH.read_text(encoding="utf-8")
     assert 'revision: str = "20260701_0011"' in migration_source
     assert 'down_revision: str | Sequence[str] | None = "20260701_0010"' in migration_source
+
+    receipt_serial_migration_source = RECEIPT_SERIAL_MIGRATION_PATH.read_text(encoding="utf-8")
+    assert 'revision: str = "20260702_0011"' in receipt_serial_migration_source
+    assert (
+        'down_revision: str | Sequence[str] | None = "20260701_0011"'
+        in receipt_serial_migration_source
+    )
 
 
 def test_credits_migration_creates_credit_tables(

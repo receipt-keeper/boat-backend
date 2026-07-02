@@ -5,8 +5,9 @@ from typing import Protocol
 
 @dataclass(frozen=True, slots=True)
 class ExtractedReceiptOcrFields:
-    item_name: str
+    item_name: str | None
     brand_name: str | None
+    serial_number: str | None
     payment_location: str | None
     payment_date: date | None
     total_amount: int | None

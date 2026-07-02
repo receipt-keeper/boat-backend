@@ -13,18 +13,24 @@ from app.modules.ocr.application.ports.receipt_ocr_client import (
     ReceiptOcrClientPort,
 )
 from app.modules.ocr.domain.exceptions import ReceiptOcrProviderUnavailableError
+from app.modules.ocr.domain.model import (
+    DEFAULT_CATEGORY,
+    DEFAULT_SUB_CATEGORY,
+    blank_to_none,
+)
 
 _RECEIPT_OCR_PROMPT = """
 You are an information extraction specialist for receipts.
 
 Extract only information that is clearly supported by the receipt image.
 Do not guess missing or ambiguous values.
-If a field is not visible or uncertain, return null.
+If a field other than category or sub_category is not visible or uncertain, return null.
 Suggest category and sub_category only from the configured schema descriptions.
-If a product does not fit a listed sub-category but fits a category, use sub_category "기타".
+If a product does not fit a listed primary category, use category "기타 기기".
+If a product does not fit a listed sub-category, use sub_category "기타".
 Normalize dates to YYYY-MM-DD when clearly readable.
 Normalize total_amount as an integer number only when clearly readable.
-Do not extract serial numbers. Serial number support is out of scope for MVP.
+Extract serial_number only when it is clearly visible on the receipt image.
 Respond only with the configured structured output.
 Write text values in Korean when applicable.
 """
@@ -66,6 +72,10 @@ class ReceiptOcrStructuredOutput(BaseModel):
         default=None,
         description="제조사 또는 브랜드명. 영수증에서 확인되지 않으면 null.",
     )
+    serial_number: str | None = Field(
+        default=None,
+        description="제품 시리얼 넘버. 영수증에서 명확히 확인되지 않으면 null.",
+    )
     payment_location: str | None = Field(
         default=None,
         description="구매처, 결제처, 병원명, 매장명 또는 온라인몰 이름. 명확하지 않으면 null.",
@@ -86,7 +96,7 @@ class ReceiptOcrStructuredOutput(BaseModel):
         default=None,
         description=(
             "대분류 카테고리 추천값. 다음 중 하나만 사용: 주방 가전, 세탁/청소, "
-            "리빙/냉난방, IT 기기, 기타 기기. 명확하지 않으면 null."
+            "리빙/냉난방, IT 기기, 기타 기기. 명확히 맞지 않으면 기타 기기."
         ),
     )
     sub_category: SubCategoryLiteral | None = Field(
@@ -102,14 +112,15 @@ class ReceiptOcrStructuredOutput(BaseModel):
 
     def to_extracted_fields(self) -> ExtractedReceiptOcrFields:
         return ExtractedReceiptOcrFields(
-            item_name=(self.item_name or "").strip(),
-            brand_name=self.brand_name,
-            payment_location=self.payment_location,
+            item_name=blank_to_none(self.item_name),
+            brand_name=blank_to_none(self.brand_name),
+            serial_number=blank_to_none(self.serial_number),
+            payment_location=blank_to_none(self.payment_location),
             payment_date=self.payment_date,
             total_amount=self.total_amount,
             period_months=self.period_months,
-            category=(self.category or "").strip() or None,
-            sub_category=(self.sub_category or "").strip() or None,
+            category=blank_to_none(self.category) or DEFAULT_CATEGORY,
+            sub_category=blank_to_none(self.sub_category) or DEFAULT_SUB_CATEGORY,
         )
 
 
@@ -128,6 +139,7 @@ class ReceiptOcrClient(ReceiptOcrClientPort):
         structured_output = ReceiptOcrStructuredOutput(
             item_name="삼성 냉장고 875L",
             brand_name="삼성",
+            serial_number="SN-20240526-001",
             payment_location="테스트 구매처",
             payment_date=date.today(),
             total_amount=129000,

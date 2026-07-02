@@ -35,6 +35,7 @@ class ReadableReceiptOcrClient:
         return ExtractedReceiptOcrFields(
             item_name="삼성 냉장고",
             brand_name="삼성",
+            serial_number="SN-20240526-001",
             payment_location="전자랜드",
             payment_date=date(2026, 7, 1),
             total_amount=129000,
@@ -49,8 +50,9 @@ class UnreadableReceiptOcrClient:
         self, *, image_content: bytes, content_type: str
     ) -> ExtractedReceiptOcrFields:
         return ExtractedReceiptOcrFields(
-            item_name="",
+            item_name=None,
             brand_name=None,
+            serial_number=None,
             payment_location=None,
             payment_date=None,
             total_amount=None,

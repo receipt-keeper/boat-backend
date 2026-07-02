@@ -65,6 +65,11 @@ class CreateReceiptRequest(AppBaseModel):
         description="브랜드명.",
         max_length=255,
     )
+    serial_number: str | None = Field(
+        default=None,
+        description="시리얼 넘버. 확인되지 않으면 보내지 않거나 null로 보낸다.",
+        max_length=255,
+    )
     payment_location: str | None = Field(
         default=None,
         description="구매처 또는 결제처.",
@@ -169,6 +174,11 @@ class UpdateReceiptRequest(AppBaseModel):
 
     item_name: str | None = Field(default=None, description="제품명.", max_length=255)
     brand_name: str | None = Field(default=None, description="브랜드명.", max_length=255)
+    serial_number: str | None = Field(
+        default=None,
+        description="시리얼 넘버. null로 보내면 저장된 값을 비운다.",
+        max_length=255,
+    )
     payment_location: str | None = Field(
         default=None,
         description="구매처 또는 결제처.",

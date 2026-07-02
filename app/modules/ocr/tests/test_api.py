@@ -1,3 +1,4 @@
+import calendar
 from collections.abc import Callable
 from datetime import date
 
@@ -23,6 +24,7 @@ class UnreadableReceiptOcrClient:
         return ExtractedReceiptOcrFields(
             item_name="",
             brand_name=None,
+            serial_number=None,
             payment_location=None,
             payment_date=None,
             total_amount=None,
@@ -46,6 +48,7 @@ class ZeroTotalAmountReceiptOcrClient:
         return ExtractedReceiptOcrFields(
             item_name="무상 교체",
             brand_name=None,
+            serial_number=None,
             payment_location=None,
             payment_date=date.today(),
             total_amount=0,
@@ -75,20 +78,22 @@ def test_receipt_ocr_total_amount_rejects_negative_value() -> None:
         TotalAmount(-1)
 
 
-def test_receipt_ocr_result_drops_sub_category_without_category() -> None:
+def test_receipt_ocr_result_uses_category_fallback() -> None:
     result = ReceiptOcrResult.create(
         item_name="삼성 냉장고 875L",
         brand_name="삼성",
+        serial_number=" SN-20240526-001 ",
         payment_location="전자랜드",
         payment_date=date.today(),
         total_amount=5137000,
         period_months=12,
         category=None,
-        sub_category="냉장고",
+        sub_category=None,
     )
 
-    assert result.category is None
-    assert result.sub_category is None
+    assert result.serial_number == "SN-20240526-001"
+    assert result.category == "기타 기기"
+    assert result.sub_category == "기타"
 
 
 async def test_receipt_ocr_dependency_rejects_missing_provider_in_non_local_env() -> None:
@@ -96,6 +101,37 @@ async def test_receipt_ocr_dependency_rejects_missing_provider_in_non_local_env(
 
     with pytest.raises(ReceiptOcrProviderUnavailableError):
         await get_receipt_ocr_client(settings)
+
+
+async def test_receipt_ocr_endpoint_returns_contract_response(client: AsyncClient) -> None:
+    today = date.today()
+    last_day = calendar.monthrange(today.year + 1, today.month)[1]
+    expected_expires_on = date(today.year + 1, today.month, min(today.day, last_day))
+
+    response = await client.post(
+        "/api/v1/ocr",
+        files={"file": ("receipt.png", _PNG_BYTES, "image/png")},
+    )
+
+    body = response.json()
+
+    assert response.status_code == 200
+    assert body["success"] is True
+    assert body["status"] == 200
+    assert body["data"] == {
+        "item_name": "삼성 냉장고 875L",
+        "brand_name": "삼성",
+        "serial_number": "SN-20240526-001",
+        "payment_location": "테스트 구매처",
+        "payment_date": today.isoformat(),
+        "total_amount": 129000,
+        "period_months": 12,
+        "expires_on": expected_expires_on.isoformat(),
+        "category": "주방 가전",
+        "sub_category": "냉장고",
+        "needs_review": True,
+        "warnings": ["무상 AS 기간을 찾지 못해 12개월 기본값을 적용했습니다."],
+    }
 
 
 async def test_receipt_ocr_endpoint_keeps_zero_total_amount(
@@ -223,6 +259,7 @@ async def test_receipt_ocr_endpoint_openapi_examples(client: AsyncClient) -> Non
 
     assert operation["summary"] == "영수증 OCR 분석"
     assert success_example["data"]["item_name"] == "삼성 냉장고 875L"
+    assert success_example["data"]["serial_number"] == "SN-20240526-001"
     assert success_example["data"]["category"] == "주방 가전"
     assert success_example["data"]["sub_category"] == "냉장고"
     assert success_example["data"]["needs_review"] is True
