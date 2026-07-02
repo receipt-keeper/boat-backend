@@ -57,6 +57,16 @@ _PROVIDER_UNAVAILABLE_EXAMPLE = {
         "errors": [],
     },
 }
+_INSUFFICIENT_CREDIT_EXAMPLE = {
+    "success": False,
+    "status": status.HTTP_409_CONFLICT,
+    "data": {
+        "timestamp": "2026-06-21T00:00:00",
+        "message": "사용 가능한 크레딧이 부족합니다.",
+        "path": "/api/v1/ocr",
+        "errors": [],
+    },
+}
 
 router = APIRouter(
     prefix="/ocr",
@@ -65,6 +75,10 @@ router = APIRouter(
         status.HTTP_422_UNPROCESSABLE_CONTENT: {
             "model": CommonResponse[ApiErrorData],
             "description": "검증 실패 - 요청 형식 오류 또는 도메인 검증 실패",
+        },
+        status.HTTP_409_CONFLICT: {
+            "model": CommonResponse[ApiErrorData],
+            "description": "OCR 분석에 사용할 크레딧 부족",
         },
         status.HTTP_503_SERVICE_UNAVAILABLE: {
             "model": CommonResponse[ApiErrorData],
@@ -106,6 +120,10 @@ router = APIRouter(
         status.HTTP_422_UNPROCESSABLE_CONTENT: {
             "description": "영수증 이미지 인식 실패",
             "content": {"application/json": {"example": _UNREADABLE_RECEIPT_EXAMPLE}},
+        },
+        status.HTTP_409_CONFLICT: {
+            "description": "OCR 분석에 사용할 크레딧 부족",
+            "content": {"application/json": {"example": _INSUFFICIENT_CREDIT_EXAMPLE}},
         },
         status.HTTP_503_SERVICE_UNAVAILABLE: {
             "description": "외부 OCR 서비스 일시 사용 불가",

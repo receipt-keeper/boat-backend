@@ -4,6 +4,7 @@ from datetime import date
 
 from httpx import AsyncClient
 
+from app.core.http.auth import get_current_principal
 from app.main import app
 from app.modules.auth.api.security import authenticate_current_principal
 from app.modules.credits.application.commands.use_credit.command import UseCreditCommand
@@ -43,6 +44,7 @@ class RejectingReserveCreditCommandUseCase:
 
 async def test_receipt_ocr_endpoint_requires_authentication(client: AsyncClient) -> None:
     app.dependency_overrides.pop(authenticate_current_principal, None)
+    app.dependency_overrides.pop(get_current_principal, None)
 
     response = await client.post(
         "/api/v1/ocr",
@@ -54,6 +56,8 @@ async def test_receipt_ocr_endpoint_requires_authentication(client: AsyncClient)
     assert response.status_code == 401
     assert body["success"] is False
     assert body["status"] == 401
+
+    app.dependency_overrides.pop(get_current_principal, None)
 
 
 async def test_receipt_ocr_endpoint_returns_contract_response_and_finalizes_credit(

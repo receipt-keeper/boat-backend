@@ -5,7 +5,7 @@ from uuid import UUID
 import pytest
 from fastapi import Request
 
-from app.core.http.auth import set_current_principal
+from app.core.http.auth import get_current_principal, set_current_principal
 from app.core.security.principal import AuthenticatedPrincipal
 from app.main import app
 from app.modules.auth.api.security import authenticate_current_principal
@@ -42,9 +42,11 @@ def use_authenticated_principal() -> Iterator[None]:
         return principal
 
     app.dependency_overrides[authenticate_current_principal] = authenticate
+    app.dependency_overrides[get_current_principal] = authenticate
 
     yield
     app.dependency_overrides.pop(authenticate_current_principal, None)
+    app.dependency_overrides.pop(get_current_principal, None)
 
 
 @pytest.fixture(autouse=True)

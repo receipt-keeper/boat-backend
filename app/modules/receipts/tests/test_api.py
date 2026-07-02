@@ -15,10 +15,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config.settings import Settings
-from app.core.http.auth import set_current_principal
+from app.core.http.auth import get_current_principal, set_current_principal
 from app.core.security.principal import AuthenticatedPrincipal
 from app.main import create_app
 from app.modules.auth.api.security import authenticate_current_principal
+from app.modules.credits.infrastructure.persistence import orm as credit_orm
 from app.modules.ocr.dependencies import get_receipt_ocr_client
 from app.modules.receipts.infrastructure.persistence import orm as receipt_orm
 from app.modules.receipts.mock import SAMPLE_RECEIPTS
@@ -129,6 +130,27 @@ async def _fake_authenticate_current_principal(request: Request) -> Authenticate
     return principal
 
 
+async def _seed_ocr_credit(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with session_factory() as session:
+        existing_credit = await session.get(
+            credit_orm.UserCredit,
+            {"user_id": TEST_USER_ID, "feature_key": "ocr"},
+        )
+        if existing_credit is None:
+            session.add(
+                credit_orm.UserCredit(
+                    user_id=TEST_USER_ID,
+                    feature_key="ocr",
+                    total_granted_count=5,
+                    used_count=0,
+                    remaining_count=5,
+                )
+            )
+        await session.commit()
+
+
 @asynccontextmanager
 async def _client(
     session_factory: async_sessionmaker[AsyncSession],
@@ -143,7 +165,9 @@ async def _client(
         test_app.dependency_overrides[authenticate_current_principal] = (
             _fake_authenticate_current_principal
         )
+        test_app.dependency_overrides[get_current_principal] = _fake_authenticate_current_principal
     if receipt_ocr_client is not None:
+        await _seed_ocr_credit(session_factory)
         test_app.dependency_overrides[get_receipt_ocr_client] = lambda: receipt_ocr_client
 
     try:

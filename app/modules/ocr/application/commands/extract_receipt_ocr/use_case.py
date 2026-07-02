@@ -1,7 +1,6 @@
 from typing import Protocol
 
 from app.core.application.unit_of_work import UnitOfWork
-from app.core.domain.exceptions import DomainError
 from app.modules.credits.application.commands.use_credit.command import UseCreditCommand
 from app.modules.credits.domain import CreditAmount, CreditReason
 from app.modules.ocr.application.commands.extract_receipt_ocr.command import (
@@ -56,9 +55,8 @@ class ExtractReceiptOcrCommandUseCase:
                 category=extracted.category,
                 sub_category=extracted.sub_category,
             )
-        except DomainError:
+            await self._finalize_credit_usage_command_use_case.execute(use_credit_command)
+            return result
+        except Exception:
             await self._unit_of_work.rollback()
             raise
-
-        await self._finalize_credit_usage_command_use_case.execute(use_credit_command)
-        return result

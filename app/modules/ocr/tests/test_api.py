@@ -214,6 +214,9 @@ async def test_receipt_ocr_endpoint_openapi_examples(client: AsyncClient) -> Non
     operation = response.json()["paths"]["/api/v1/ocr"]["post"]
     success_example = operation["responses"]["200"]["content"]["application/json"]["example"]
     unreadable_example = operation["responses"]["422"]["content"]["application/json"]["example"]
+    insufficient_credit_example = operation["responses"]["409"]["content"]["application/json"][
+        "example"
+    ]
     provider_unavailable_example = operation["responses"]["503"]["content"]["application/json"][
         "example"
     ]
@@ -224,6 +227,7 @@ async def test_receipt_ocr_endpoint_openapi_examples(client: AsyncClient) -> Non
     assert success_example["data"]["sub_category"] == "냉장고"
     assert success_example["data"]["needs_review"] is True
     assert unreadable_example["data"]["errors"][0]["field"] == "file"
+    assert insufficient_credit_example["data"]["message"] == "사용 가능한 크레딧이 부족합니다."
     assert provider_unavailable_example["status"] == 503
 
 
