@@ -14,6 +14,9 @@ from tests.support.credits_usage_contract import (
     create_credits_usage_contract_app,
 )
 
+type JsonObject = dict[str, JsonValue]
+type JsonValue = JsonObject | list[JsonValue] | str | int | float | bool | None
+
 
 async def test_app_facing_bc_routes_are_published_in_openapi() -> None:
     # Given: 앱 공개 계약을 설명하는 OpenAPI 문서가 있다.
@@ -255,8 +258,8 @@ async def test_receipts_match_app_contract() -> None:
 
 
 def _assert_common_response_schema(
-    openapi_schema: dict[str, object],
-    operation: dict[str, object],
+    openapi_schema: JsonObject,
+    operation: JsonObject,
     status_code: int,
 ) -> None:
     responses = operation["responses"]
@@ -265,7 +268,11 @@ def _assert_common_response_schema(
     assert isinstance(response, dict)
     content = response["content"]
     assert isinstance(content, dict)
-    schema_ref = content["application/json"]["schema"]["$ref"]
+    media_type = content["application/json"]
+    assert isinstance(media_type, dict)
+    media_schema = media_type["schema"]
+    assert isinstance(media_schema, dict)
+    schema_ref = media_schema["$ref"]
     assert isinstance(schema_ref, str)
     assert schema_ref.startswith("#/components/schemas/CommonResponse")
 
