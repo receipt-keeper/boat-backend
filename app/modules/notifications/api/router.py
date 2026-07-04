@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Annotated, Protocol
 from uuid import UUID
 
-from fastapi import APIRouter, Query, Response, status
+from fastapi import APIRouter, BackgroundTasks, Query, Response, status
 
 from app.core.http.auth import CurrentPrincipalDep
 from app.core.http.responses import ApiErrorData, CommonResponse, CursorPaginationResponse
@@ -24,6 +24,9 @@ from app.modules.notifications.application.commands.mark_notification_read.comma
 from app.modules.notifications.application.commands.register_device_token.command import (
     RegisterDeviceTokenCommand,
 )
+from app.modules.notifications.application.commands.send_notification_push.command import (
+    SendNotificationPushCommand,
+)
 from app.modules.notifications.application.commands.unregister_device_token.command import (
     UnregisterDeviceTokenCommand,
 )
@@ -41,6 +44,7 @@ from app.modules.notifications.dependencies import (
     GetNotificationSettingsQueryUseCaseDep,
     ListNotificationsQueryUseCaseDep,
     MarkNotificationReadCommandUseCaseDep,
+    NotificationPushDispatcherDep,
     RegisterDeviceTokenCommandUseCaseDep,
     UnregisterDeviceTokenCommandUseCaseDep,
     UpdateNotificationSettingsCommandUseCaseDep,
@@ -132,12 +136,17 @@ async def list_notifications(
     status_code=status.HTTP_201_CREATED,
     response_model=CommonResponse[NotificationResponse],
     summary="알림 생성",
-    description="현재 사용자에게 표시할 앱 알림을 생성한다.",
+    description=(
+        "현재 사용자에게 표시할 앱 알림을 생성한다. 등록된 디바이스로의 푸시 발송은 "
+        "응답 반환 이후 백그라운드에서 진행된다."
+    ),
 )
 async def create_notification(
     request: CreateNotificationRequest,
     principal: CurrentPrincipalDep,
     command_use_case: CreateNotificationCommandUseCaseDep,
+    push_dispatcher: NotificationPushDispatcherDep,
+    background_tasks: BackgroundTasks,
 ) -> CommonResponse[NotificationResponse]:
     result = await command_use_case.execute(
         CreateNotificationCommand(
@@ -147,6 +156,17 @@ async def create_notification(
             target_type=request.target_type,
             target_id=request.target_id,
         )
+    )
+    background_tasks.add_task(
+        push_dispatcher.dispatch,
+        SendNotificationPushCommand(
+            user_id=principal.user_id,
+            notification_id=result.notification_id,
+            kind=result.kind,
+            message=result.message,
+            target_type=result.target_type,
+            target_id=result.target_id,
+        ),
     )
     return CommonResponse(
         success=True,
