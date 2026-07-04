@@ -101,10 +101,8 @@ class CreateNotificationCommandUseCase:
             logger.warning("푸시 발송에 실패했습니다. user_id=%s", notification.user_id)
             return
 
-        if report.invalid_tokens:
-            await self._push_token_repository.delete_by_fcm_tokens(
-                fcm_tokens=report.invalid_tokens,
-            )
+        if report.invalid_fids:
+            await self._push_token_repository.delete_by_fids(fids=report.invalid_fids)
             await self._unit_of_work.commit()
 
 

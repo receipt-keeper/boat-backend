@@ -39,22 +39,9 @@ class NotificationMessage(ValueObject[str]):
 
 
 @dataclass(frozen=True, slots=True)
-class DeviceId(ValueObject[str]):
+class Fid(ValueObject[str]):
     MAX_LENGTH: ClassVar[int] = 255
 
     def validate(self) -> None:
         if not self.value or self.value.strip() != self.value or len(self.value) > self.MAX_LENGTH:
-            raise ValidationError(
-                [ErrorDetail(field="deviceId", message="디바이스 ID가 올바르지 않습니다.")]
-            )
-
-
-@dataclass(frozen=True, slots=True)
-class FcmToken(ValueObject[str]):
-    MAX_LENGTH: ClassVar[int] = 512
-
-    def validate(self) -> None:
-        if not self.value or self.value.strip() != self.value or len(self.value) > self.MAX_LENGTH:
-            raise ValidationError(
-                [ErrorDetail(field="fcmToken", message="FCM 토큰이 올바르지 않습니다.")]
-            )
+            raise ValidationError([ErrorDetail(field="fid", message="FID가 올바르지 않습니다.")])

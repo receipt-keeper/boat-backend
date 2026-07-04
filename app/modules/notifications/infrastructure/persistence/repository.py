@@ -2,7 +2,7 @@ from collections.abc import Sequence
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import and_, delete, func, not_, or_, select
+from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -169,33 +169,19 @@ class SqlAlchemyPushTokenRepository(PushTokenRepository):
         self,
         *,
         user_id: UUID,
-        device_id: str,
-        fcm_token: str,
+        fid: str,
         platform: DevicePlatform,
     ) -> UserPushToken:
-        await self._session.execute(
-            delete(orm.UserPushToken).where(
-                orm.UserPushToken.fcm_token == fcm_token,
-                not_(
-                    and_(
-                        orm.UserPushToken.user_id == user_id,
-                        orm.UserPushToken.device_id == device_id,
-                    )
-                ),
-            )
-        )
-
         insert_statement = postgresql_insert(orm.UserPushToken).values(
             user_id=user_id,
-            device_id=device_id,
-            fcm_token=fcm_token,
+            fid=fid,
             platform=platform.value,
         )
         await self._session.execute(
             insert_statement.on_conflict_do_update(
-                index_elements=[orm.UserPushToken.user_id, orm.UserPushToken.device_id],
+                index_elements=[orm.UserPushToken.fid],
                 set_={
-                    "fcm_token": fcm_token,
+                    "user_id": user_id,
                     "platform": platform.value,
                     "updated_at": func.now(),
                 },
@@ -205,21 +191,18 @@ class SqlAlchemyPushTokenRepository(PushTokenRepository):
 
         record = await self._session.scalar(
             select(orm.UserPushToken)
-            .where(
-                orm.UserPushToken.user_id == user_id,
-                orm.UserPushToken.device_id == device_id,
-            )
+            .where(orm.UserPushToken.fid == fid)
             .execution_options(populate_existing=True)
         )
         if record is None:
             raise RuntimeError("push token upsert 이후 레코드를 찾을 수 없습니다.")
         return mapper.push_token_to_domain(record)
 
-    async def unregister(self, *, user_id: UUID, device_id: str) -> None:
+    async def unregister(self, *, user_id: UUID, fid: str) -> None:
         await self._session.execute(
             delete(orm.UserPushToken).where(
                 orm.UserPushToken.user_id == user_id,
-                orm.UserPushToken.device_id == device_id,
+                orm.UserPushToken.fid == fid,
             )
         )
         await self._session.flush()
@@ -232,11 +215,11 @@ class SqlAlchemyPushTokenRepository(PushTokenRepository):
         )
         return tuple(mapper.push_token_to_domain(record) for record in records)
 
-    async def delete_by_fcm_tokens(self, *, fcm_tokens: Sequence[str]) -> None:
-        if not fcm_tokens:
+    async def delete_by_fids(self, *, fids: Sequence[str]) -> None:
+        if not fids:
             return
         await self._session.execute(
-            delete(orm.UserPushToken).where(orm.UserPushToken.fcm_token.in_(list(fcm_tokens)))
+            delete(orm.UserPushToken).where(orm.UserPushToken.fid.in_(list(fids)))
         )
         await self._session.flush()
 

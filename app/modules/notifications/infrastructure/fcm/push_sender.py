@@ -14,8 +14,8 @@ from app.modules.notifications.application.ports.push_sender import (
 )
 from app.modules.notifications.domain.model import UserPushToken
 
-# 이 응답을 받은 토큰은 다시 유효해지지 않으므로 저장소에서 제거 대상으로 보고한다.
-_DEAD_TOKEN_ERRORS = (messaging.UnregisteredError, messaging.SenderIdMismatchError)
+# 이 응답을 받은 등록은 다시 유효해지지 않으므로 저장소에서 제거 대상으로 보고한다.
+_DEAD_REGISTRATION_ERRORS = (messaging.UnregisteredError, messaging.SenderIdMismatchError)
 
 
 class DisabledPushSender(PushSender):
@@ -66,17 +66,17 @@ class FcmPushSender(PushSender):
         except firebase_exceptions.FirebaseError as exc:
             raise ExternalServiceError("푸시 발송에 실패했습니다.") from exc
 
-        invalid_tokens = tuple(
-            token.fcm_token.value
+        invalid_fids = tuple(
+            token.fid.value
             for token, response in zip(tokens, batch.responses, strict=True)
-            if isinstance(response.exception, _DEAD_TOKEN_ERRORS)
+            if isinstance(response.exception, _DEAD_REGISTRATION_ERRORS)
         )
-        return PushSendReport(invalid_tokens=invalid_tokens)
+        return PushSendReport(invalid_fids=invalid_fids)
 
 
 def _to_fcm_message(token: UserPushToken, message: PushMessage) -> messaging.Message:
     return messaging.Message(
-        token=token.fcm_token.value,
+        fid=token.fid.value,
         notification=messaging.Notification(title=message.title, body=message.body),
         data=dict(message.data),
     )

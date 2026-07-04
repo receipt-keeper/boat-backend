@@ -136,7 +136,7 @@ async def test_create_notification_rejects_target_id_mismatch(
 async def test_create_notification_sends_push_to_registered_device(
     postgres_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    # Given: 로그인한 사용자가 디바이스 FCM 토큰을 등록해 두었다.
+    # Given: 로그인한 사용자가 디바이스를 FID로 등록해 두었다.
     push_sender = FakePushSender()
     async with notification_api_client(
         postgres_session_factory,
@@ -144,7 +144,7 @@ async def test_create_notification_sends_push_to_registered_device(
     ) as client:
         await client.put(
             "/api/v1/notifications/devices",
-            json={"deviceId": "device-1", "fcmToken": "fcm-token-1", "platform": "android"},
+            json={"fid": "fid-1", "platform": "android"},
         )
 
         # When: 알림을 생성한다.
@@ -158,28 +158,28 @@ async def test_create_notification_sends_push_to_registered_device(
             },
         )
 
-    # Then: 등록된 토큰으로 제목/본문이 채워진 푸시가 한 번 발송된다.
+    # Then: 등록된 FID로 제목/본문이 채워진 푸시가 한 번 발송된다.
     assert response.status_code == 201
     assert len(push_sender.calls) == 1
     sent_tokens, sent_message = push_sender.calls[0]
-    assert [token.fcm_token.value for token in sent_tokens] == ["fcm-token-1"]
+    assert [token.fid.value for token in sent_tokens] == ["fid-1"]
     assert sent_message.title == "혜택 안내"
     assert sent_message.body == "이번 달 혜택을 확인해 보세요."
     assert sent_message.data["kind"] == "benefit"
 
 
-async def test_create_notification_removes_token_rejected_by_fcm(
+async def test_create_notification_removes_registration_rejected_by_fcm(
     postgres_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    # Given: 등록된 토큰이 FCM에서 무효 판정을 받는 상황이다.
-    push_sender = FakePushSender(report=PushSendReport(invalid_tokens=("fcm-token-dead",)))
+    # Given: 등록된 FID가 FCM에서 무효 판정을 받는 상황이다.
+    push_sender = FakePushSender(report=PushSendReport(invalid_fids=("fid-dead",)))
     async with notification_api_client(
         postgres_session_factory,
         dependency_overrides={get_push_sender: lambda: push_sender},
     ) as client:
         await client.put(
             "/api/v1/notifications/devices",
-            json={"deviceId": "device-1", "fcmToken": "fcm-token-dead", "platform": "ios"},
+            json={"fid": "fid-dead", "platform": "ios"},
         )
 
         # When: 알림을 생성한다.
@@ -193,7 +193,7 @@ async def test_create_notification_removes_token_rejected_by_fcm(
             },
         )
 
-    # Then: 알림 생성은 성공하고 무효 토큰 행은 DB에서 제거된다.
+    # Then: 알림 생성은 성공하고 무효 등록 행은 DB에서 제거된다.
     assert response.status_code == 201
     async with postgres_session_factory() as session:
         rows = list(await session.scalars(select(orm.UserPushToken)))

@@ -24,8 +24,7 @@ async def test_cleanup_job_deletes_only_tokens_past_stale_window(
         session.add(
             orm.UserPushToken(
                 user_id=STALE_USER_ID,
-                device_id="stale-device",
-                fcm_token="fcm-token-stale",
+                fid="fid-stale",
                 platform="android",
                 updated_at=now - timedelta(days=61),
             )
@@ -33,8 +32,7 @@ async def test_cleanup_job_deletes_only_tokens_past_stale_window(
         session.add(
             orm.UserPushToken(
                 user_id=FRESH_USER_ID,
-                device_id="fresh-device",
-                fcm_token="fcm-token-fresh",
+                fid="fid-fresh",
                 platform="ios",
                 updated_at=now,
             )
@@ -52,7 +50,7 @@ async def test_cleanup_job_deletes_only_tokens_past_stale_window(
     assert deleted_count == 1
     async with postgres_session_factory() as session:
         remaining = list(await session.scalars(select(orm.UserPushToken)))
-    assert [row.device_id for row in remaining] == ["fresh-device"]
+    assert [row.fid for row in remaining] == ["fid-fresh"]
 
 
 async def test_cleanup_job_is_idempotent_when_nothing_is_stale(

@@ -131,23 +131,16 @@ class RegisterDeviceRequest(AppBaseModel):
         json_schema_extra={
             "examples": [
                 {
-                    "deviceId": "b3f3f7b0-6e33-4d3a-9a9a-8f6a2b5e9c11",
-                    "fcmToken": "fcm-token-example",
+                    "fid": "dGhpc2lzYWZpZGV4YW1wbGU",
                     "platform": "android",
                 }
             ]
         },
     )
 
-    device_id: str = Field(
-        alias="deviceId",
-        description="클라이언트가 발급한 디바이스 식별자.",
-        examples=["b3f3f7b0-6e33-4d3a-9a9a-8f6a2b5e9c11"],
-    )
-    fcm_token: str = Field(
-        alias="fcmToken",
-        description="Firebase Cloud Messaging 디바이스 토큰.",
-        examples=["fcm-token-example"],
+    fid: str = Field(
+        description="Firebase Installation ID. 앱 설치 인스턴스를 식별한다.",
+        examples=["dGhpc2lzYWZpZGV4YW1wbGU"],
     )
     platform: DevicePlatform = Field(
         description="디바이스 플랫폼.",

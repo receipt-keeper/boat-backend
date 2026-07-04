@@ -14,7 +14,7 @@ class PushMessage:
 
 @dataclass(frozen=True, slots=True)
 class PushSendReport:
-    invalid_tokens: tuple[str, ...] = ()
+    invalid_fids: tuple[str, ...] = ()
 
 
 class PushSender(ABC):

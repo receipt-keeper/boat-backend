@@ -102,8 +102,7 @@ async def _seed_full_account(
     session.add(
         notifications_orm.UserPushToken(
             user_id=user.id,
-            device_id=f"device-{subject}",
-            fcm_token=f"fcm-token-{subject}",
+            fid=f"fid-{subject}",
             platform="android",
         )
     )

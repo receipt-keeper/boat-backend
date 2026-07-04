@@ -239,10 +239,10 @@ async def update_notification(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="FCM 디바이스 등록",
     description=(
-        "로그인한 사용자의 디바이스 FCM 토큰을 등록한다. 같은 디바이스를 다시 등록하면 "
-        "기존 토큰을 새 값으로 교체하는 멱등 upsert이며, 같은 토큰이 다른 디바이스에 "
-        "등록되어 있었다면 그 등록은 삭제되고 이번 디바이스로 이전된다. 성공하면 본문 없이 "
-        "204를 반환한다."
+        "로그인한 사용자의 디바이스를 FID(Firebase Installation ID)로 등록한다. "
+        "같은 FID를 다시 등록하면 플랫폼과 갱신 시각을 덮어쓰는 멱등 upsert이며, "
+        "같은 FID가 다른 사용자에게 등록되어 있었다면 이번 사용자 소유로 이전된다. "
+        "성공하면 본문 없이 204를 반환한다."
     ),
 )
 async def register_device(
@@ -253,8 +253,7 @@ async def register_device(
     await command_use_case.execute(
         RegisterDeviceTokenCommand(
             user_id=principal.user_id,
-            device_id=request.device_id,
-            fcm_token=request.fcm_token,
+            fid=request.fid,
             platform=request.platform,
         )
     )
@@ -262,23 +261,23 @@ async def register_device(
 
 
 @router.delete(
-    "/notifications/devices/{device_id}",
+    "/notifications/devices/{fid}",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="FCM 디바이스 해제",
     description=(
-        "로그인한 사용자의 디바이스 FCM 토큰 등록을 해제한다. 등록되어 있지 않은 "
-        "device_id를 보내도 멱등하게 204를 반환한다."
+        "로그인한 사용자의 디바이스 등록을 FID 기준으로 해제한다. 로그아웃 전에 호출한다. "
+        "등록되어 있지 않은 fid를 보내도 멱등하게 204를 반환한다."
     ),
 )
 async def unregister_device(
-    device_id: str,
+    fid: str,
     principal: CurrentPrincipalDep,
     command_use_case: UnregisterDeviceTokenCommandUseCaseDep,
 ) -> Response:
     await command_use_case.execute(
         UnregisterDeviceTokenCommand(
             user_id=principal.user_id,
-            device_id=device_id,
+            fid=fid,
         )
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
