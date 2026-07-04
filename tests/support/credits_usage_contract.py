@@ -12,9 +12,11 @@ from app.main import create_app
 from app.modules.auth.api.security import authenticate_current_principal
 from app.modules.credits.application.ports.credit_repository import (
     CreditRepository,
+    CreditTransactionAppend,
     CreditTransactionCursor,
     CreditTransactionListItem,
     CreditTransactionListResult,
+    CreditTransactionSourceKey,
 )
 from app.modules.credits.dependencies import get_credit_repository
 from app.modules.credits.domain import (
@@ -46,6 +48,9 @@ EXPECTED_PUBLIC_PATHS: Final[frozenset[str]] = frozenset(
         "/api/v1/receipts/{receipt_id}",
         "/api/v1/ocr",
         "/api/v1/usage",
+        "/api/v1/promotions",
+        "/api/v1/promotions/{promotion_id}/redemptions",
+        "/api/v1/promotions/redemptions",
         "/api/v1/notifications",
         "/api/v1/notifications/{notification_id}",
         "/api/v1/notifications/settings",
@@ -77,6 +82,8 @@ FORBIDDEN_PUBLIC_PATHS: Final[frozenset[str]] = frozenset(
         "/api/v1/credits/grants",
         "/api/v1/credits/recharge",
         "/api/v1/credits/recharges",
+        "/api/v1/promotion-codes",
+        "/api/v1/promotion-codes/{promotion_code_id}",
     }
 )
 FORBIDDEN_OPENAPI_PUBLIC_TERMS: Final[frozenset[str]] = frozenset(
@@ -145,12 +152,26 @@ class CreditRepositoryStub(CreditRepository):
     async def append_transaction(
         self,
         *,
-        user_id: UUID,
-        reason: CreditReason,
-        action: CreditAction,
-        amount: CreditAmount,
+        transaction: CreditTransactionAppend,
     ) -> None:
         raise AssertionError("contract read app should not append credit transactions")
+
+    async def flush_pending_writes(self) -> None:
+        raise AssertionError("contract read app should not flush credit writes")
+
+    async def exists_transaction_with_idempotency_key(
+        self,
+        *,
+        idempotency_key: str,
+    ) -> bool:
+        raise AssertionError("contract read app should not check credit idempotency")
+
+    async def exists_transaction_with_source(
+        self,
+        *,
+        source: CreditTransactionSourceKey,
+    ) -> bool:
+        raise AssertionError("contract read app should not check credit source")
 
     async def delete_by_user_id(self, *, user_id: UUID) -> None:
         raise AssertionError("contract read app should not delete credit state")

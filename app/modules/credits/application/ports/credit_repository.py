@@ -3,11 +3,13 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
+from app.core.domain.exceptions import ErrorDetail, ValidationError
 from app.modules.credits.domain import (
     CreditAction,
     CreditAmount,
     CreditBalance,
     CreditReason,
+    CreditSourceType,
     UserCredit,
 )
 
@@ -29,10 +31,44 @@ class CreditTransactionListItem:
 
 
 @dataclass(frozen=True, slots=True)
+class CreditTransactionAppend:
+    user_id: UUID
+    reason: CreditReason
+    action: CreditAction
+    amount: CreditAmount
+    source_type: CreditSourceType | None = None
+    source_id: UUID | None = None
+    idempotency_key: str | None = None
+
+    def __post_init__(self) -> None:
+        if (self.source_type is None) != (self.source_id is None):
+            raise ValidationError(
+                [
+                    ErrorDetail(
+                        field="source",
+                        message="크레딧 출처 유형과 출처 ID는 함께 저장해야 합니다.",
+                    )
+                ]
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class CreditTransactionSourceKey:
+    user_id: UUID
+    source_type: CreditSourceType
+    source_id: UUID
+    action: CreditAction
+
+
+@dataclass(frozen=True, slots=True)
 class CreditTransactionListResult:
     transactions: tuple[CreditTransactionListItem, ...]
     has_next: bool
     total_count: int
+
+
+class CreditTransactionWriteConflictError(RuntimeError):
+    pass
 
 
 class CreditRepository(ABC):
@@ -52,11 +88,28 @@ class CreditRepository(ABC):
     async def append_transaction(
         self,
         *,
-        user_id: UUID,
-        reason: CreditReason,
-        action: CreditAction,
-        amount: CreditAmount,
+        transaction: CreditTransactionAppend,
     ) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def flush_pending_writes(self) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def exists_transaction_with_idempotency_key(
+        self,
+        *,
+        idempotency_key: str,
+    ) -> bool:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def exists_transaction_with_source(
+        self,
+        *,
+        source: CreditTransactionSourceKey,
+    ) -> bool:
         raise NotImplementedError
 
     @abstractmethod

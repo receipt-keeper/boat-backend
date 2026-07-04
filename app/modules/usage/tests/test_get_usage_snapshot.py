@@ -2,17 +2,16 @@ from uuid import UUID
 
 from app.modules.credits.application.ports.credit_repository import (
     CreditRepository,
+    CreditTransactionAppend,
     CreditTransactionCursor,
     CreditTransactionListResult,
+    CreditTransactionSourceKey,
 )
 from app.modules.credits.application.queries.get_credit_balance.use_case import (
     GetCreditBalanceQueryUseCase,
 )
 from app.modules.credits.domain import (
-    CreditAction,
-    CreditAmount,
     CreditBalance,
-    CreditReason,
     UserCredit,
 )
 from app.modules.usage.application.queries.get_usage_snapshot.query import (
@@ -41,12 +40,26 @@ class CreditRepositoryStub(CreditRepository):
     async def append_transaction(
         self,
         *,
-        user_id: UUID,
-        reason: CreditReason,
-        action: CreditAction,
-        amount: CreditAmount,
+        transaction: CreditTransactionAppend,
     ) -> None:
         raise AssertionError("usage snapshot should not append credit transactions")
+
+    async def flush_pending_writes(self) -> None:
+        raise AssertionError("usage snapshot should not flush credit writes")
+
+    async def exists_transaction_with_idempotency_key(
+        self,
+        *,
+        idempotency_key: str,
+    ) -> bool:
+        raise AssertionError("usage snapshot should not check credit idempotency")
+
+    async def exists_transaction_with_source(
+        self,
+        *,
+        source: CreditTransactionSourceKey,
+    ) -> bool:
+        raise AssertionError("usage snapshot should not check credit source")
 
     async def delete_by_user_id(self, *, user_id: UUID) -> None:
         raise AssertionError("usage snapshot should not delete credit state")

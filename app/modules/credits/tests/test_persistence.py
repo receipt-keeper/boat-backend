@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 import pytest
-from sqlalchemy import CheckConstraint, text
+from sqlalchemy import CheckConstraint, String, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.domain.exceptions import ValidationError
@@ -35,6 +35,14 @@ EXPECTED_REASON_CONSTRAINTS = {
         "OR (reason = 'ocrUsage' AND action = 'use')"
     ),
     "ck_credit_transactions_amount_positive": "amount > 0",
+    "ck_credit_transactions_source_type_allowed": (
+        "source_type IS NULL "
+        "OR source_type IN ('promotionRedemption', 'monthlyAllowance', 'ocrAnalysis')"
+    ),
+    "ck_credit_transactions_source_pair_complete": (
+        "(source_type IS NULL AND source_id IS NULL) "
+        "OR (source_type IS NOT NULL AND source_id IS NOT NULL)"
+    ),
 }
 
 
@@ -51,12 +59,16 @@ def test_credit_orm_uses_user_credit_snapshot_table() -> None:
     assert set(user_credits.c.keys()) == {
         "user_id",
         "feature_key",
+        "current_period",
         "total_granted_count",
         "used_count",
         "remaining_count",
         "created_at",
         "updated_at",
     }
+    assert isinstance(user_credits.c.current_period.type, String)
+    assert user_credits.c.current_period.type.length == 7
+    assert user_credits.c.current_period.nullable is True
 
 
 def test_credit_transaction_orm_declares_allowed_value_constraints() -> None:
@@ -69,6 +81,35 @@ def test_credit_transaction_orm_declares_allowed_value_constraints() -> None:
 
     assert constraints == EXPECTED_REASON_CONSTRAINTS
     assert "feature_key" in credit_transactions.c
+    assert "source_type" in credit_transactions.c
+    assert "source_id" in credit_transactions.c
+    assert "idempotency_key" in credit_transactions.c
+    assert credit_transactions.c.source_type.nullable is True
+    assert credit_transactions.c.source_id.nullable is True
+    assert credit_transactions.c.idempotency_key.nullable is True
+
+
+def test_credit_transaction_orm_declares_source_indexes() -> None:
+    credit_transactions = orm.CreditTransaction.metadata.tables["credit_transactions"]
+    indexes = {str(index.name): index for index in credit_transactions.indexes}
+
+    assert "ix_credit_transactions_idempotency_key_unique" in indexes
+    idempotency_index = indexes["ix_credit_transactions_idempotency_key_unique"]
+    assert str(idempotency_index.dialect_options["postgresql"]["where"]) == (
+        "idempotency_key IS NOT NULL"
+    )
+    assert "ix_credit_transactions_source_unique" in indexes
+    source_index = indexes["ix_credit_transactions_source_unique"]
+    assert tuple(column.name for column in source_index.columns) == (
+        "source_type",
+        "source_id",
+        "user_id",
+        "feature_key",
+        "action",
+    )
+    assert str(source_index.dialect_options["postgresql"]["where"]) == (
+        "source_type IS NOT NULL AND source_id IS NOT NULL"
+    )
 
 
 async def test_credit_repository_returns_zero_snapshot_when_account_missing(
