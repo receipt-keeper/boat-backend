@@ -1,0 +1,61 @@
+from abc import ABC, abstractmethod
+from datetime import datetime
+from uuid import UUID
+
+from app.modules.promotions.domain.model import (
+    Promotion,
+    PromotionCode,
+    PromotionRedemption,
+)
+
+
+class PromotionRepository(ABC):
+    @abstractmethod
+    async def find_current_ocr_credit_promotion(self, *, at: datetime) -> Promotion | None:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def find_promotion_for_update(self, *, promotion_id: UUID) -> Promotion | None:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def find_code_by_code_for_update(self, *, code: str) -> PromotionCode | None:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def find_redemption_by_idempotency_key(
+        self,
+        *,
+        idempotency_key: str,
+    ) -> PromotionRedemption | None:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def find_redemption_by_user_and_promotion(
+        self,
+        *,
+        user_id: UUID,
+        promotion_id: UUID,
+    ) -> PromotionRedemption | None:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def count_user_redemptions(
+        self,
+        *,
+        user_id: UUID,
+        promotion_id: UUID,
+    ) -> int:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def create_redemption(self, *, redemption: PromotionRedemption) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def save_promotion(self, *, promotion: Promotion) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def save_code(self, *, code: PromotionCode) -> None:
+        raise NotImplementedError
