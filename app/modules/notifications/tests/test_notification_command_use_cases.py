@@ -10,6 +10,12 @@ from app.modules.notifications.application.commands.create_notification.use_case
     PUSH_TITLES,
     CreateNotificationCommandUseCase,
 )
+from app.modules.notifications.application.commands.delete_user_push_tokens.command import (
+    DeleteUserPushTokensCommand,
+)
+from app.modules.notifications.application.commands.delete_user_push_tokens.use_case import (
+    DeleteUserPushTokensCommandUseCase,
+)
 from app.modules.notifications.application.commands.mark_notification_read.command import (
     MarkNotificationReadCommand,
 )
@@ -504,6 +510,59 @@ async def test_unregister_device_token_commits_once() -> None:
     assert repository.unregister_count == 1
     assert unit_of_work.commit_count == 1
     assert (TEST_USER_ID, "device-1") not in repository.tokens
+
+
+async def test_delete_user_push_tokens_removes_only_target_user_tokens() -> None:
+    # Given: 두 사용자에게 등록된 디바이스 토큰이 있다.
+    repository = InMemoryPushTokenRepository()
+    await repository.register(
+        user_id=TEST_USER_ID,
+        device_id="device-1",
+        fcm_token="fcm-token-1",
+        platform=DevicePlatform.ANDROID,
+    )
+    await repository.register(
+        user_id=TEST_USER_ID,
+        device_id="device-2",
+        fcm_token="fcm-token-2",
+        platform=DevicePlatform.IOS,
+    )
+    await repository.register(
+        user_id=OTHER_USER_ID,
+        device_id="device-9",
+        fcm_token="fcm-token-9",
+        platform=DevicePlatform.IOS,
+    )
+    unit_of_work = FakeUnitOfWork()
+    use_case = DeleteUserPushTokensCommandUseCase(
+        push_token_repository=repository,
+        unit_of_work=unit_of_work,
+    )
+
+    # When: 탈퇴 사용자의 토큰을 전부 삭제한다.
+    await use_case.execute(DeleteUserPushTokensCommand(user_id=TEST_USER_ID))
+
+    # Then: 해당 사용자 토큰만 사라지고 commit은 한 번만 수행된다.
+    assert repository.delete_by_user_id_count == 1
+    assert unit_of_work.commit_count == 1
+    assert set(repository.tokens) == {(OTHER_USER_ID, "device-9")}
+
+
+async def test_delete_user_push_tokens_without_tokens_still_commits_idempotently() -> None:
+    # Given: 등록된 토큰이 없는 사용자가 있다.
+    repository = InMemoryPushTokenRepository()
+    unit_of_work = FakeUnitOfWork()
+    use_case = DeleteUserPushTokensCommandUseCase(
+        push_token_repository=repository,
+        unit_of_work=unit_of_work,
+    )
+
+    # When: 토큰 삭제를 실행한다.
+    await use_case.execute(DeleteUserPushTokensCommand(user_id=TEST_USER_ID))
+
+    # Then: 예외 없이 멱등하게 commit이 한 번 수행된다.
+    assert repository.delete_by_user_id_count == 1
+    assert unit_of_work.commit_count == 1
 
 
 async def test_unregister_missing_device_token_still_commits_idempotently() -> None:

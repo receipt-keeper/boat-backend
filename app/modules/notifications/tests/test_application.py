@@ -130,6 +130,7 @@ class InMemoryPushTokenRepository(PushTokenRepository):
         self.register_count = 0
         self.unregister_count = 0
         self.delete_by_fcm_tokens_count = 0
+        self.delete_by_user_id_count = 0
 
     async def register(
         self,
@@ -170,6 +171,12 @@ class InMemoryPushTokenRepository(PushTokenRepository):
         targets = set(fcm_tokens)
         for key, token in list(self.tokens.items()):
             if token.fcm_token.value in targets:
+                del self.tokens[key]
+
+    async def delete_by_user_id(self, *, user_id: UUID) -> None:
+        self.delete_by_user_id_count += 1
+        for key in list(self.tokens):
+            if key[0] == user_id:
                 del self.tokens[key]
 
 

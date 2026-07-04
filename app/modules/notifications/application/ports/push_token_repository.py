@@ -29,3 +29,7 @@ class PushTokenRepository(ABC):
     @abstractmethod
     async def delete_by_fcm_tokens(self, *, fcm_tokens: Sequence[str]) -> None:
         raise NotImplementedError
+
+    @abstractmethod
+    async def delete_by_user_id(self, *, user_id: UUID) -> None:
+        raise NotImplementedError

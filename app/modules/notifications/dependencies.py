@@ -11,6 +11,9 @@ from app.core.db.unit_of_work import SqlAlchemyUnitOfWork
 from app.modules.notifications.application.commands.create_notification.use_case import (
     CreateNotificationCommandUseCase,
 )
+from app.modules.notifications.application.commands.delete_user_push_tokens.use_case import (
+    DeleteUserPushTokensCommandUseCase,
+)
 from app.modules.notifications.application.commands.mark_notification_read.use_case import (
     MarkNotificationReadCommandUseCase,
 )
@@ -72,6 +75,16 @@ def build_update_notification_settings_command_use_case(
 ) -> UpdateNotificationSettingsCommandUseCase:
     return UpdateNotificationSettingsCommandUseCase(
         notification_repository=SqlAlchemyNotificationRepository(session),
+        unit_of_work=unit_of_work,
+    )
+
+
+def build_delete_user_push_tokens_command_use_case(
+    session: AsyncSession,
+    unit_of_work: UnitOfWork,
+) -> DeleteUserPushTokensCommandUseCase:
+    return DeleteUserPushTokensCommandUseCase(
+        push_token_repository=SqlAlchemyPushTokenRepository(session),
         unit_of_work=unit_of_work,
     )
 

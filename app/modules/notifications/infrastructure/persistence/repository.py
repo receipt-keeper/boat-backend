@@ -239,3 +239,9 @@ class SqlAlchemyPushTokenRepository(PushTokenRepository):
             delete(orm.UserPushToken).where(orm.UserPushToken.fcm_token.in_(list(fcm_tokens)))
         )
         await self._session.flush()
+
+    async def delete_by_user_id(self, *, user_id: UUID) -> None:
+        await self._session.execute(
+            delete(orm.UserPushToken).where(orm.UserPushToken.user_id == user_id)
+        )
+        await self._session.flush()
