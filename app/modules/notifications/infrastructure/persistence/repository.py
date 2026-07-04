@@ -1,8 +1,9 @@
 from collections.abc import Sequence
 from datetime import datetime
+from typing import Any, cast
 from uuid import UUID
 
-from sqlalchemy import and_, delete, func, or_, select
+from sqlalchemy import CursorResult, and_, delete, func, or_, select
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -230,10 +231,11 @@ class SqlAlchemyPushTokenRepository(PushTokenRepository):
         await self._session.flush()
 
     async def delete_stale(self, *, older_than: datetime) -> int:
-        deleted_ids = await self._session.scalars(
-            delete(orm.UserPushToken)
-            .where(orm.UserPushToken.updated_at < older_than)
-            .returning(orm.UserPushToken.id)
+        result = cast(
+            "CursorResult[Any]",
+            await self._session.execute(
+                delete(orm.UserPushToken).where(orm.UserPushToken.updated_at < older_than)
+            ),
         )
         await self._session.flush()
-        return len(list(deleted_ids))
+        return result.rowcount or 0

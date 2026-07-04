@@ -45,3 +45,7 @@ class Fid(ValueObject[str]):
     def validate(self) -> None:
         if not self.value or self.value.strip() != self.value or len(self.value) > self.MAX_LENGTH:
             raise ValidationError([ErrorDetail(field="fid", message="FID가 올바르지 않습니다.")])
+
+    def __repr__(self) -> str:
+        # 로그/예외에 발송 식별자 원문이 노출되지 않도록 마스킹한다.
+        return f"Fid(****{len(self.value)})"

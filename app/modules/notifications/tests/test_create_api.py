@@ -151,8 +151,8 @@ async def test_create_notification_sends_push_to_registered_device(
         response = await client.post(
             "/api/v1/notifications",
             json={
-                "kind": "benefit",
-                "message": "이번 달 혜택을 확인해 보세요.",
+                "kind": "credit_prompt",
+                "message": "분석 가능 횟수를 확인해 보세요.",
                 "targetType": "none",
                 "targetId": None,
             },
@@ -163,9 +163,9 @@ async def test_create_notification_sends_push_to_registered_device(
     assert len(push_sender.calls) == 1
     sent_tokens, sent_message = push_sender.calls[0]
     assert [token.fid.value for token in sent_tokens] == ["fid-1"]
-    assert sent_message.title == "혜택 안내"
-    assert sent_message.body == "이번 달 혜택을 확인해 보세요."
-    assert sent_message.data["kind"] == "benefit"
+    assert sent_message.title == "크레딧 안내"
+    assert sent_message.body == "분석 가능 횟수를 확인해 보세요."
+    assert sent_message.data["kind"] == "credit_prompt"
 
 
 async def test_create_notification_removes_registration_rejected_by_fcm(
@@ -186,8 +186,8 @@ async def test_create_notification_removes_registration_rejected_by_fcm(
         response = await client.post(
             "/api/v1/notifications",
             json={
-                "kind": "benefit",
-                "message": "이번 달 혜택을 확인해 보세요.",
+                "kind": "credit_prompt",
+                "message": "분석 가능 횟수를 확인해 보세요.",
                 "targetType": "none",
                 "targetId": None,
             },

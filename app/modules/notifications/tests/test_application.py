@@ -2,7 +2,6 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from uuid import UUID
 
-from app.core.domain.exceptions import ExternalServiceError
 from app.modules.notifications.application.ports.notification_repository import (
     NotificationListCursor,
     NotificationListResult,
@@ -187,11 +186,11 @@ class FakePushSender(PushSender):
         self,
         *,
         report: PushSendReport | None = None,
-        error: ExternalServiceError | None = None,
+        error: Exception | None = None,
     ) -> None:
         self.calls: list[tuple[tuple[UserPushToken, ...], PushMessage]] = []
         self._report = report if report is not None else PushSendReport()
-        self._error = error
+        self._error: Exception | None = error
 
     async def send(
         self,

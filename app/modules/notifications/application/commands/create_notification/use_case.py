@@ -4,7 +4,6 @@ from datetime import UTC, datetime
 from typing import Final
 
 from app.core.application.unit_of_work import UnitOfWork
-from app.core.domain.exceptions import ExternalServiceError
 from app.modules.notifications.application.commands.create_notification.command import (
     CreateNotificationCommand,
 )
@@ -35,6 +34,9 @@ PUSH_TITLES: Final[dict[NotificationKind, str]] = {
     NotificationKind.CREDIT_PROMPT: "크레딧 안내",
     NotificationKind.BENEFIT: "혜택 안내",
 }
+
+# 마케팅성 알림은 push 수신 동의에 더해 마케팅 수신 동의까지 있어야 발송한다.
+MARKETING_KINDS: Final[frozenset[NotificationKind]] = frozenset({NotificationKind.BENEFIT})
 
 
 def _utc_now() -> datetime:
@@ -80,30 +82,34 @@ class CreateNotificationCommandUseCase:
         )
 
     async def _send_push(self, notification: UserNotification) -> None:
-        settings = await self._notification_repository.get_settings(
-            user_id=notification.user_id,
-        )
-        if not settings.push_enabled:
-            return
-        tokens = await self._push_token_repository.list_by_user(user_id=notification.user_id)
-        if not tokens:
-            return
-
-        message = PushMessage(
-            title=PUSH_TITLES[notification.kind],
-            body=notification.message.value,
-            data=_push_data(notification),
-        )
+        # 푸시는 best-effort — 이미 커밋된 알림 생성이 발송/정리 실패로 되돌아가면 안 된다.
         try:
-            report = await self._push_sender.send(tokens=tokens, message=message)
-        except ExternalServiceError:
-            # 푸시는 best-effort — 발송 실패가 알림 생성 자체를 되돌리지 않는다.
-            logger.warning("푸시 발송에 실패했습니다. user_id=%s", notification.user_id)
-            return
+            settings = await self._notification_repository.get_settings(
+                user_id=notification.user_id,
+            )
+            if not settings.push_enabled:
+                return
+            if notification.kind in MARKETING_KINDS and not settings.marketing_consent:
+                return
+            tokens = await self._push_token_repository.list_by_user(user_id=notification.user_id)
+            if not tokens:
+                return
 
-        if report.invalid_fids:
-            await self._push_token_repository.delete_by_fids(fids=report.invalid_fids)
-            await self._unit_of_work.commit()
+            message = PushMessage(
+                title=PUSH_TITLES[notification.kind],
+                body=notification.message.value,
+                data=_push_data(notification),
+            )
+            report = await self._push_sender.send(tokens=tokens, message=message)
+            if report.invalid_fids:
+                await self._push_token_repository.delete_by_fids(fids=report.invalid_fids)
+                await self._unit_of_work.commit()
+        except Exception:
+            logger.warning(
+                "푸시 발송 또는 무효 등록 정리에 실패했습니다. user_id=%s",
+                notification.user_id,
+                exc_info=True,
+            )
 
 
 def _push_data(notification: UserNotification) -> dict[str, str]:

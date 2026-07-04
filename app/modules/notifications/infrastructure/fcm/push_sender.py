@@ -1,5 +1,6 @@
 import asyncio
 from collections.abc import Sequence
+from itertools import batched
 
 import firebase_admin
 from firebase_admin import credentials, messaging
@@ -16,6 +17,9 @@ from app.modules.notifications.domain.model import UserPushToken
 
 # 이 응답을 받은 등록은 다시 유효해지지 않으므로 저장소에서 제거 대상으로 보고한다.
 _DEAD_REGISTRATION_ERRORS = (messaging.UnregisteredError, messaging.SenderIdMismatchError)
+
+# send_each는 한 번에 500개까지만 받는다. 넘기면 ValueError로 즉시 거부된다.
+_SEND_BATCH_LIMIT = 500
 
 
 class DisabledPushSender(PushSender):
@@ -60,18 +64,20 @@ class FcmPushSender(PushSender):
         tokens: Sequence[UserPushToken],
         message: PushMessage,
     ) -> PushSendReport:
-        fcm_messages = [_to_fcm_message(token, message) for token in tokens]
-        try:
-            batch = await asyncio.to_thread(messaging.send_each, fcm_messages, app=self._app)
-        except firebase_exceptions.FirebaseError as exc:
-            raise ExternalServiceError("푸시 발송에 실패했습니다.") from exc
+        invalid_fids: list[str] = []
+        for chunk in batched(tokens, _SEND_BATCH_LIMIT):
+            fcm_messages = [_to_fcm_message(token, message) for token in chunk]
+            try:
+                batch = await asyncio.to_thread(messaging.send_each, fcm_messages, app=self._app)
+            except firebase_exceptions.FirebaseError as exc:
+                raise ExternalServiceError("푸시 발송에 실패했습니다.") from exc
 
-        invalid_fids = tuple(
-            token.fid.value
-            for token, response in zip(tokens, batch.responses, strict=True)
-            if isinstance(response.exception, _DEAD_REGISTRATION_ERRORS)
-        )
-        return PushSendReport(invalid_fids=invalid_fids)
+            invalid_fids.extend(
+                token.fid.value
+                for token, response in zip(chunk, batch.responses, strict=True)
+                if isinstance(response.exception, _DEAD_REGISTRATION_ERRORS)
+            )
+        return PushSendReport(invalid_fids=tuple(invalid_fids))
 
 
 def _to_fcm_message(token: UserPushToken, message: PushMessage) -> messaging.Message:

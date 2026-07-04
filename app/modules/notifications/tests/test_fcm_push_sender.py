@@ -90,6 +90,39 @@ async def test_fcm_push_sender_builds_messages_and_reports_dead_registrations(
     assert all(fcm_message.data == {"kind": "benefit"} for fcm_message in fcm_messages)
 
 
+async def test_fcm_push_sender_splits_sends_into_batches_of_500(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given: FCM 배치 한도(500)를 넘는 501개 등록이 있다.
+    tokens = [
+        _push_token(fid=f"fid-{index}", platform=DevicePlatform.ANDROID) for index in range(501)
+    ]
+    sent_batch_sizes: list[int] = []
+
+    def fake_send_each(
+        fcm_messages: list[messaging.Message],
+        *,
+        app: firebase_admin.App,
+    ) -> _FakeBatchResponse:
+        sent_batch_sizes.append(len(fcm_messages))
+        responses = [_FakeSendResponse(None) for _ in fcm_messages]
+        if len(fcm_messages) == 1:
+            responses[0] = _FakeSendResponse(messaging.UnregisteredError("죽은 등록"))
+        return _FakeBatchResponse(responses)
+
+    monkeypatch.setattr(messaging, "send_each", fake_send_each)
+
+    # When: 전체 등록에 발송한다.
+    report = await _sender().send(
+        tokens=tokens,
+        message=PushMessage(title="혜택 안내", body="본문"),
+    )
+
+    # Then: 500개 단위로 나뉘어 호출되고 무효 등록은 배치 전체에서 집계된다.
+    assert sent_batch_sizes == [500, 1]
+    assert report.invalid_fids == ("fid-500",)
+
+
 async def test_fcm_push_sender_wraps_batch_failure_as_external_service_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
