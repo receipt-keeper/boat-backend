@@ -13,7 +13,7 @@ async def test_get_promotions_route_returns_redeemable_app_state() -> None:
 
     async with api_client(test_app) as test_client:
         # When: OCR 혜택 프로모션을 조회한다.
-        response = await test_client.get("/api/v1/promotions?benefitFeatureKey=ocr")
+        response = await test_client.get("/api/v1/promotions?featureKey=ocr")
 
     # Then: 표시 문구 없이 상태/혜택/리딤/잔액 표면만 반환한다.
     body = response.json()
@@ -34,7 +34,7 @@ async def test_get_promotions_route_returns_unavailable_without_display_fields()
 
     async with api_client(test_app) as test_client:
         # When: OCR 혜택 프로모션을 조회한다.
-        response = await test_client.get("/api/v1/promotions?benefitFeatureKey=ocr")
+        response = await test_client.get("/api/v1/promotions?featureKey=ocr")
 
     # Then: 앱이 숨김 상태로 처리할 수 있는 unavailable 응답을 받는다.
     assert response.status_code == 200
@@ -53,7 +53,7 @@ async def test_get_promotions_route_marks_already_redeemed() -> None:
 
     async with api_client(test_app) as test_client:
         # When: OCR 혜택 프로모션을 조회한다.
-        response = await test_client.get("/api/v1/promotions?benefitFeatureKey=ocr")
+        response = await test_client.get("/api/v1/promotions?featureKey=ocr")
 
     # Then: 중복 수령 버튼을 막을 수 있는 alreadyRedeemed 상태를 받는다.
     assert response.status_code == 200
@@ -67,7 +67,7 @@ async def test_promotions_routes_require_authentication() -> None:
 
     async with api_client(test_app) as test_client:
         # When: 인증 없이 Promotion API를 호출한다.
-        response = await test_client.get("/api/v1/promotions?benefitFeatureKey=ocr")
+        response = await test_client.get("/api/v1/promotions?featureKey=ocr")
 
     # Then: 기존 bearer dependency가 401로 차단한다.
     assert response.status_code == 401

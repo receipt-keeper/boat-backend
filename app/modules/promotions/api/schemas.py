@@ -25,7 +25,7 @@ class PromotionListQuery(AppBaseModel):
     model_config = ConfigDict(frozen=True, populate_by_name=True)
 
     benefit_feature_key: PromotionBenefitFeatureKey = Field(
-        alias="benefitFeatureKey",
+        alias="featureKey",
         description="조회할 혜택 기능. 현재는 OCR만 지원한다.",
     )
 
