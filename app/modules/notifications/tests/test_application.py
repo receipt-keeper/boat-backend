@@ -131,6 +131,7 @@ class InMemoryPushTokenRepository(PushTokenRepository):
         self.unregister_count = 0
         self.delete_by_fcm_tokens_count = 0
         self.delete_by_user_id_count = 0
+        self.delete_stale_count = 0
 
     async def register(
         self,
@@ -178,6 +179,13 @@ class InMemoryPushTokenRepository(PushTokenRepository):
         for key in list(self.tokens):
             if key[0] == user_id:
                 del self.tokens[key]
+
+    async def delete_stale(self, *, older_than: datetime) -> int:
+        self.delete_stale_count += 1
+        stale_keys = [key for key, token in self.tokens.items() if token.updated_at < older_than]
+        for key in stale_keys:
+            del self.tokens[key]
+        return len(stale_keys)
 
 
 class FakePushSender(PushSender):

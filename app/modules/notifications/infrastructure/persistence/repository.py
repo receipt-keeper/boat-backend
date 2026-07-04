@@ -245,3 +245,12 @@ class SqlAlchemyPushTokenRepository(PushTokenRepository):
             delete(orm.UserPushToken).where(orm.UserPushToken.user_id == user_id)
         )
         await self._session.flush()
+
+    async def delete_stale(self, *, older_than: datetime) -> int:
+        deleted_ids = await self._session.scalars(
+            delete(orm.UserPushToken)
+            .where(orm.UserPushToken.updated_at < older_than)
+            .returning(orm.UserPushToken.id)
+        )
+        await self._session.flush()
+        return len(list(deleted_ids))

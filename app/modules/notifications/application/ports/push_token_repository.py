@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
+from datetime import datetime
 from uuid import UUID
 
 from app.modules.notifications.domain.model import UserPushToken
@@ -32,4 +33,8 @@ class PushTokenRepository(ABC):
 
     @abstractmethod
     async def delete_by_user_id(self, *, user_id: UUID) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def delete_stale(self, *, older_than: datetime) -> int:
         raise NotImplementedError

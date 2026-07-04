@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
@@ -9,6 +10,12 @@ from app.modules.notifications.application.commands.create_notification.command 
 from app.modules.notifications.application.commands.create_notification.use_case import (
     PUSH_TITLES,
     CreateNotificationCommandUseCase,
+)
+from app.modules.notifications.application.commands.delete_stale_push_tokens.command import (
+    DeleteStalePushTokensCommand,
+)
+from app.modules.notifications.application.commands.delete_stale_push_tokens.use_case import (
+    DeleteStalePushTokensCommandUseCase,
 )
 from app.modules.notifications.application.commands.delete_user_push_tokens.command import (
     DeleteUserPushTokensCommand,
@@ -41,7 +48,11 @@ from app.modules.notifications.application.commands.update_notification_settings
     UpdateNotificationSettingsCommandUseCase,
 )
 from app.modules.notifications.application.ports.push_sender import PushSendReport
-from app.modules.notifications.domain.model import NotificationSettings, UserNotification
+from app.modules.notifications.domain.model import (
+    NotificationSettings,
+    UserNotification,
+    UserPushToken,
+)
 from app.modules.notifications.domain.value_objects import (
     DevicePlatform,
     NotificationKind,
@@ -510,6 +521,64 @@ async def test_unregister_device_token_commits_once() -> None:
     assert repository.unregister_count == 1
     assert unit_of_work.commit_count == 1
     assert (TEST_USER_ID, "device-1") not in repository.tokens
+
+
+async def test_delete_stale_push_tokens_removes_only_tokens_older_than_cutoff() -> None:
+    # Given: 기준 시각보다 오래된 토큰과 최근에 갱신된 토큰이 있다.
+    repository = InMemoryPushTokenRepository()
+    stale_token = UserPushToken.create(
+        user_id=TEST_USER_ID,
+        device_id="stale-device",
+        fcm_token="fcm-token-stale",
+        platform=DevicePlatform.ANDROID,
+        created_at=CREATED_AT,
+        updated_at=CREATED_AT,
+    )
+    fresh_token = UserPushToken.create(
+        user_id=TEST_USER_ID,
+        device_id="fresh-device",
+        fcm_token="fcm-token-fresh",
+        platform=DevicePlatform.IOS,
+        created_at=READ_AT,
+        updated_at=READ_AT,
+    )
+    repository.tokens[(TEST_USER_ID, "stale-device")] = stale_token
+    repository.tokens[(TEST_USER_ID, "fresh-device")] = fresh_token
+    unit_of_work = FakeUnitOfWork()
+    use_case = DeleteStalePushTokensCommandUseCase(
+        push_token_repository=repository,
+        unit_of_work=unit_of_work,
+    )
+
+    # When: CREATED_AT과 READ_AT 사이 시각을 기준으로 정리한다.
+    result = await use_case.execute(
+        DeleteStalePushTokensCommand(older_than=datetime(2026, 6, 28, 3, 0, tzinfo=UTC))
+    )
+
+    # Then: 기준보다 오래된 토큰만 삭제되고 삭제 건수가 보고되며 commit은 한 번 수행된다.
+    assert result.deleted_count == 1
+    assert repository.delete_stale_count == 1
+    assert set(repository.tokens) == {(TEST_USER_ID, "fresh-device")}
+    assert unit_of_work.commit_count == 1
+
+
+async def test_delete_stale_push_tokens_without_stale_tokens_reports_zero() -> None:
+    # Given: 정리 대상이 없는 저장소가 있다.
+    repository = InMemoryPushTokenRepository()
+    unit_of_work = FakeUnitOfWork()
+    use_case = DeleteStalePushTokensCommandUseCase(
+        push_token_repository=repository,
+        unit_of_work=unit_of_work,
+    )
+
+    # When: 정리를 실행한다.
+    result = await use_case.execute(
+        DeleteStalePushTokensCommand(older_than=datetime(2026, 6, 28, 3, 0, tzinfo=UTC))
+    )
+
+    # Then: 0건 삭제를 보고하고 멱등하게 commit이 한 번 수행된다.
+    assert result.deleted_count == 0
+    assert unit_of_work.commit_count == 1
 
 
 async def test_delete_user_push_tokens_removes_only_target_user_tokens() -> None:
