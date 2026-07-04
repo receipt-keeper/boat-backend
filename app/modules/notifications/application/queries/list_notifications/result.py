@@ -2,19 +2,18 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
-from app.modules.notifications.domain.value_objects import (
-    NotificationKind,
-    NotificationTargetType,
-)
+from app.modules.notifications.domain.value_objects import NotificationCategory
 
 
 @dataclass(frozen=True, slots=True)
 class NotificationListItemResult:
     notification_id: UUID
-    kind: NotificationKind
+    category: NotificationCategory
+    kind: str
+    title: str
     message: str
-    target_type: NotificationTargetType
-    target_id: UUID | None
+    resource_type: str | None
+    resource_id: UUID | None
     created_at: datetime
     read_at: datetime | None
 

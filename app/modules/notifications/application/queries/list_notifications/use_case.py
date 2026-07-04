@@ -37,10 +37,14 @@ class ListNotificationsQueryUseCase:
         notifications = tuple(
             NotificationListItemResult(
                 notification_id=notification.id,
-                kind=notification.kind,
+                category=notification.category,
+                kind=notification.kind.value,
+                title=notification.title.value,
                 message=notification.message.value,
-                target_type=notification.target_type,
-                target_id=notification.target_id,
+                resource_type=(
+                    notification.resource_type.value if notification.resource_type else None
+                ),
+                resource_id=notification.resource_id,
                 created_at=notification.created_at,
                 read_at=notification.read_at,
             )

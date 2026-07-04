@@ -38,7 +38,6 @@ from app.modules.notifications.application.commands.send_notification_push.comma
     SendNotificationPushCommand,
 )
 from app.modules.notifications.application.commands.send_notification_push.use_case import (
-    PUSH_TITLES,
     SendNotificationPushCommandUseCase,
 )
 from app.modules.notifications.application.commands.unregister_device_token.command import (
@@ -61,8 +60,7 @@ from app.modules.notifications.domain.model import (
 )
 from app.modules.notifications.domain.value_objects import (
     DevicePlatform,
-    NotificationKind,
-    NotificationTargetType,
+    NotificationCategory,
 )
 from app.modules.notifications.tests.test_application import (
     CREATED_AT,
@@ -93,16 +91,20 @@ def _send_push_use_case(
 
 def _send_push_command(
     *,
-    kind: NotificationKind,
+    category: NotificationCategory = NotificationCategory.SERVICE,
+    kind: str,
+    title: str,
     message: str,
 ) -> SendNotificationPushCommand:
     return SendNotificationPushCommand(
         user_id=TEST_USER_ID,
         notification_id=uuid4(),
+        category=category,
         kind=kind,
+        title=title,
         message=message,
-        target_type=NotificationTargetType.NONE,
-        target_id=None,
+        resource_type=None,
+        resource_id=None,
     )
 
 
@@ -117,12 +119,16 @@ async def test_create_notification_commits_once_and_returns_expected_result() ->
     )
 
     # When: 현재 사용자에게 알림을 생성한다.
+    receipt_id = uuid4()
     result = await use_case.execute(
         CreateNotificationCommand(
             user_id=TEST_USER_ID,
-            kind=NotificationKind.REGISTRATION_PROMPT,
+            category=NotificationCategory.SERVICE,
+            kind="registration_prompt",
+            title="영수증 등록 안내",
             message="영수증을 등록해 보세요.",
-            target_type=NotificationTargetType.RECEIPT_UPLOAD,
+            resource_type="receipt",
+            resource_id=receipt_id,
         )
     )
 
@@ -131,10 +137,12 @@ async def test_create_notification_commits_once_and_returns_expected_result() ->
     assert unit_of_work.commit_count == 1
     assert repository.create_count == 1
     assert saved.user_id == TEST_USER_ID
-    assert result.kind == NotificationKind.REGISTRATION_PROMPT
+    assert result.category == NotificationCategory.SERVICE
+    assert result.kind == "registration_prompt"
+    assert result.title == "영수증 등록 안내"
     assert result.message == "영수증을 등록해 보세요."
-    assert result.target_type == NotificationTargetType.RECEIPT_UPLOAD
-    assert result.target_id is None
+    assert result.resource_type == "receipt"
+    assert result.resource_id == receipt_id
     assert result.read_at is None
 
 
@@ -153,7 +161,9 @@ async def test_create_notification_propagates_validation_without_commit() -> Non
         await use_case.execute(
             CreateNotificationCommand(
                 user_id=TEST_USER_ID,
-                kind=NotificationKind.BENEFIT,
+                category=NotificationCategory.MARKETING,
+                kind="benefit",
+                title="혜택 안내",
                 message=" 앞뒤 공백은 허용되지 않습니다.",
             )
         )
@@ -165,9 +175,87 @@ async def test_create_notification_propagates_validation_without_commit() -> Non
     assert unit_of_work.commit_count == 0
 
 
-def test_push_titles_cover_every_notification_kind() -> None:
-    # Then: 새 NotificationKind가 추가되면 푸시 제목도 함께 정의하도록 강제한다.
-    assert set(PUSH_TITLES) == set(NotificationKind)
+async def test_create_notification_rejects_resource_pair_mismatch_without_commit() -> None:
+    # Given: 알림 생성 use case가 준비되어 있다.
+    repository = InMemoryNotificationRepository()
+    unit_of_work = FakeUnitOfWork()
+    use_case = CreateNotificationCommandUseCase(
+        notification_repository=repository,
+        unit_of_work=unit_of_work,
+        clock=lambda: CREATED_AT,
+    )
+
+    # When: resourceType만 채우고 resourceId는 생략한다.
+    with pytest.raises(ValidationError) as error:
+        await use_case.execute(
+            CreateNotificationCommand(
+                user_id=TEST_USER_ID,
+                category=NotificationCategory.SERVICE,
+                kind="registration_prompt",
+                title="영수증 등록 안내",
+                message="영수증을 등록해 보세요.",
+                resource_type="receipt",
+                resource_id=None,
+            )
+        )
+
+    # Then: resource 필드에 대한 validation error가 전파되고 commit은 수행되지 않는다.
+    assert [detail.field for detail in error.value.details] == ["resource"]
+    assert unit_of_work.commit_count == 0
+
+
+async def test_create_notification_rejects_oversized_kind_without_commit() -> None:
+    # Given: 알림 생성 use case가 준비되어 있다.
+    repository = InMemoryNotificationRepository()
+    unit_of_work = FakeUnitOfWork()
+    use_case = CreateNotificationCommandUseCase(
+        notification_repository=repository,
+        unit_of_work=unit_of_work,
+        clock=lambda: CREATED_AT,
+    )
+
+    # When: 51자 kind로 알림 생성을 시도한다.
+    with pytest.raises(ValidationError) as error:
+        await use_case.execute(
+            CreateNotificationCommand(
+                user_id=TEST_USER_ID,
+                category=NotificationCategory.SERVICE,
+                kind="a" * 51,
+                title="제목",
+                message="문구",
+            )
+        )
+
+    # Then: kind 필드 validation error가 전파되고 commit은 수행되지 않는다.
+    assert [detail.field for detail in error.value.details] == ["kind"]
+    assert unit_of_work.commit_count == 0
+
+
+async def test_create_notification_rejects_oversized_title_without_commit() -> None:
+    # Given: 알림 생성 use case가 준비되어 있다.
+    repository = InMemoryNotificationRepository()
+    unit_of_work = FakeUnitOfWork()
+    use_case = CreateNotificationCommandUseCase(
+        notification_repository=repository,
+        unit_of_work=unit_of_work,
+        clock=lambda: CREATED_AT,
+    )
+
+    # When: 101자 title로 알림 생성을 시도한다.
+    with pytest.raises(ValidationError) as error:
+        await use_case.execute(
+            CreateNotificationCommand(
+                user_id=TEST_USER_ID,
+                category=NotificationCategory.SERVICE,
+                kind="benefit",
+                title="a" * 101,
+                message="문구",
+            )
+        )
+
+    # Then: title 필드 validation error가 전파되고 commit은 수행되지 않는다.
+    assert [detail.field for detail in error.value.details] == ["title"]
+    assert unit_of_work.commit_count == 0
 
 
 async def test_send_notification_push_sends_to_registered_devices() -> None:
@@ -198,7 +286,8 @@ async def test_send_notification_push_sends_to_registered_devices() -> None:
         unit_of_work=unit_of_work,
     )
     command = _send_push_command(
-        kind=NotificationKind.WARRANTY_RISK,
+        kind="warranty_risk",
+        title="보증 만료 임박",
         message="보증 만료가 임박했습니다.",
     )
 
@@ -213,10 +302,53 @@ async def test_send_notification_push_sends_to_registered_devices() -> None:
     assert sent_message.body == "보증 만료가 임박했습니다."
     assert sent_message.data == {
         "notificationId": str(command.notification_id),
+        "category": "service",
         "kind": "warranty_risk",
-        "targetType": "none",
     }
     assert unit_of_work.commit_count == 0
+
+
+async def test_send_notification_push_includes_resource_fields_when_present() -> None:
+    # Given: 리소스 참조가 있는 알림 발송 커맨드가 있다.
+    repository = InMemoryNotificationRepository()
+    push_token_repository = InMemoryPushTokenRepository()
+    await push_token_repository.register(
+        user_id=TEST_USER_ID,
+        fid="fid-1",
+        platform=DevicePlatform.ANDROID,
+    )
+    push_sender = FakePushSender()
+    unit_of_work = FakeUnitOfWork()
+    use_case = _send_push_use_case(
+        repository=repository,
+        push_token_repository=push_token_repository,
+        push_sender=push_sender,
+        unit_of_work=unit_of_work,
+    )
+    receipt_id = uuid4()
+    command = SendNotificationPushCommand(
+        user_id=TEST_USER_ID,
+        notification_id=uuid4(),
+        category=NotificationCategory.SERVICE,
+        kind="warranty_risk",
+        title="보증 만료 임박",
+        message="보증 만료가 임박했습니다.",
+        resource_type="receipt",
+        resource_id=receipt_id,
+    )
+
+    # When: 알림 푸시 발송을 실행한다.
+    await use_case.execute(command)
+
+    # Then: 발송 데이터에 resourceType/resourceId가 포함된다.
+    _, sent_message = push_sender.calls[0]
+    assert sent_message.data == {
+        "notificationId": str(command.notification_id),
+        "category": "service",
+        "kind": "warranty_risk",
+        "resourceType": "receipt",
+        "resourceId": str(receipt_id),
+    }
 
 
 async def test_send_notification_push_skips_when_push_disabled() -> None:
@@ -243,7 +375,9 @@ async def test_send_notification_push_skips_when_push_disabled() -> None:
     # When: 알림 푸시 발송을 실행한다.
     await use_case.execute(
         _send_push_command(
-            kind=NotificationKind.BENEFIT,
+            category=NotificationCategory.MARKETING,
+            kind="benefit",
+            title="혜택 안내",
             message="이번 달 혜택을 확인해 보세요.",
         )
     )
@@ -278,7 +412,8 @@ async def test_send_notification_push_deletes_invalid_registrations_and_commits(
     # When: 알림 푸시 발송을 실행한다.
     await use_case.execute(
         _send_push_command(
-            kind=NotificationKind.CREDIT_PROMPT,
+            kind="credit_prompt",
+            title="크레딧 안내",
             message="분석 가능 횟수를 확인해 보세요.",
         )
     )
@@ -310,7 +445,8 @@ async def test_send_notification_push_swallows_any_send_failure() -> None:
     # When: 알림 푸시 발송을 실행한다.
     await use_case.execute(
         _send_push_command(
-            kind=NotificationKind.CREDIT_PROMPT,
+            kind="credit_prompt",
+            title="크레딧 안내",
             message="분석 가능 횟수를 확인해 보세요.",
         )
     )
@@ -320,7 +456,7 @@ async def test_send_notification_push_swallows_any_send_failure() -> None:
     assert "fid-1" in push_token_repository.tokens
 
 
-async def test_send_benefit_push_skips_without_marketing_consent() -> None:
+async def test_send_marketing_push_skips_without_marketing_consent() -> None:
     # Given: push 수신은 켜져 있지만 마케팅 수신 동의는 없는 기본 상태다.
     repository = InMemoryNotificationRepository()
     push_token_repository = InMemoryPushTokenRepository()
@@ -337,10 +473,12 @@ async def test_send_benefit_push_skips_without_marketing_consent() -> None:
         unit_of_work=FakeUnitOfWork(),
     )
 
-    # When: 마케팅성(benefit) 알림 푸시 발송을 실행한다.
+    # When: 마케팅성(marketing) 알림 푸시 발송을 실행한다.
     await use_case.execute(
         _send_push_command(
-            kind=NotificationKind.BENEFIT,
+            category=NotificationCategory.MARKETING,
+            kind="benefit",
+            title="혜택 안내",
             message="이번 달 혜택을 확인해 보세요.",
         )
     )
@@ -349,7 +487,38 @@ async def test_send_benefit_push_skips_without_marketing_consent() -> None:
     assert push_sender.calls == []
 
 
-async def test_send_benefit_push_sends_with_marketing_consent() -> None:
+async def test_send_service_push_sends_without_marketing_consent() -> None:
+    # Given: push 수신은 켜져 있지만 마케팅 수신 동의는 없는 기본 상태다.
+    repository = InMemoryNotificationRepository()
+    push_token_repository = InMemoryPushTokenRepository()
+    await push_token_repository.register(
+        user_id=TEST_USER_ID,
+        fid="fid-1",
+        platform=DevicePlatform.ANDROID,
+    )
+    push_sender = FakePushSender()
+    use_case = _send_push_use_case(
+        repository=repository,
+        push_token_repository=push_token_repository,
+        push_sender=push_sender,
+        unit_of_work=FakeUnitOfWork(),
+    )
+
+    # When: service 알림 푸시 발송을 실행한다.
+    await use_case.execute(
+        _send_push_command(
+            category=NotificationCategory.SERVICE,
+            kind="credit_prompt",
+            title="크레딧 안내",
+            message="분석 가능 횟수를 확인해 보세요.",
+        )
+    )
+
+    # Then: category가 marketing이 아니므로 마케팅 동의 없이도 발송된다.
+    assert len(push_sender.calls) == 1
+
+
+async def test_send_marketing_push_sends_with_marketing_consent() -> None:
     # Given: push 수신과 마케팅 수신 동의가 모두 켜져 있다.
     repository = InMemoryNotificationRepository()
     repository.settings[TEST_USER_ID] = NotificationSettings.create(
@@ -371,10 +540,12 @@ async def test_send_benefit_push_sends_with_marketing_consent() -> None:
         unit_of_work=FakeUnitOfWork(),
     )
 
-    # When: 마케팅성(benefit) 알림 푸시 발송을 실행한다.
+    # When: 마케팅성(marketing) 알림 푸시 발송을 실행한다.
     await use_case.execute(
         _send_push_command(
-            kind=NotificationKind.BENEFIT,
+            category=NotificationCategory.MARKETING,
+            kind="benefit",
+            title="혜택 안내",
             message="이번 달 혜택을 확인해 보세요.",
         )
     )
@@ -390,7 +561,9 @@ async def test_mark_notification_read_commits_once_and_returns_expected_result()
     repository = InMemoryNotificationRepository()
     notification = UserNotification.create(
         user_id=TEST_USER_ID,
-        kind=NotificationKind.WARRANTY_NOTICE,
+        category=NotificationCategory.SERVICE,
+        kind="warranty_notice",
+        title="보증 기간 안내",
         message="보증 만료가 다가옵니다.",
         created_at=CREATED_AT,
     )
@@ -415,7 +588,9 @@ async def test_mark_notification_read_commits_once_and_returns_expected_result()
     assert unit_of_work.commit_count == 1
     assert repository.mark_read_count == 1
     assert result.notification_id == notification.id
-    assert result.kind == NotificationKind.WARRANTY_NOTICE
+    assert result.category == NotificationCategory.SERVICE
+    assert result.kind == "warranty_notice"
+    assert result.title == "보증 기간 안내"
     assert result.message == "보증 만료가 다가옵니다."
     assert result.read_at == READ_AT
     assert saved.read_at == READ_AT
@@ -446,7 +621,9 @@ async def test_mark_foreign_notification_raises_not_found_without_commit() -> No
     repository = InMemoryNotificationRepository()
     foreign_notification = UserNotification.create(
         user_id=OTHER_USER_ID,
-        kind=NotificationKind.BENEFIT,
+        category=NotificationCategory.MARKETING,
+        kind="benefit",
+        title="혜택 안내",
         message="다른 사용자 알림입니다.",
         created_at=CREATED_AT,
     )

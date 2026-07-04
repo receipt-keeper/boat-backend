@@ -33,20 +33,24 @@ class CreateNotificationCommandUseCase:
     async def execute(self, command: CreateNotificationCommand) -> CreateNotificationResult:
         notification = UserNotification.create(
             user_id=command.user_id,
+            category=command.category,
             kind=command.kind,
+            title=command.title,
             message=command.message,
-            target_type=command.target_type,
-            target_id=command.target_id,
+            resource_type=command.resource_type,
+            resource_id=command.resource_id,
             created_at=self._clock(),
         )
         saved = await self._notification_repository.create(notification=notification)
         await self._unit_of_work.commit()
         return CreateNotificationResult(
             notification_id=saved.id,
-            kind=saved.kind,
+            category=saved.category,
+            kind=saved.kind.value,
+            title=saved.title.value,
             message=saved.message.value,
-            target_type=saved.target_type,
-            target_id=saved.target_id,
+            resource_type=saved.resource_type.value if saved.resource_type else None,
+            resource_id=saved.resource_id,
             created_at=saved.created_at,
             read_at=saved.read_at,
         )

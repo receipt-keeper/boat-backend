@@ -3,23 +3,40 @@ from datetime import datetime
 from uuid import UUID, uuid4
 
 from app.core.domain.entity import Entity
+from app.core.domain.exceptions import ErrorDetail, ValidationError
 from app.core.domain.validation import Notification as ValidationNotification
 from app.modules.notifications.domain.value_objects import (
     DevicePlatform,
     Fid,
+    NotificationCategory,
     NotificationKind,
     NotificationMessage,
-    NotificationTargetType,
+    NotificationTitle,
+    ResourceType,
 )
+
+
+def _validate_resource_pair(resource_type: str | None, resource_id: UUID | None) -> None:
+    if (resource_type is None) != (resource_id is None):
+        raise ValidationError(
+            [
+                ErrorDetail(
+                    field="resource",
+                    message="리소스 유형과 리소스 ID는 함께 있거나 함께 없어야 합니다.",
+                )
+            ]
+        )
 
 
 @dataclass(eq=False)
 class UserNotification(Entity[UUID]):
     user_id: UUID
+    category: NotificationCategory
     kind: NotificationKind
+    title: NotificationTitle
     message: NotificationMessage
-    target_type: NotificationTargetType
-    target_id: UUID | None
+    resource_type: ResourceType | None
+    resource_id: UUID | None
     created_at: datetime
     read_at: datetime | None
 
@@ -28,25 +45,37 @@ class UserNotification(Entity[UUID]):
         cls,
         *,
         user_id: UUID,
-        kind: NotificationKind,
+        category: NotificationCategory,
+        kind: str,
+        title: str,
         message: str,
-        target_type: NotificationTargetType = NotificationTargetType.NONE,
-        target_id: UUID | None = None,
+        resource_type: str | None = None,
+        resource_id: UUID | None = None,
         created_at: datetime,
         read_at: datetime | None = None,
         notification_id: UUID | None = None,
     ) -> "UserNotification":
         notification = ValidationNotification()
+        new_kind = notification.collect(lambda: NotificationKind(kind))
+        new_title = notification.collect(lambda: NotificationTitle(title))
         new_message = notification.collect(lambda: NotificationMessage(message))
+        new_resource_type = (
+            notification.collect(lambda: ResourceType(resource_type))
+            if resource_type is not None
+            else None
+        )
+        notification.collect(lambda: _validate_resource_pair(resource_type, resource_id))
         notification.raise_if_any()
 
         return cls(
             id=notification_id or uuid4(),
             user_id=user_id,
-            kind=kind,
+            category=category,
+            kind=new_kind,
+            title=new_title,
             message=new_message,
-            target_type=target_type,
-            target_id=target_id,
+            resource_type=new_resource_type,
+            resource_id=resource_id,
             created_at=created_at,
             read_at=read_at,
         )
@@ -55,10 +84,12 @@ class UserNotification(Entity[UUID]):
         return UserNotification(
             id=self.id,
             user_id=self.user_id,
+            category=self.category,
             kind=self.kind,
+            title=self.title,
             message=self.message,
-            target_type=self.target_type,
-            target_id=self.target_id,
+            resource_type=self.resource_type,
+            resource_id=self.resource_id,
             created_at=self.created_at,
             read_at=read_at,
         )

@@ -1,4 +1,4 @@
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -17,10 +17,12 @@ async def test_create_notification_returns_created_common_response(
     postgres_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     payload = {
+        "category": "service",
         "kind": "registration_prompt",
+        "title": "영수증 등록 안내",
         "message": "영수증을 등록해 보세요.",
-        "targetType": "receiptUpload",
-        "targetId": None,
+        "resourceType": None,
+        "resourceId": None,
     }
 
     async with notification_api_client(postgres_session_factory) as client:
@@ -30,10 +32,12 @@ async def test_create_notification_returns_created_common_response(
     assert response.status_code == 201
     assert body["success"] is True
     assert body["status"] == 201
+    assert body["data"]["category"] == "service"
     assert body["data"]["kind"] == "registration_prompt"
+    assert body["data"]["title"] == "영수증 등록 안내"
     assert body["data"]["message"] == "영수증을 등록해 보세요."
-    assert body["data"]["targetType"] == "receiptUpload"
-    assert body["data"]["targetId"] is None
+    assert body["data"]["resourceType"] is None
+    assert body["data"]["resourceId"] is None
     assert body["data"]["readAt"] is None
     assert "notificationId" in body["data"]
     assert "createdAt" in body["data"]
@@ -46,10 +50,12 @@ async def test_create_notification_persists_to_current_user_list(
     postgres_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     payload = {
+        "category": "marketing",
         "kind": "benefit",
+        "title": "혜택 안내",
         "message": "이번 달 혜택을 확인해 보세요.",
-        "targetType": "none",
-        "targetId": None,
+        "resourceType": None,
+        "resourceId": None,
     }
 
     async with notification_api_client(postgres_session_factory) as client:
@@ -80,10 +86,12 @@ async def test_create_notification_rejects_extra_field_contract(
     postgres_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     payload = {
+        "category": "service",
         "kind": "registration_prompt",
+        "title": "영수증 등록 안내",
         "message": "영수증을 등록해 보세요.",
-        "targetType": "receiptUpload",
-        "targetId": None,
+        "resourceType": "receiptUpload",
+        "resourceId": None,
         "userId": str(TEST_USER_ID),
         "createdAt": "2026-06-28T00:00:00Z",
         "readAt": None,
@@ -99,28 +107,26 @@ async def test_create_notification_rejects_extra_field_contract(
     assert body["data"]["path"] == "/api/v1/notifications"
 
 
-async def test_create_notification_rejects_target_id_mismatch(
+async def test_create_notification_rejects_resource_pair_mismatch(
     postgres_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     receipt_id = UUID("00000000-0000-0000-0000-000000000701")
     invalid_payloads = [
         {
+            "category": "service",
             "kind": "benefit",
+            "title": "혜택 안내",
             "message": "영수증 상세를 확인해 보세요.",
-            "targetType": "receipt",
-            "targetId": None,
+            "resourceType": "receipt",
+            "resourceId": None,
         },
         {
+            "category": "service",
             "kind": "benefit",
+            "title": "혜택 안내",
             "message": "이번 달 혜택을 확인해 보세요.",
-            "targetType": "none",
-            "targetId": str(receipt_id),
-        },
-        {
-            "kind": "registration_prompt",
-            "message": "영수증을 등록해 보세요.",
-            "targetType": "receiptUpload",
-            "targetId": str(receipt_id),
+            "resourceType": None,
+            "resourceId": str(receipt_id),
         },
     ]
 
@@ -129,8 +135,34 @@ async def test_create_notification_rejects_target_id_mismatch(
             await client.post("/api/v1/notifications", json=payload) for payload in invalid_payloads
         ]
 
-    assert [response.status_code for response in responses] == [422, 422, 422]
-    assert [response.json()["success"] for response in responses] == [False, False, False]
+    assert [response.status_code for response in responses] == [422, 422]
+    assert [response.json()["success"] for response in responses] == [False, False]
+
+
+async def test_create_notification_rejects_oversized_kind_and_title(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    invalid_payloads = [
+        {
+            "category": "service",
+            "kind": "a" * 51,
+            "title": "제목",
+            "message": "문구",
+        },
+        {
+            "category": "service",
+            "kind": "benefit",
+            "title": "a" * 101,
+            "message": "문구",
+        },
+    ]
+
+    async with notification_api_client(postgres_session_factory) as client:
+        responses = [
+            await client.post("/api/v1/notifications", json=payload) for payload in invalid_payloads
+        ]
+
+    assert [response.status_code for response in responses] == [422, 422]
 
 
 async def test_create_notification_sends_push_to_registered_device(
@@ -151,10 +183,10 @@ async def test_create_notification_sends_push_to_registered_device(
         response = await client.post(
             "/api/v1/notifications",
             json={
+                "category": "service",
                 "kind": "credit_prompt",
+                "title": "크레딧 안내",
                 "message": "분석 가능 횟수를 확인해 보세요.",
-                "targetType": "none",
-                "targetId": None,
             },
         )
 
@@ -166,6 +198,36 @@ async def test_create_notification_sends_push_to_registered_device(
     assert sent_message.title == "크레딧 안내"
     assert sent_message.body == "분석 가능 횟수를 확인해 보세요."
     assert sent_message.data["kind"] == "credit_prompt"
+
+
+async def test_create_marketing_notification_skips_push_without_marketing_consent(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    # Given: 로그인한 사용자가 디바이스를 등록해 두었지만 마케팅 수신에는 동의하지 않았다.
+    push_sender = FakePushSender()
+    async with notification_api_client(
+        postgres_session_factory,
+        dependency_overrides={get_push_sender: lambda: push_sender},
+    ) as client:
+        await client.put(
+            "/api/v1/notifications/devices",
+            json={"fid": "fid-1", "platform": "android"},
+        )
+
+        # When: marketing 알림을 생성한다.
+        response = await client.post(
+            "/api/v1/notifications",
+            json={
+                "category": "marketing",
+                "kind": "benefit",
+                "title": "혜택 안내",
+                "message": "이번 달 혜택을 확인해 보세요.",
+            },
+        )
+
+    # Then: 알림 생성은 성공하지만 마케팅 동의가 없어 푸시는 발송되지 않는다.
+    assert response.status_code == 201
+    assert push_sender.calls == []
 
 
 async def test_create_notification_removes_registration_rejected_by_fcm(
@@ -186,10 +248,10 @@ async def test_create_notification_removes_registration_rejected_by_fcm(
         response = await client.post(
             "/api/v1/notifications",
             json={
+                "category": "service",
                 "kind": "credit_prompt",
+                "title": "크레딧 안내",
                 "message": "분석 가능 횟수를 확인해 보세요.",
-                "targetType": "none",
-                "targetId": None,
             },
         )
 
@@ -198,3 +260,25 @@ async def test_create_notification_removes_registration_rejected_by_fcm(
     async with postgres_session_factory() as session:
         rows = list(await session.scalars(select(orm.UserPushToken)))
     assert rows == []
+
+
+async def test_create_notification_with_resource_pair_returns_created(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    receipt_id = uuid4()
+    payload = {
+        "category": "service",
+        "kind": "warranty_risk",
+        "title": "보증 만료 임박",
+        "message": "보증 만료가 임박했습니다.",
+        "resourceType": "receipt",
+        "resourceId": str(receipt_id),
+    }
+
+    async with notification_api_client(postgres_session_factory) as client:
+        response = await client.post("/api/v1/notifications", json=payload)
+
+    body = response.json()
+    assert response.status_code == 201
+    assert body["data"]["resourceType"] == "receipt"
+    assert body["data"]["resourceId"] == str(receipt_id)

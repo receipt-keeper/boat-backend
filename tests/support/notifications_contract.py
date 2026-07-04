@@ -49,10 +49,7 @@ from app.modules.notifications.dependencies import (
     get_notification_settings_query_use_case,
     get_update_notification_settings_command_use_case,
 )
-from app.modules.notifications.domain.value_objects import (
-    NotificationKind,
-    NotificationTargetType,
-)
+from app.modules.notifications.domain.value_objects import NotificationCategory
 
 TEST_USER_ID: Final = UUID("00000000-0000-0000-0000-000000000101")
 TEST_CREDENTIALS_ID: Final = UUID("00000000-0000-0000-0000-000000000102")
@@ -64,10 +61,12 @@ TEST_SETTINGS: Final = Settings(app_name="Boat Backend")
 class StoredNotification:
     notification_id: UUID
     user_id: UUID
-    kind: NotificationKind
+    category: NotificationCategory
+    kind: str
+    title: str
     message: str
-    target_type: NotificationTargetType
-    target_id: UUID | None
+    resource_type: str | None
+    resource_id: UUID | None
     created_at: datetime
     read_at: datetime | None = None
 
@@ -90,20 +89,24 @@ class NotificationsContractStore:
         notification = StoredNotification(
             notification_id=uuid4(),
             user_id=command.user_id,
+            category=command.category,
             kind=command.kind,
+            title=command.title,
             message=command.message,
-            target_type=command.target_type,
-            target_id=command.target_id,
+            resource_type=command.resource_type,
+            resource_id=command.resource_id,
             created_at=datetime(2026, 6, 28, 9, 0, tzinfo=UTC)
             + timedelta(seconds=len(self._notifications)),
         )
         self._notifications.append(notification)
         return CreateNotificationResult(
             notification_id=notification.notification_id,
+            category=notification.category,
             kind=notification.kind,
+            title=notification.title,
             message=notification.message,
-            target_type=notification.target_type,
-            target_id=notification.target_id,
+            resource_type=notification.resource_type,
+            resource_id=notification.resource_id,
             created_at=notification.created_at,
             read_at=notification.read_at,
         )
@@ -149,10 +152,12 @@ class NotificationsContractStore:
                 self._notifications[index] = read_notification
                 return MarkNotificationReadResult(
                     notification_id=read_notification.notification_id,
+                    category=read_notification.category,
                     kind=read_notification.kind,
+                    title=read_notification.title,
                     message=read_notification.message,
-                    target_type=read_notification.target_type,
-                    target_id=read_notification.target_id,
+                    resource_type=read_notification.resource_type,
+                    resource_id=read_notification.resource_id,
                     created_at=read_notification.created_at,
                     read_at=read_notification.read_at,
                 )
@@ -196,10 +201,12 @@ def _format_contract_cursor(notification: StoredNotification) -> str:
 def _list_item(notification: StoredNotification) -> NotificationListItemResult:
     return NotificationListItemResult(
         notification_id=notification.notification_id,
+        category=notification.category,
         kind=notification.kind,
+        title=notification.title,
         message=notification.message,
-        target_type=notification.target_type,
-        target_id=notification.target_id,
+        resource_type=notification.resource_type,
+        resource_id=notification.resource_id,
         created_at=notification.created_at,
         read_at=notification.read_at,
     )

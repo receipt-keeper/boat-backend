@@ -29,10 +29,12 @@ class UserNotification(Base):
         nullable=False,
         index=True,
     )
+    category: Mapped[str] = mapped_column(type_=String(20), nullable=False)
     kind: Mapped[str] = mapped_column(type_=String(50), nullable=False)
+    title: Mapped[str] = mapped_column(type_=String(100), nullable=False)
     message: Mapped[str] = mapped_column(type_=String(255), nullable=False)
-    target_type: Mapped[str] = mapped_column(type_=String(50), nullable=False)
-    target_id: Mapped[UUID | None] = mapped_column(
+    resource_type: Mapped[str | None] = mapped_column(type_=String(50), nullable=True)
+    resource_id: Mapped[UUID | None] = mapped_column(
         type_=PostgreSQLUUID(as_uuid=True),
         nullable=True,
     )

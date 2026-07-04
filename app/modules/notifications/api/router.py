@@ -49,10 +49,7 @@ from app.modules.notifications.dependencies import (
     UnregisterDeviceTokenCommandUseCaseDep,
     UpdateNotificationSettingsCommandUseCaseDep,
 )
-from app.modules.notifications.domain.value_objects import (
-    NotificationKind,
-    NotificationTargetType,
-)
+from app.modules.notifications.domain.value_objects import NotificationCategory
 
 
 class _NotificationResult(Protocol):
@@ -60,16 +57,22 @@ class _NotificationResult(Protocol):
     def notification_id(self) -> UUID: ...
 
     @property
-    def kind(self) -> NotificationKind: ...
+    def category(self) -> NotificationCategory: ...
+
+    @property
+    def kind(self) -> str: ...
+
+    @property
+    def title(self) -> str: ...
 
     @property
     def message(self) -> str: ...
 
     @property
-    def target_type(self) -> NotificationTargetType: ...
+    def resource_type(self) -> str | None: ...
 
     @property
-    def target_id(self) -> UUID | None: ...
+    def resource_id(self) -> UUID | None: ...
 
     @property
     def created_at(self) -> datetime: ...
@@ -100,7 +103,7 @@ router = APIRouter(
     "/notifications",
     response_model=CommonResponse[NotificationListResponse],
     summary="알림 목록 조회",
-    description="보증 만료, 영수증 등록 안내, 혜택 안내 등 앱 알림을 반환한다.",
+    description="현재 사용자에게 생성된 앱 알림 목록을 최신순으로 반환한다.",
 )
 async def list_notifications(
     query: Annotated[NotificationListQuery, Query()],
@@ -137,8 +140,10 @@ async def list_notifications(
     response_model=CommonResponse[NotificationResponse],
     summary="알림 생성",
     description=(
-        "현재 사용자에게 표시할 앱 알림을 생성한다. 등록된 디바이스로의 푸시 발송은 "
-        "응답 반환 이후 백그라운드에서 진행된다."
+        "현재 사용자에게 표시할 앱 알림을 생성한다. resourceType과 resourceId는 "
+        "함께 있거나 함께 없어야 하며, category가 marketing인 알림은 사용자가 마케팅 "
+        "수신에 동의한 경우에만 발송된다. 등록된 디바이스로의 푸시 발송은 응답 반환 "
+        "이후 백그라운드에서 진행된다."
     ),
 )
 async def create_notification(
@@ -151,10 +156,12 @@ async def create_notification(
     result = await command_use_case.execute(
         CreateNotificationCommand(
             user_id=principal.user_id,
+            category=request.category,
             kind=request.kind,
+            title=request.title,
             message=request.message,
-            target_type=request.target_type,
-            target_id=request.target_id,
+            resource_type=request.resource_type,
+            resource_id=request.resource_id,
         )
     )
     background_tasks.add_task(
@@ -162,10 +169,12 @@ async def create_notification(
         SendNotificationPushCommand(
             user_id=principal.user_id,
             notification_id=result.notification_id,
+            category=result.category,
             kind=result.kind,
+            title=result.title,
             message=result.message,
-            target_type=result.target_type,
-            target_id=result.target_id,
+            resource_type=result.resource_type,
+            resource_id=result.resource_id,
         ),
     )
     return CommonResponse(
@@ -306,10 +315,12 @@ async def unregister_device(
 def _notification_response(notification: _NotificationResult) -> NotificationResponse:
     return NotificationResponse(
         notificationId=notification.notification_id,
+        category=notification.category,
         kind=notification.kind,
+        title=notification.title,
         message=notification.message,
-        targetType=notification.target_type,
-        targetId=notification.target_id,
+        resourceType=notification.resource_type,
+        resourceId=notification.resource_id,
         createdAt=notification.created_at,
         readAt=notification.read_at,
     )
