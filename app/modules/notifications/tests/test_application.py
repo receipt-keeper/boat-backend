@@ -2,6 +2,8 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from uuid import UUID
 
+from app.core.application.event_publisher import EventPublisher
+from app.core.domain.events import DomainEvent
 from app.modules.notifications.application.ports.notification_repository import (
     NotificationListCursor,
     NotificationListResult,
@@ -202,3 +204,11 @@ class FakePushSender(PushSender):
         if self._error is not None:
             raise self._error
         return self._report
+
+
+class FakeEventPublisher(EventPublisher):
+    def __init__(self) -> None:
+        self.published: list[DomainEvent] = []
+
+    async def publish(self, events: Sequence[DomainEvent]) -> None:
+        self.published.extend(events)

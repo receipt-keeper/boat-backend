@@ -53,6 +53,7 @@ from app.modules.notifications.application.commands.update_notification_settings
     UpdateNotificationSettingsCommandUseCase,
 )
 from app.modules.notifications.application.ports.push_sender import PushSendReport
+from app.modules.notifications.domain.events import NotificationCreated
 from app.modules.notifications.domain.model import (
     NotificationSettings,
     UserNotification,
@@ -67,6 +68,7 @@ from app.modules.notifications.tests.test_application import (
     OTHER_USER_ID,
     READ_AT,
     TEST_USER_ID,
+    FakeEventPublisher,
     FakePushSender,
     InMemoryNotificationRepository,
     InMemoryPushTokenRepository,
@@ -112,9 +114,11 @@ async def test_create_notification_commits_once_and_returns_expected_result() ->
     # Given: 알림 생성 use case와 in-memory repository가 준비되어 있다.
     repository = InMemoryNotificationRepository()
     unit_of_work = FakeUnitOfWork()
+    event_publisher = FakeEventPublisher()
     use_case = CreateNotificationCommandUseCase(
         notification_repository=repository,
         unit_of_work=unit_of_work,
+        event_publisher=event_publisher,
         clock=lambda: CREATED_AT,
     )
 
@@ -145,6 +149,19 @@ async def test_create_notification_commits_once_and_returns_expected_result() ->
     assert result.resource_id == receipt_id
     assert result.read_at is None
 
+    # And: NotificationCreated 이벤트가 정확한 payload로 정확히 한 번 발행된다.
+    assert len(event_publisher.published) == 1
+    published_event = event_publisher.published[0]
+    assert isinstance(published_event, NotificationCreated)
+    assert published_event.notification_id == result.notification_id
+    assert published_event.user_id == TEST_USER_ID
+    assert published_event.category == NotificationCategory.SERVICE
+    assert published_event.kind == "registration_prompt"
+    assert published_event.title == "영수증 등록 안내"
+    assert published_event.message == "영수증을 등록해 보세요."
+    assert published_event.resource_type == "receipt"
+    assert published_event.resource_id == receipt_id
+
 
 async def test_create_notification_propagates_validation_without_commit() -> None:
     # Given: 알림 생성 use case가 준비되어 있다.
@@ -153,6 +170,7 @@ async def test_create_notification_propagates_validation_without_commit() -> Non
     use_case = CreateNotificationCommandUseCase(
         notification_repository=repository,
         unit_of_work=unit_of_work,
+        event_publisher=FakeEventPublisher(),
         clock=lambda: CREATED_AT,
     )
 
@@ -182,6 +200,7 @@ async def test_create_notification_rejects_resource_pair_mismatch_without_commit
     use_case = CreateNotificationCommandUseCase(
         notification_repository=repository,
         unit_of_work=unit_of_work,
+        event_publisher=FakeEventPublisher(),
         clock=lambda: CREATED_AT,
     )
 
@@ -211,6 +230,7 @@ async def test_create_notification_rejects_oversized_kind_without_commit() -> No
     use_case = CreateNotificationCommandUseCase(
         notification_repository=repository,
         unit_of_work=unit_of_work,
+        event_publisher=FakeEventPublisher(),
         clock=lambda: CREATED_AT,
     )
 
@@ -238,6 +258,7 @@ async def test_create_notification_rejects_oversized_title_without_commit() -> N
     use_case = CreateNotificationCommandUseCase(
         notification_repository=repository,
         unit_of_work=unit_of_work,
+        event_publisher=FakeEventPublisher(),
         clock=lambda: CREATED_AT,
     )
 

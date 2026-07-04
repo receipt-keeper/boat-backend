@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Annotated, Protocol
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Query, Response, status
+from fastapi import APIRouter, Query, Response, status
 
 from app.core.http.auth import CurrentPrincipalDep
 from app.core.http.responses import ApiErrorData, CommonResponse, CursorPaginationResponse
@@ -24,9 +24,6 @@ from app.modules.notifications.application.commands.mark_notification_read.comma
 from app.modules.notifications.application.commands.register_device_token.command import (
     RegisterDeviceTokenCommand,
 )
-from app.modules.notifications.application.commands.send_notification_push.command import (
-    SendNotificationPushCommand,
-)
 from app.modules.notifications.application.commands.unregister_device_token.command import (
     UnregisterDeviceTokenCommand,
 )
@@ -44,7 +41,6 @@ from app.modules.notifications.dependencies import (
     GetNotificationSettingsQueryUseCaseDep,
     ListNotificationsQueryUseCaseDep,
     MarkNotificationReadCommandUseCaseDep,
-    NotificationPushDispatcherDep,
     RegisterDeviceTokenCommandUseCaseDep,
     UnregisterDeviceTokenCommandUseCaseDep,
     UpdateNotificationSettingsCommandUseCaseDep,
@@ -150,8 +146,6 @@ async def create_notification(
     request: CreateNotificationRequest,
     principal: CurrentPrincipalDep,
     command_use_case: CreateNotificationCommandUseCaseDep,
-    push_dispatcher: NotificationPushDispatcherDep,
-    background_tasks: BackgroundTasks,
 ) -> CommonResponse[NotificationResponse]:
     result = await command_use_case.execute(
         CreateNotificationCommand(
@@ -163,19 +157,6 @@ async def create_notification(
             resource_type=request.resource_type,
             resource_id=request.resource_id,
         )
-    )
-    background_tasks.add_task(
-        push_dispatcher.dispatch,
-        SendNotificationPushCommand(
-            user_id=principal.user_id,
-            notification_id=result.notification_id,
-            category=result.category,
-            kind=result.kind,
-            title=result.title,
-            message=result.message,
-            resource_type=result.resource_type,
-            resource_id=result.resource_id,
-        ),
     )
     return CommonResponse(
         success=True,

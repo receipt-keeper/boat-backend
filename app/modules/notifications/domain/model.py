@@ -5,6 +5,7 @@ from uuid import UUID, uuid4
 from app.core.domain.entity import Entity
 from app.core.domain.exceptions import ErrorDetail, ValidationError
 from app.core.domain.validation import Notification as ValidationNotification
+from app.modules.notifications.domain.events import NotificationCreated
 from app.modules.notifications.domain.value_objects import (
     DevicePlatform,
     Fid,
@@ -67,8 +68,9 @@ class UserNotification(Entity[UUID]):
         notification.collect(lambda: _validate_resource_pair(resource_type, resource_id))
         notification.raise_if_any()
 
-        return cls(
-            id=notification_id or uuid4(),
+        new_id = notification_id or uuid4()
+        created = cls(
+            id=new_id,
             user_id=user_id,
             category=category,
             kind=new_kind,
@@ -79,6 +81,19 @@ class UserNotification(Entity[UUID]):
             created_at=created_at,
             read_at=read_at,
         )
+        created.record_event(
+            NotificationCreated(
+                notification_id=new_id,
+                user_id=user_id,
+                category=category,
+                kind=new_kind.value,
+                title=new_title.value,
+                message=new_message.value,
+                resource_type=new_resource_type.value if new_resource_type else None,
+                resource_id=resource_id,
+            )
+        )
+        return created
 
     def mark_read(self, *, read_at: datetime) -> "UserNotification":
         return UserNotification(

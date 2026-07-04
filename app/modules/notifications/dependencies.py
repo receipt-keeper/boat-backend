@@ -1,13 +1,17 @@
-from typing import Annotated
+from collections.abc import Sequence
+from typing import Annotated, cast
 
-from fastapi import Depends, Request
+from fastapi import BackgroundTasks, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.application.event_dispatcher import EventDispatcher
+from app.core.application.event_publisher import EventPublisher
 from app.core.application.unit_of_work import UnitOfWork
 from app.core.config.dependencies import get_request_settings
 from app.core.config.settings import Settings
 from app.core.db.session import AsyncSessionDep, request_async_session
 from app.core.db.unit_of_work import SqlAlchemyUnitOfWork
+from app.core.domain.events import DomainEvent
 from app.modules.notifications.application.commands.create_notification.use_case import (
     CreateNotificationCommandUseCase,
 )
@@ -45,6 +49,7 @@ from app.modules.notifications.application.queries.get_notification_settings.use
 from app.modules.notifications.application.queries.list_notifications.use_case import (
     ListNotificationsQueryUseCase,
 )
+from app.modules.notifications.domain.events import NotificationCreated
 from app.modules.notifications.infrastructure.fcm.push_sender import (
     DisabledPushSender,
     FcmPushSender,
@@ -104,6 +109,66 @@ async def get_notification_push_dispatcher(
     return NotificationPushDispatcher(request=request, push_sender=push_sender)
 
 
+async def _handle_notification_created(
+    event: NotificationCreated,
+    *,
+    push_dispatcher: NotificationPushDispatcher,
+) -> None:
+    await push_dispatcher.dispatch(
+        SendNotificationPushCommand(
+            user_id=event.user_id,
+            notification_id=event.notification_id,
+            category=event.category,
+            kind=event.kind,
+            title=event.title,
+            message=event.message,
+            resource_type=event.resource_type,
+            resource_id=event.resource_id,
+        )
+    )
+
+
+def build_notification_event_dispatcher(
+    *,
+    push_dispatcher: NotificationPushDispatcher,
+) -> EventDispatcher:
+    async def handle_notification_created(event: DomainEvent) -> None:
+        await _handle_notification_created(
+            cast(NotificationCreated, event),
+            push_dispatcher=push_dispatcher,
+        )
+
+    dispatcher = EventDispatcher()
+    dispatcher.register(NotificationCreated, handle_notification_created)
+    return dispatcher
+
+
+class BackgroundEventPublisher(EventPublisher):
+    """요청 응답 반환 이후(BackgroundTasks)에 이벤트를 디스패치하는 발행자.
+
+    create use case는 이 port만 알고, FastAPI BackgroundTasks는 이 모듈 wiring
+    계층(dependencies.py)까지만 노출된다.
+    """
+
+    def __init__(self, *, background_tasks: BackgroundTasks, dispatcher: EventDispatcher) -> None:
+        self._background_tasks = background_tasks
+        self._dispatcher = dispatcher
+
+    async def publish(self, events: Sequence[DomainEvent]) -> None:
+        self._background_tasks.add_task(self._dispatcher.dispatch, events)
+
+
+async def get_notification_event_publisher(
+    background_tasks: BackgroundTasks,
+    push_dispatcher: Annotated[
+        NotificationPushDispatcher,
+        Depends(get_notification_push_dispatcher),
+    ],
+) -> EventPublisher:
+    dispatcher = build_notification_event_dispatcher(push_dispatcher=push_dispatcher)
+    return BackgroundEventPublisher(background_tasks=background_tasks, dispatcher=dispatcher)
+
+
 def build_update_notification_settings_command_use_case(
     session: AsyncSession,
     unit_of_work: UnitOfWork,
@@ -130,10 +195,12 @@ async def get_create_notification_command_use_case(
         Depends(get_notification_repository),
     ],
     unit_of_work: Annotated[UnitOfWork, Depends(get_unit_of_work)],
+    event_publisher: Annotated[EventPublisher, Depends(get_notification_event_publisher)],
 ) -> CreateNotificationCommandUseCase:
     return CreateNotificationCommandUseCase(
         notification_repository=notification_repository,
         unit_of_work=unit_of_work,
+        event_publisher=event_publisher,
     )
 
 
@@ -212,10 +279,6 @@ async def get_unregister_device_token_command_use_case(
 CreateNotificationCommandUseCaseDep = Annotated[
     CreateNotificationCommandUseCase,
     Depends(get_create_notification_command_use_case),
-]
-NotificationPushDispatcherDep = Annotated[
-    NotificationPushDispatcher,
-    Depends(get_notification_push_dispatcher),
 ]
 MarkNotificationReadCommandUseCaseDep = Annotated[
     MarkNotificationReadCommandUseCase,
