@@ -12,11 +12,20 @@ from app.modules.notifications.application.commands.create_notification.use_case
 from app.modules.notifications.application.commands.mark_notification_read.use_case import (
     MarkNotificationReadCommandUseCase,
 )
+from app.modules.notifications.application.commands.register_device_token.use_case import (
+    RegisterDeviceTokenCommandUseCase,
+)
+from app.modules.notifications.application.commands.unregister_device_token.use_case import (
+    UnregisterDeviceTokenCommandUseCase,
+)
 from app.modules.notifications.application.commands.update_notification_settings.use_case import (
     UpdateNotificationSettingsCommandUseCase,
 )
 from app.modules.notifications.application.ports.notification_repository import (
     NotificationRepository,
+)
+from app.modules.notifications.application.ports.push_token_repository import (
+    PushTokenRepository,
 )
 from app.modules.notifications.application.queries.get_notification_settings.use_case import (
     GetNotificationSettingsQueryUseCase,
@@ -26,11 +35,16 @@ from app.modules.notifications.application.queries.list_notifications.use_case i
 )
 from app.modules.notifications.infrastructure.persistence.repository import (
     SqlAlchemyNotificationRepository,
+    SqlAlchemyPushTokenRepository,
 )
 
 
 async def get_notification_repository(session: AsyncSessionDep) -> NotificationRepository:
     return SqlAlchemyNotificationRepository(session)
+
+
+async def get_push_token_repository(session: AsyncSessionDep) -> PushTokenRepository:
+    return SqlAlchemyPushTokenRepository(session)
 
 
 async def get_unit_of_work(session: AsyncSessionDep) -> UnitOfWork:
@@ -106,6 +120,32 @@ async def get_notification_settings_query_use_case(
     )
 
 
+async def get_register_device_token_command_use_case(
+    push_token_repository: Annotated[
+        PushTokenRepository,
+        Depends(get_push_token_repository),
+    ],
+    unit_of_work: Annotated[UnitOfWork, Depends(get_unit_of_work)],
+) -> RegisterDeviceTokenCommandUseCase:
+    return RegisterDeviceTokenCommandUseCase(
+        push_token_repository=push_token_repository,
+        unit_of_work=unit_of_work,
+    )
+
+
+async def get_unregister_device_token_command_use_case(
+    push_token_repository: Annotated[
+        PushTokenRepository,
+        Depends(get_push_token_repository),
+    ],
+    unit_of_work: Annotated[UnitOfWork, Depends(get_unit_of_work)],
+) -> UnregisterDeviceTokenCommandUseCase:
+    return UnregisterDeviceTokenCommandUseCase(
+        push_token_repository=push_token_repository,
+        unit_of_work=unit_of_work,
+    )
+
+
 CreateNotificationCommandUseCaseDep = Annotated[
     CreateNotificationCommandUseCase,
     Depends(get_create_notification_command_use_case),
@@ -125,4 +165,12 @@ ListNotificationsQueryUseCaseDep = Annotated[
 GetNotificationSettingsQueryUseCaseDep = Annotated[
     GetNotificationSettingsQueryUseCase,
     Depends(get_notification_settings_query_use_case),
+]
+RegisterDeviceTokenCommandUseCaseDep = Annotated[
+    RegisterDeviceTokenCommandUseCase,
+    Depends(get_register_device_token_command_use_case),
+]
+UnregisterDeviceTokenCommandUseCaseDep = Annotated[
+    UnregisterDeviceTokenCommandUseCase,
+    Depends(get_unregister_device_token_command_use_case),
 ]

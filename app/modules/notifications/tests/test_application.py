@@ -6,7 +6,15 @@ from app.modules.notifications.application.ports.notification_repository import 
     NotificationListResult,
     NotificationRepository,
 )
-from app.modules.notifications.domain.model import NotificationSettings, UserNotification
+from app.modules.notifications.application.ports.push_token_repository import (
+    PushTokenRepository,
+)
+from app.modules.notifications.domain.model import (
+    NotificationSettings,
+    UserNotification,
+    UserPushToken,
+)
+from app.modules.notifications.domain.value_objects import DevicePlatform
 
 TEST_USER_ID = UUID("00000000-0000-0000-0000-000000000101")
 OTHER_USER_ID = UUID("00000000-0000-0000-0000-000000000201")
@@ -107,3 +115,41 @@ class InMemoryNotificationRepository(NotificationRepository):
         )
         self.settings[user_id] = updated
         return updated
+
+
+class InMemoryPushTokenRepository(PushTokenRepository):
+    def __init__(self) -> None:
+        self.tokens: dict[tuple[UUID, str], UserPushToken] = {}
+        self.register_count = 0
+        self.unregister_count = 0
+
+    async def register(
+        self,
+        *,
+        user_id: UUID,
+        device_id: str,
+        fcm_token: str,
+        platform: DevicePlatform,
+    ) -> UserPushToken:
+        self.register_count += 1
+        for key, token in list(self.tokens.items()):
+            if token.fcm_token.value == fcm_token and key != (user_id, device_id):
+                del self.tokens[key]
+
+        now = CREATED_AT
+        existing = self.tokens.get((user_id, device_id))
+        saved = UserPushToken.create(
+            push_token_id=existing.id if existing is not None else None,
+            user_id=user_id,
+            device_id=device_id,
+            fcm_token=fcm_token,
+            platform=platform,
+            created_at=existing.created_at if existing is not None else now,
+            updated_at=now,
+        )
+        self.tokens[(user_id, device_id)] = saved
+        return saved
+
+    async def unregister(self, *, user_id: UUID, device_id: str) -> None:
+        self.unregister_count += 1
+        self.tokens.pop((user_id, device_id), None)

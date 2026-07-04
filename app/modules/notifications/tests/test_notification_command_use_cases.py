@@ -15,6 +15,18 @@ from app.modules.notifications.application.commands.mark_notification_read.comma
 from app.modules.notifications.application.commands.mark_notification_read.use_case import (
     MarkNotificationReadCommandUseCase,
 )
+from app.modules.notifications.application.commands.register_device_token.command import (
+    RegisterDeviceTokenCommand,
+)
+from app.modules.notifications.application.commands.register_device_token.use_case import (
+    RegisterDeviceTokenCommandUseCase,
+)
+from app.modules.notifications.application.commands.unregister_device_token.command import (
+    UnregisterDeviceTokenCommand,
+)
+from app.modules.notifications.application.commands.unregister_device_token.use_case import (
+    UnregisterDeviceTokenCommandUseCase,
+)
 from app.modules.notifications.application.commands.update_notification_settings.command import (
     UpdateNotificationSettingsCommand,
 )
@@ -23,6 +35,7 @@ from app.modules.notifications.application.commands.update_notification_settings
 )
 from app.modules.notifications.domain.model import NotificationSettings, UserNotification
 from app.modules.notifications.domain.value_objects import (
+    DevicePlatform,
     NotificationKind,
     NotificationTargetType,
 )
@@ -32,6 +45,7 @@ from app.modules.notifications.tests.test_application import (
     READ_AT,
     TEST_USER_ID,
     InMemoryNotificationRepository,
+    InMemoryPushTokenRepository,
 )
 from tests.support.unit_of_work import FakeUnitOfWork
 
@@ -211,4 +225,101 @@ async def test_update_settings_partial_update_preserves_omitted_values_and_commi
     assert settings.push_enabled is False
     assert settings.marketing_consent is True
     assert repository.update_settings_count == 1
+    assert unit_of_work.commit_count == 1
+
+
+async def test_register_device_token_commits_once_and_returns_saved_token() -> None:
+    # Given: push token 등록 use case가 준비되어 있다.
+    repository = InMemoryPushTokenRepository()
+    unit_of_work = FakeUnitOfWork()
+    use_case = RegisterDeviceTokenCommandUseCase(
+        push_token_repository=repository,
+        unit_of_work=unit_of_work,
+    )
+
+    # When: 유효한 디바이스 토큰을 등록한다.
+    saved = await use_case.execute(
+        RegisterDeviceTokenCommand(
+            user_id=TEST_USER_ID,
+            device_id="device-1",
+            fcm_token="fcm-token-1",
+            platform=DevicePlatform.ANDROID,
+        )
+    )
+
+    # Then: repository에 위임되고 commit은 한 번만 수행된다.
+    assert repository.register_count == 1
+    assert unit_of_work.commit_count == 1
+    assert saved.user_id == TEST_USER_ID
+    assert saved.device_id.value == "device-1"
+    assert saved.fcm_token.value == "fcm-token-1"
+    assert saved.platform == DevicePlatform.ANDROID
+
+
+async def test_register_device_token_with_oversized_token_raises_without_commit() -> None:
+    # Given: push token 등록 use case가 준비되어 있다.
+    repository = InMemoryPushTokenRepository()
+    unit_of_work = FakeUnitOfWork()
+    use_case = RegisterDeviceTokenCommandUseCase(
+        push_token_repository=repository,
+        unit_of_work=unit_of_work,
+    )
+
+    # When: 513자 fcm_token으로 등록을 시도한다.
+    with pytest.raises(ValidationError) as error:
+        await use_case.execute(
+            RegisterDeviceTokenCommand(
+                user_id=TEST_USER_ID,
+                device_id="device-1",
+                fcm_token="a" * 513,
+                platform=DevicePlatform.IOS,
+            )
+        )
+
+    # Then: DB에 닿기 전에 검증에서 거부되고 commit은 수행되지 않는다.
+    assert [detail.field for detail in error.value.details] == ["fcmToken"]
+    assert repository.register_count == 0
+    assert unit_of_work.commit_count == 0
+
+
+async def test_unregister_device_token_commits_once() -> None:
+    # Given: 등록된 디바이스 토큰이 있다.
+    repository = InMemoryPushTokenRepository()
+    await repository.register(
+        user_id=TEST_USER_ID,
+        device_id="device-1",
+        fcm_token="fcm-token-1",
+        platform=DevicePlatform.ANDROID,
+    )
+    unit_of_work = FakeUnitOfWork()
+    use_case = UnregisterDeviceTokenCommandUseCase(
+        push_token_repository=repository,
+        unit_of_work=unit_of_work,
+    )
+
+    # When: 등록된 디바이스를 해제한다.
+    await use_case.execute(UnregisterDeviceTokenCommand(user_id=TEST_USER_ID, device_id="device-1"))
+
+    # Then: repository에 위임되고 commit은 한 번만 수행된다.
+    assert repository.unregister_count == 1
+    assert unit_of_work.commit_count == 1
+    assert (TEST_USER_ID, "device-1") not in repository.tokens
+
+
+async def test_unregister_missing_device_token_still_commits_idempotently() -> None:
+    # Given: 등록되지 않은 디바이스 토큰이 있다.
+    repository = InMemoryPushTokenRepository()
+    unit_of_work = FakeUnitOfWork()
+    use_case = UnregisterDeviceTokenCommandUseCase(
+        push_token_repository=repository,
+        unit_of_work=unit_of_work,
+    )
+
+    # When: 존재하지 않는 device_id를 해제한다.
+    await use_case.execute(
+        UnregisterDeviceTokenCommand(user_id=TEST_USER_ID, device_id="missing-device")
+    )
+
+    # Then: 예외 없이 멱등하게 commit이 한 번 수행된다.
+    assert repository.unregister_count == 1
     assert unit_of_work.commit_count == 1

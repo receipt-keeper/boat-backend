@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Annotated, Protocol
 from uuid import UUID
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, Query, Response, status
 
 from app.core.http.auth import CurrentPrincipalDep
 from app.core.http.responses import ApiErrorData, CommonResponse, CursorPaginationResponse
@@ -12,6 +12,7 @@ from app.modules.notifications.api.schemas import (
     NotificationListResponse,
     NotificationResponse,
     NotificationSettingsResponse,
+    RegisterDeviceRequest,
     UpdateNotificationSettingsRequest,
 )
 from app.modules.notifications.application.commands.create_notification.command import (
@@ -19,6 +20,12 @@ from app.modules.notifications.application.commands.create_notification.command 
 )
 from app.modules.notifications.application.commands.mark_notification_read.command import (
     MarkNotificationReadCommand,
+)
+from app.modules.notifications.application.commands.register_device_token.command import (
+    RegisterDeviceTokenCommand,
+)
+from app.modules.notifications.application.commands.unregister_device_token.command import (
+    UnregisterDeviceTokenCommand,
 )
 from app.modules.notifications.application.commands.update_notification_settings.command import (
     UpdateNotificationSettingsCommand,
@@ -34,6 +41,8 @@ from app.modules.notifications.dependencies import (
     GetNotificationSettingsQueryUseCaseDep,
     ListNotificationsQueryUseCaseDep,
     MarkNotificationReadCommandUseCaseDep,
+    RegisterDeviceTokenCommandUseCaseDep,
+    UnregisterDeviceTokenCommandUseCaseDep,
     UpdateNotificationSettingsCommandUseCaseDep,
 )
 from app.modules.notifications.domain.value_objects import (
@@ -223,6 +232,56 @@ async def update_notification(
         status=status.HTTP_200_OK,
         data=_notification_response(result),
     )
+
+
+@router.put(
+    "/notifications/devices",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="FCM 디바이스 등록",
+    description=(
+        "로그인한 사용자의 디바이스 FCM 토큰을 등록한다. 같은 디바이스를 다시 등록하면 "
+        "기존 토큰을 새 값으로 교체하는 멱등 upsert이며, 같은 토큰이 다른 디바이스에 "
+        "등록되어 있었다면 그 등록은 삭제되고 이번 디바이스로 이전된다. 성공하면 본문 없이 "
+        "204를 반환한다."
+    ),
+)
+async def register_device(
+    request: RegisterDeviceRequest,
+    principal: CurrentPrincipalDep,
+    command_use_case: RegisterDeviceTokenCommandUseCaseDep,
+) -> Response:
+    await command_use_case.execute(
+        RegisterDeviceTokenCommand(
+            user_id=principal.user_id,
+            device_id=request.device_id,
+            fcm_token=request.fcm_token,
+            platform=request.platform,
+        )
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.delete(
+    "/notifications/devices/{device_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="FCM 디바이스 해제",
+    description=(
+        "로그인한 사용자의 디바이스 FCM 토큰 등록을 해제한다. 등록되어 있지 않은 "
+        "device_id를 보내도 멱등하게 204를 반환한다."
+    ),
+)
+async def unregister_device(
+    device_id: str,
+    principal: CurrentPrincipalDep,
+    command_use_case: UnregisterDeviceTokenCommandUseCaseDep,
+) -> Response:
+    await command_use_case.execute(
+        UnregisterDeviceTokenCommand(
+            user_id=principal.user_id,
+            device_id=device_id,
+        )
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 def _notification_response(notification: _NotificationResult) -> NotificationResponse:

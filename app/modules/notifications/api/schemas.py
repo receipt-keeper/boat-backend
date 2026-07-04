@@ -5,7 +5,11 @@ from uuid import UUID
 from pydantic import ConfigDict, Field, model_validator
 
 from app.core.http.responses import AppBaseModel, CursorPaginationResponse
-from app.modules.notifications.domain.value_objects import NotificationKind, NotificationTargetType
+from app.modules.notifications.domain.value_objects import (
+    DevicePlatform,
+    NotificationKind,
+    NotificationTargetType,
+)
 
 
 class CreateNotificationRequest(AppBaseModel):
@@ -117,4 +121,35 @@ class UpdateNotificationSettingsRequest(AppBaseModel):
         default=None,
         alias="marketingConsent",
         description="마케팅 알림 수신 동의 여부. 보내지 않으면 기존 값을 유지한다.",
+    )
+
+
+class RegisterDeviceRequest(AppBaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+        json_schema_extra={
+            "examples": [
+                {
+                    "deviceId": "b3f3f7b0-6e33-4d3a-9a9a-8f6a2b5e9c11",
+                    "fcmToken": "fcm-token-example",
+                    "platform": "android",
+                }
+            ]
+        },
+    )
+
+    device_id: str = Field(
+        alias="deviceId",
+        description="클라이언트가 발급한 디바이스 식별자.",
+        examples=["b3f3f7b0-6e33-4d3a-9a9a-8f6a2b5e9c11"],
+    )
+    fcm_token: str = Field(
+        alias="fcmToken",
+        description="Firebase Cloud Messaging 디바이스 토큰.",
+        examples=["fcm-token-example"],
+    )
+    platform: DevicePlatform = Field(
+        description="디바이스 플랫폼.",
+        examples=["android"],
     )
