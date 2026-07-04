@@ -1,10 +1,17 @@
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from uuid import UUID
 
+from app.core.domain.exceptions import ExternalServiceError
 from app.modules.notifications.application.ports.notification_repository import (
     NotificationListCursor,
     NotificationListResult,
     NotificationRepository,
+)
+from app.modules.notifications.application.ports.push_sender import (
+    PushMessage,
+    PushSender,
+    PushSendReport,
 )
 from app.modules.notifications.application.ports.push_token_repository import (
     PushTokenRepository,
@@ -122,6 +129,7 @@ class InMemoryPushTokenRepository(PushTokenRepository):
         self.tokens: dict[tuple[UUID, str], UserPushToken] = {}
         self.register_count = 0
         self.unregister_count = 0
+        self.delete_by_fcm_tokens_count = 0
 
     async def register(
         self,
@@ -153,3 +161,36 @@ class InMemoryPushTokenRepository(PushTokenRepository):
     async def unregister(self, *, user_id: UUID, device_id: str) -> None:
         self.unregister_count += 1
         self.tokens.pop((user_id, device_id), None)
+
+    async def list_by_user(self, *, user_id: UUID) -> tuple[UserPushToken, ...]:
+        return tuple(token for (owner_id, _), token in self.tokens.items() if owner_id == user_id)
+
+    async def delete_by_fcm_tokens(self, *, fcm_tokens: Sequence[str]) -> None:
+        self.delete_by_fcm_tokens_count += 1
+        targets = set(fcm_tokens)
+        for key, token in list(self.tokens.items()):
+            if token.fcm_token.value in targets:
+                del self.tokens[key]
+
+
+class FakePushSender(PushSender):
+    def __init__(
+        self,
+        *,
+        report: PushSendReport | None = None,
+        error: ExternalServiceError | None = None,
+    ) -> None:
+        self.calls: list[tuple[tuple[UserPushToken, ...], PushMessage]] = []
+        self._report = report if report is not None else PushSendReport()
+        self._error = error
+
+    async def send(
+        self,
+        *,
+        tokens: Sequence[UserPushToken],
+        message: PushMessage,
+    ) -> PushSendReport:
+        self.calls.append((tuple(tokens), message))
+        if self._error is not None:
+            raise self._error
+        return self._report

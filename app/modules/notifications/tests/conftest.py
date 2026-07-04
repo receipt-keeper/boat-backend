@@ -1,4 +1,4 @@
-from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator, Mapping
 from contextlib import asynccontextmanager
 from typing import Final
 from uuid import UUID
@@ -89,12 +89,15 @@ async def postgres_session_factory(
 async def notification_api_client(
     session_factory: async_sessionmaker[AsyncSession],
     user_id: UUID = TEST_USER_ID,
+    dependency_overrides: Mapping[Callable[..., object], Callable[..., object]] | None = None,
 ) -> AsyncIterator[AsyncClient]:
     test_app = create_app(TEST_SETTINGS)
     test_app.state.session_factory = session_factory
     test_app.dependency_overrides[authenticate_current_principal] = (
         _authenticate_current_principal_for(user_id)
     )
+    if dependency_overrides:
+        test_app.dependency_overrides.update(dependency_overrides)
 
     try:
         async with AsyncClient(

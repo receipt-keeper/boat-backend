@@ -2,11 +2,12 @@ from uuid import uuid4
 
 import pytest
 
-from app.core.domain.exceptions import NotFoundError, ValidationError
+from app.core.domain.exceptions import ExternalServiceError, NotFoundError, ValidationError
 from app.modules.notifications.application.commands.create_notification.command import (
     CreateNotificationCommand,
 )
 from app.modules.notifications.application.commands.create_notification.use_case import (
+    PUSH_TITLES,
     CreateNotificationCommandUseCase,
 )
 from app.modules.notifications.application.commands.mark_notification_read.command import (
@@ -33,6 +34,7 @@ from app.modules.notifications.application.commands.update_notification_settings
 from app.modules.notifications.application.commands.update_notification_settings.use_case import (
     UpdateNotificationSettingsCommandUseCase,
 )
+from app.modules.notifications.application.ports.push_sender import PushSendReport
 from app.modules.notifications.domain.model import NotificationSettings, UserNotification
 from app.modules.notifications.domain.value_objects import (
     DevicePlatform,
@@ -44,20 +46,40 @@ from app.modules.notifications.tests.test_application import (
     OTHER_USER_ID,
     READ_AT,
     TEST_USER_ID,
+    FakePushSender,
     InMemoryNotificationRepository,
     InMemoryPushTokenRepository,
 )
 from tests.support.unit_of_work import FakeUnitOfWork
 
 
+def _create_use_case(
+    *,
+    repository: InMemoryNotificationRepository,
+    push_token_repository: InMemoryPushTokenRepository,
+    push_sender: FakePushSender,
+    unit_of_work: FakeUnitOfWork,
+) -> CreateNotificationCommandUseCase:
+    return CreateNotificationCommandUseCase(
+        notification_repository=repository,
+        push_token_repository=push_token_repository,
+        push_sender=push_sender,
+        unit_of_work=unit_of_work,
+        clock=lambda: CREATED_AT,
+    )
+
+
 async def test_create_notification_commits_once_and_returns_expected_result() -> None:
     # Given: 알림 생성 use case와 in-memory repository가 준비되어 있다.
     repository = InMemoryNotificationRepository()
+    push_token_repository = InMemoryPushTokenRepository()
+    push_sender = FakePushSender()
     unit_of_work = FakeUnitOfWork()
-    use_case = CreateNotificationCommandUseCase(
-        notification_repository=repository,
+    use_case = _create_use_case(
+        repository=repository,
+        push_token_repository=push_token_repository,
+        push_sender=push_sender,
         unit_of_work=unit_of_work,
-        clock=lambda: CREATED_AT,
     )
 
     # When: 현재 사용자에게 알림을 생성한다.
@@ -80,16 +102,20 @@ async def test_create_notification_commits_once_and_returns_expected_result() ->
     assert result.target_type == NotificationTargetType.RECEIPT_UPLOAD
     assert result.target_id is None
     assert result.read_at is None
+    # 등록된 디바이스가 없으므로 발송은 시도되지 않는다.
+    assert push_sender.calls == []
 
 
 async def test_create_notification_propagates_validation_without_commit() -> None:
     # Given: 알림 생성 use case가 준비되어 있다.
     repository = InMemoryNotificationRepository()
+    push_sender = FakePushSender()
     unit_of_work = FakeUnitOfWork()
-    use_case = CreateNotificationCommandUseCase(
-        notification_repository=repository,
+    use_case = _create_use_case(
+        repository=repository,
+        push_token_repository=InMemoryPushTokenRepository(),
+        push_sender=push_sender,
         unit_of_work=unit_of_work,
-        clock=lambda: CREATED_AT,
     )
 
     # When: 도메인 규칙을 위반한 message로 알림 생성을 시도한다.
@@ -102,11 +128,185 @@ async def test_create_notification_propagates_validation_without_commit() -> Non
             )
         )
 
-    # Then: validation error가 전파되고 저장/commit은 수행되지 않는다.
+    # Then: validation error가 전파되고 저장/commit/발송은 수행되지 않는다.
     assert [detail.field for detail in error.value.details] == ["message"]
     assert repository.notifications == {}
     assert repository.create_count == 0
     assert unit_of_work.commit_count == 0
+    assert push_sender.calls == []
+
+
+def test_push_titles_cover_every_notification_kind() -> None:
+    # Then: 새 NotificationKind가 추가되면 푸시 제목도 함께 정의하도록 강제한다.
+    assert set(PUSH_TITLES) == set(NotificationKind)
+
+
+async def test_create_notification_sends_push_to_registered_devices() -> None:
+    # Given: 현재 사용자에게 등록된 디바이스 2대가 있다.
+    repository = InMemoryNotificationRepository()
+    push_token_repository = InMemoryPushTokenRepository()
+    await push_token_repository.register(
+        user_id=TEST_USER_ID,
+        device_id="device-1",
+        fcm_token="fcm-token-1",
+        platform=DevicePlatform.ANDROID,
+    )
+    await push_token_repository.register(
+        user_id=TEST_USER_ID,
+        device_id="device-2",
+        fcm_token="fcm-token-2",
+        platform=DevicePlatform.IOS,
+    )
+    await push_token_repository.register(
+        user_id=OTHER_USER_ID,
+        device_id="device-9",
+        fcm_token="fcm-token-9",
+        platform=DevicePlatform.IOS,
+    )
+    push_sender = FakePushSender()
+    unit_of_work = FakeUnitOfWork()
+    use_case = _create_use_case(
+        repository=repository,
+        push_token_repository=push_token_repository,
+        push_sender=push_sender,
+        unit_of_work=unit_of_work,
+    )
+
+    # When: 현재 사용자에게 알림을 생성한다.
+    result = await use_case.execute(
+        CreateNotificationCommand(
+            user_id=TEST_USER_ID,
+            kind=NotificationKind.WARRANTY_RISK,
+            message="보증 만료가 임박했습니다.",
+        )
+    )
+
+    # Then: 현재 사용자의 토큰에만 제목/본문/데이터가 채워진 푸시가 한 번 발송된다.
+    assert len(push_sender.calls) == 1
+    sent_tokens, sent_message = push_sender.calls[0]
+    assert {token.fcm_token.value for token in sent_tokens} == {"fcm-token-1", "fcm-token-2"}
+    assert sent_message.title == "보증 만료 임박"
+    assert sent_message.body == "보증 만료가 임박했습니다."
+    assert sent_message.data == {
+        "notificationId": str(result.notification_id),
+        "kind": "warranty_risk",
+        "targetType": "none",
+    }
+    assert unit_of_work.commit_count == 1
+
+
+async def test_create_notification_skips_push_when_push_disabled() -> None:
+    # Given: 사용자가 푸시 수신을 꺼 두었고 등록된 디바이스가 있다.
+    repository = InMemoryNotificationRepository()
+    repository.settings[TEST_USER_ID] = NotificationSettings.create(
+        user_id=TEST_USER_ID,
+        push_enabled=False,
+    )
+    push_token_repository = InMemoryPushTokenRepository()
+    await push_token_repository.register(
+        user_id=TEST_USER_ID,
+        device_id="device-1",
+        fcm_token="fcm-token-1",
+        platform=DevicePlatform.ANDROID,
+    )
+    push_sender = FakePushSender()
+    unit_of_work = FakeUnitOfWork()
+    use_case = _create_use_case(
+        repository=repository,
+        push_token_repository=push_token_repository,
+        push_sender=push_sender,
+        unit_of_work=unit_of_work,
+    )
+
+    # When: 알림을 생성한다.
+    await use_case.execute(
+        CreateNotificationCommand(
+            user_id=TEST_USER_ID,
+            kind=NotificationKind.BENEFIT,
+            message="이번 달 혜택을 확인해 보세요.",
+        )
+    )
+
+    # Then: 알림은 저장되지만 발송은 시도되지 않는다.
+    assert repository.create_count == 1
+    assert unit_of_work.commit_count == 1
+    assert push_sender.calls == []
+
+
+async def test_create_notification_deletes_invalid_tokens_and_commits_again() -> None:
+    # Given: 등록 디바이스 중 하나의 토큰이 FCM에서 무효 판정을 받는다.
+    repository = InMemoryNotificationRepository()
+    push_token_repository = InMemoryPushTokenRepository()
+    await push_token_repository.register(
+        user_id=TEST_USER_ID,
+        device_id="device-1",
+        fcm_token="fcm-token-dead",
+        platform=DevicePlatform.ANDROID,
+    )
+    await push_token_repository.register(
+        user_id=TEST_USER_ID,
+        device_id="device-2",
+        fcm_token="fcm-token-live",
+        platform=DevicePlatform.IOS,
+    )
+    push_sender = FakePushSender(report=PushSendReport(invalid_tokens=("fcm-token-dead",)))
+    unit_of_work = FakeUnitOfWork()
+    use_case = _create_use_case(
+        repository=repository,
+        push_token_repository=push_token_repository,
+        push_sender=push_sender,
+        unit_of_work=unit_of_work,
+    )
+
+    # When: 알림을 생성한다.
+    await use_case.execute(
+        CreateNotificationCommand(
+            user_id=TEST_USER_ID,
+            kind=NotificationKind.BENEFIT,
+            message="이번 달 혜택을 확인해 보세요.",
+        )
+    )
+
+    # Then: 무효 토큰만 삭제되고 정리를 위한 commit이 한 번 더 수행된다.
+    assert push_token_repository.delete_by_fcm_tokens_count == 1
+    assert (TEST_USER_ID, "device-1") not in push_token_repository.tokens
+    assert (TEST_USER_ID, "device-2") in push_token_repository.tokens
+    assert unit_of_work.commit_count == 2
+
+
+async def test_create_notification_survives_push_send_failure() -> None:
+    # Given: 푸시 발송이 외부 서비스 장애로 실패한다.
+    repository = InMemoryNotificationRepository()
+    push_token_repository = InMemoryPushTokenRepository()
+    await push_token_repository.register(
+        user_id=TEST_USER_ID,
+        device_id="device-1",
+        fcm_token="fcm-token-1",
+        platform=DevicePlatform.ANDROID,
+    )
+    push_sender = FakePushSender(error=ExternalServiceError("푸시 발송에 실패했습니다."))
+    unit_of_work = FakeUnitOfWork()
+    use_case = _create_use_case(
+        repository=repository,
+        push_token_repository=push_token_repository,
+        push_sender=push_sender,
+        unit_of_work=unit_of_work,
+    )
+
+    # When: 알림을 생성한다.
+    result = await use_case.execute(
+        CreateNotificationCommand(
+            user_id=TEST_USER_ID,
+            kind=NotificationKind.BENEFIT,
+            message="이번 달 혜택을 확인해 보세요.",
+        )
+    )
+
+    # Then: 발송 실패에도 알림 생성은 성공으로 남고 토큰은 유지된다.
+    assert result.notification_id in repository.notifications
+    assert unit_of_work.commit_count == 1
+    assert len(push_sender.calls) == 1
+    assert (TEST_USER_ID, "device-1") in push_token_repository.tokens
 
 
 async def test_mark_notification_read_commits_once_and_returns_expected_result() -> None:

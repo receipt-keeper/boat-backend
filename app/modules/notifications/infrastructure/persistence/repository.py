@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from datetime import datetime
 from uuid import UUID
 
@@ -220,5 +221,21 @@ class SqlAlchemyPushTokenRepository(PushTokenRepository):
                 orm.UserPushToken.user_id == user_id,
                 orm.UserPushToken.device_id == device_id,
             )
+        )
+        await self._session.flush()
+
+    async def list_by_user(self, *, user_id: UUID) -> tuple[UserPushToken, ...]:
+        records = await self._session.scalars(
+            select(orm.UserPushToken)
+            .where(orm.UserPushToken.user_id == user_id)
+            .order_by(orm.UserPushToken.created_at, orm.UserPushToken.id)
+        )
+        return tuple(mapper.push_token_to_domain(record) for record in records)
+
+    async def delete_by_fcm_tokens(self, *, fcm_tokens: Sequence[str]) -> None:
+        if not fcm_tokens:
+            return
+        await self._session.execute(
+            delete(orm.UserPushToken).where(orm.UserPushToken.fcm_token.in_(list(fcm_tokens)))
         )
         await self._session.flush()

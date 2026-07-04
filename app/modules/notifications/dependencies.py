@@ -4,6 +4,8 @@ from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.application.unit_of_work import UnitOfWork
+from app.core.config.dependencies import get_request_settings
+from app.core.config.settings import Settings
 from app.core.db.session import AsyncSessionDep
 from app.core.db.unit_of_work import SqlAlchemyUnitOfWork
 from app.modules.notifications.application.commands.create_notification.use_case import (
@@ -24,6 +26,7 @@ from app.modules.notifications.application.commands.update_notification_settings
 from app.modules.notifications.application.ports.notification_repository import (
     NotificationRepository,
 )
+from app.modules.notifications.application.ports.push_sender import PushSender
 from app.modules.notifications.application.ports.push_token_repository import (
     PushTokenRepository,
 )
@@ -33,10 +36,16 @@ from app.modules.notifications.application.queries.get_notification_settings.use
 from app.modules.notifications.application.queries.list_notifications.use_case import (
     ListNotificationsQueryUseCase,
 )
+from app.modules.notifications.infrastructure.fcm.push_sender import (
+    DisabledPushSender,
+    FcmPushSender,
+)
 from app.modules.notifications.infrastructure.persistence.repository import (
     SqlAlchemyNotificationRepository,
     SqlAlchemyPushTokenRepository,
 )
+
+SettingsDep = Annotated[Settings, Depends(get_request_settings)]
 
 
 async def get_notification_repository(session: AsyncSessionDep) -> NotificationRepository:
@@ -49,6 +58,12 @@ async def get_push_token_repository(session: AsyncSessionDep) -> PushTokenReposi
 
 async def get_unit_of_work(session: AsyncSessionDep) -> UnitOfWork:
     return SqlAlchemyUnitOfWork(session)
+
+
+async def get_push_sender(settings: SettingsDep) -> PushSender:
+    if settings.push_send_enabled:
+        return FcmPushSender.from_settings(settings)
+    return DisabledPushSender()
 
 
 def build_update_notification_settings_command_use_case(
@@ -66,10 +81,17 @@ async def get_create_notification_command_use_case(
         NotificationRepository,
         Depends(get_notification_repository),
     ],
+    push_token_repository: Annotated[
+        PushTokenRepository,
+        Depends(get_push_token_repository),
+    ],
+    push_sender: Annotated[PushSender, Depends(get_push_sender)],
     unit_of_work: Annotated[UnitOfWork, Depends(get_unit_of_work)],
 ) -> CreateNotificationCommandUseCase:
     return CreateNotificationCommandUseCase(
         notification_repository=notification_repository,
+        push_token_repository=push_token_repository,
+        push_sender=push_sender,
         unit_of_work=unit_of_work,
     )
 

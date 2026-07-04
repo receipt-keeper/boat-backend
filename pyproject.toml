@@ -55,7 +55,12 @@ asyncio_mode = "auto"
 testpaths = ["tests", "app"]
 pythonpath = ["."]
 addopts = "-ra --strict-markers --cov=app --cov-report=term-missing"
-filterwarnings = ["error"]
+filterwarnings = [
+    "error",
+    # firebase-admin이 FCM 수신자를 token에서 fid로 옮기는 중이다. 클라이언트가 아직
+    # registration token을 보내므로 fid 마이그레이션 전까지 이 deprecation만 허용한다.
+    "ignore:Message.token is deprecated:DeprecationWarning",
+]
 
 [tool.coverage.run]
 source = ["app"]
