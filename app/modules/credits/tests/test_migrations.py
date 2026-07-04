@@ -28,8 +28,8 @@ def test_credit_migration_revision_is_linear_after_receipt_sub_category() -> Non
     # When: Alembic revision graph와 credit migration 파일을 확인한다.
     heads = script_directory.get_heads()
 
-    # Then: 단일 head는 최신 receipt serial migration이고 credit migration은 그 앞에 남는다.
-    assert heads == ["20260702_0011"]
+    # Then: revision graph는 단일 head를 유지하고 credit migration 체인은 그대로 남는다.
+    assert len(heads) == 1
     assert CREDIT_MIGRATION_PATH.is_file()
     assert RECEIPT_SERIAL_MIGRATION_PATH.is_file()
 

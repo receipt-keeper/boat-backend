@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, delete, func, not_, or_, select
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -10,7 +10,15 @@ from app.modules.notifications.application.ports.notification_repository import 
     NotificationListResult,
     NotificationRepository,
 )
-from app.modules.notifications.domain.model import NotificationSettings, UserNotification
+from app.modules.notifications.application.ports.push_token_repository import (
+    PushTokenRepository,
+)
+from app.modules.notifications.domain.model import (
+    NotificationSettings,
+    UserNotification,
+    UserPushToken,
+)
+from app.modules.notifications.domain.value_objects import DevicePlatform
 from app.modules.notifications.infrastructure.persistence import mapper, orm
 
 
@@ -150,3 +158,67 @@ class SqlAlchemyNotificationRepository(NotificationRepository):
                 orm.UserNotification.user_id == user_id,
             )
         )
+
+
+class SqlAlchemyPushTokenRepository(PushTokenRepository):
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def register(
+        self,
+        *,
+        user_id: UUID,
+        device_id: str,
+        fcm_token: str,
+        platform: DevicePlatform,
+    ) -> UserPushToken:
+        await self._session.execute(
+            delete(orm.UserPushToken).where(
+                orm.UserPushToken.fcm_token == fcm_token,
+                not_(
+                    and_(
+                        orm.UserPushToken.user_id == user_id,
+                        orm.UserPushToken.device_id == device_id,
+                    )
+                ),
+            )
+        )
+
+        insert_statement = postgresql_insert(orm.UserPushToken).values(
+            user_id=user_id,
+            device_id=device_id,
+            fcm_token=fcm_token,
+            platform=platform.value,
+        )
+        await self._session.execute(
+            insert_statement.on_conflict_do_update(
+                index_elements=[orm.UserPushToken.user_id, orm.UserPushToken.device_id],
+                set_={
+                    "fcm_token": fcm_token,
+                    "platform": platform.value,
+                    "updated_at": func.now(),
+                },
+            )
+        )
+        await self._session.flush()
+
+        record = await self._session.scalar(
+            select(orm.UserPushToken)
+            .where(
+                orm.UserPushToken.user_id == user_id,
+                orm.UserPushToken.device_id == device_id,
+            )
+            .execution_options(populate_existing=True)
+        )
+        if record is None:
+            raise RuntimeError("push token upsert 이후 레코드를 찾을 수 없습니다.")
+        return mapper.push_token_to_domain(record)
+
+    async def unregister(self, *, user_id: UUID, device_id: str) -> None:
+        await self._session.execute(
+            delete(orm.UserPushToken).where(
+                orm.UserPushToken.user_id == user_id,
+                orm.UserPushToken.device_id == device_id,
+            )
+        )
+        await self._session.flush()

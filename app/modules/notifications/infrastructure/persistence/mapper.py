@@ -4,7 +4,11 @@ from app.modules.notifications.domain.model import (
 from app.modules.notifications.domain.model import (
     UserNotification as DomainUserNotification,
 )
+from app.modules.notifications.domain.model import (
+    UserPushToken as DomainUserPushToken,
+)
 from app.modules.notifications.domain.value_objects import (
+    DevicePlatform,
     NotificationKind,
     NotificationTargetType,
 )
@@ -54,4 +58,16 @@ def settings_to_record(
         user_id=settings.id,
         push_enabled=settings.push_enabled,
         marketing_consent=settings.marketing_consent,
+    )
+
+
+def push_token_to_domain(record: orm.UserPushToken) -> DomainUserPushToken:
+    return DomainUserPushToken.create(
+        push_token_id=record.id,
+        user_id=record.user_id,
+        device_id=record.device_id,
+        fcm_token=record.fcm_token,
+        platform=DevicePlatform(record.platform),
+        created_at=record.created_at,
+        updated_at=record.updated_at,
     )
