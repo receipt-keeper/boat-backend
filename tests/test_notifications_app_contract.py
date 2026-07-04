@@ -30,7 +30,6 @@ FORBIDDEN_NOTIFICATION_PATHS: Final[frozenset[str]] = frozenset(
         "/api/v1/notifications/device-token",
         "/api/v1/notification-reads/{notification_id}",
         "/api/v1/notification-settings",
-        "/api/v1/notifications/devices/{device_id}",
     }
 )
 

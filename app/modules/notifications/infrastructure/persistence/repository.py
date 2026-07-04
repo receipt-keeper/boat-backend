@@ -1,7 +1,9 @@
+from collections.abc import Sequence
 from datetime import datetime
+from typing import Any, cast
 from uuid import UUID
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import CursorResult, and_, delete, func, or_, select
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -10,7 +12,15 @@ from app.modules.notifications.application.ports.notification_repository import 
     NotificationListResult,
     NotificationRepository,
 )
-from app.modules.notifications.domain.model import NotificationSettings, UserNotification
+from app.modules.notifications.application.ports.push_token_repository import (
+    PushTokenRepository,
+)
+from app.modules.notifications.domain.model import (
+    NotificationSettings,
+    UserNotification,
+    UserPushToken,
+)
+from app.modules.notifications.domain.value_objects import DevicePlatform
 from app.modules.notifications.infrastructure.persistence import mapper, orm
 
 
@@ -150,3 +160,82 @@ class SqlAlchemyNotificationRepository(NotificationRepository):
                 orm.UserNotification.user_id == user_id,
             )
         )
+
+
+class SqlAlchemyPushTokenRepository(PushTokenRepository):
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def register(
+        self,
+        *,
+        user_id: UUID,
+        fid: str,
+        platform: DevicePlatform,
+    ) -> UserPushToken:
+        insert_statement = postgresql_insert(orm.UserPushToken).values(
+            user_id=user_id,
+            fid=fid,
+            platform=platform.value,
+        )
+        await self._session.execute(
+            insert_statement.on_conflict_do_update(
+                index_elements=[orm.UserPushToken.fid],
+                set_={
+                    "user_id": user_id,
+                    "platform": platform.value,
+                    "updated_at": func.now(),
+                },
+            )
+        )
+        await self._session.flush()
+
+        record = await self._session.scalar(
+            select(orm.UserPushToken)
+            .where(orm.UserPushToken.fid == fid)
+            .execution_options(populate_existing=True)
+        )
+        if record is None:
+            raise RuntimeError("push token upsert 이후 레코드를 찾을 수 없습니다.")
+        return mapper.push_token_to_domain(record)
+
+    async def unregister(self, *, user_id: UUID, fid: str) -> None:
+        await self._session.execute(
+            delete(orm.UserPushToken).where(
+                orm.UserPushToken.user_id == user_id,
+                orm.UserPushToken.fid == fid,
+            )
+        )
+        await self._session.flush()
+
+    async def list_by_user(self, *, user_id: UUID) -> tuple[UserPushToken, ...]:
+        records = await self._session.scalars(
+            select(orm.UserPushToken)
+            .where(orm.UserPushToken.user_id == user_id)
+            .order_by(orm.UserPushToken.created_at, orm.UserPushToken.id)
+        )
+        return tuple(mapper.push_token_to_domain(record) for record in records)
+
+    async def delete_by_fids(self, *, fids: Sequence[str]) -> None:
+        if not fids:
+            return
+        await self._session.execute(
+            delete(orm.UserPushToken).where(orm.UserPushToken.fid.in_(list(fids)))
+        )
+        await self._session.flush()
+
+    async def delete_by_user_id(self, *, user_id: UUID) -> None:
+        await self._session.execute(
+            delete(orm.UserPushToken).where(orm.UserPushToken.user_id == user_id)
+        )
+        await self._session.flush()
+
+    async def delete_stale(self, *, older_than: datetime) -> int:
+        result = cast(
+            "CursorResult[Any]",
+            await self._session.execute(
+                delete(orm.UserPushToken).where(orm.UserPushToken.updated_at < older_than)
+            ),
+        )
+        await self._session.flush()
+        return result.rowcount or 0

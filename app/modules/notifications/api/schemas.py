@@ -5,7 +5,11 @@ from uuid import UUID
 from pydantic import ConfigDict, Field, model_validator
 
 from app.core.http.responses import AppBaseModel, CursorPaginationResponse
-from app.modules.notifications.domain.value_objects import NotificationKind, NotificationTargetType
+from app.modules.notifications.domain.value_objects import (
+    DevicePlatform,
+    NotificationKind,
+    NotificationTargetType,
+)
 
 
 class CreateNotificationRequest(AppBaseModel):
@@ -117,4 +121,28 @@ class UpdateNotificationSettingsRequest(AppBaseModel):
         default=None,
         alias="marketingConsent",
         description="마케팅 알림 수신 동의 여부. 보내지 않으면 기존 값을 유지한다.",
+    )
+
+
+class RegisterDeviceRequest(AppBaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+        json_schema_extra={
+            "examples": [
+                {
+                    "fid": "dGhpc2lzYWZpZGV4YW1wbGU",
+                    "platform": "android",
+                }
+            ]
+        },
+    )
+
+    fid: str = Field(
+        description="Firebase Installation ID. 앱 설치 인스턴스를 식별한다.",
+        examples=["dGhpc2lzYWZpZGV4YW1wbGU"],
+    )
+    platform: DevicePlatform = Field(
+        description="디바이스 플랫폼.",
+        examples=["android"],
     )

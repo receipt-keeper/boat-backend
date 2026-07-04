@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -6,7 +7,20 @@ from app.modules.notifications.application.ports.notification_repository import 
     NotificationListResult,
     NotificationRepository,
 )
-from app.modules.notifications.domain.model import NotificationSettings, UserNotification
+from app.modules.notifications.application.ports.push_sender import (
+    PushMessage,
+    PushSender,
+    PushSendReport,
+)
+from app.modules.notifications.application.ports.push_token_repository import (
+    PushTokenRepository,
+)
+from app.modules.notifications.domain.model import (
+    NotificationSettings,
+    UserNotification,
+    UserPushToken,
+)
+from app.modules.notifications.domain.value_objects import DevicePlatform
 
 TEST_USER_ID = UUID("00000000-0000-0000-0000-000000000101")
 OTHER_USER_ID = UUID("00000000-0000-0000-0000-000000000201")
@@ -107,3 +121,84 @@ class InMemoryNotificationRepository(NotificationRepository):
         )
         self.settings[user_id] = updated
         return updated
+
+
+class InMemoryPushTokenRepository(PushTokenRepository):
+    def __init__(self) -> None:
+        self.tokens: dict[str, UserPushToken] = {}
+        self.register_count = 0
+        self.unregister_count = 0
+        self.delete_by_fids_count = 0
+        self.delete_by_user_id_count = 0
+        self.delete_stale_count = 0
+
+    async def register(
+        self,
+        *,
+        user_id: UUID,
+        fid: str,
+        platform: DevicePlatform,
+    ) -> UserPushToken:
+        self.register_count += 1
+        now = CREATED_AT
+        existing = self.tokens.get(fid)
+        saved = UserPushToken.create(
+            push_token_id=existing.id if existing is not None else None,
+            user_id=user_id,
+            fid=fid,
+            platform=platform,
+            created_at=existing.created_at if existing is not None else now,
+            updated_at=now,
+        )
+        self.tokens[fid] = saved
+        return saved
+
+    async def unregister(self, *, user_id: UUID, fid: str) -> None:
+        self.unregister_count += 1
+        existing = self.tokens.get(fid)
+        if existing is not None and existing.user_id == user_id:
+            del self.tokens[fid]
+
+    async def list_by_user(self, *, user_id: UUID) -> tuple[UserPushToken, ...]:
+        return tuple(token for token in self.tokens.values() if token.user_id == user_id)
+
+    async def delete_by_fids(self, *, fids: Sequence[str]) -> None:
+        self.delete_by_fids_count += 1
+        for fid in fids:
+            self.tokens.pop(fid, None)
+
+    async def delete_by_user_id(self, *, user_id: UUID) -> None:
+        self.delete_by_user_id_count += 1
+        for fid, token in list(self.tokens.items()):
+            if token.user_id == user_id:
+                del self.tokens[fid]
+
+    async def delete_stale(self, *, older_than: datetime) -> int:
+        self.delete_stale_count += 1
+        stale_fids = [fid for fid, token in self.tokens.items() if token.updated_at < older_than]
+        for fid in stale_fids:
+            del self.tokens[fid]
+        return len(stale_fids)
+
+
+class FakePushSender(PushSender):
+    def __init__(
+        self,
+        *,
+        report: PushSendReport | None = None,
+        error: Exception | None = None,
+    ) -> None:
+        self.calls: list[tuple[tuple[UserPushToken, ...], PushMessage]] = []
+        self._report = report if report is not None else PushSendReport()
+        self._error: Exception | None = error
+
+    async def send(
+        self,
+        *,
+        tokens: Sequence[UserPushToken],
+        message: PushMessage,
+    ) -> PushSendReport:
+        self.calls.append((tuple(tokens), message))
+        if self._error is not None:
+            raise self._error
+        return self._report

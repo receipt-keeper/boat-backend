@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Annotated, Protocol
 from uuid import UUID
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, BackgroundTasks, Query, Response, status
 
 from app.core.http.auth import CurrentPrincipalDep
 from app.core.http.responses import ApiErrorData, CommonResponse, CursorPaginationResponse
@@ -12,6 +12,7 @@ from app.modules.notifications.api.schemas import (
     NotificationListResponse,
     NotificationResponse,
     NotificationSettingsResponse,
+    RegisterDeviceRequest,
     UpdateNotificationSettingsRequest,
 )
 from app.modules.notifications.application.commands.create_notification.command import (
@@ -19,6 +20,15 @@ from app.modules.notifications.application.commands.create_notification.command 
 )
 from app.modules.notifications.application.commands.mark_notification_read.command import (
     MarkNotificationReadCommand,
+)
+from app.modules.notifications.application.commands.register_device_token.command import (
+    RegisterDeviceTokenCommand,
+)
+from app.modules.notifications.application.commands.send_notification_push.command import (
+    SendNotificationPushCommand,
+)
+from app.modules.notifications.application.commands.unregister_device_token.command import (
+    UnregisterDeviceTokenCommand,
 )
 from app.modules.notifications.application.commands.update_notification_settings.command import (
     UpdateNotificationSettingsCommand,
@@ -34,6 +44,9 @@ from app.modules.notifications.dependencies import (
     GetNotificationSettingsQueryUseCaseDep,
     ListNotificationsQueryUseCaseDep,
     MarkNotificationReadCommandUseCaseDep,
+    NotificationPushDispatcherDep,
+    RegisterDeviceTokenCommandUseCaseDep,
+    UnregisterDeviceTokenCommandUseCaseDep,
     UpdateNotificationSettingsCommandUseCaseDep,
 )
 from app.modules.notifications.domain.value_objects import (
@@ -123,12 +136,17 @@ async def list_notifications(
     status_code=status.HTTP_201_CREATED,
     response_model=CommonResponse[NotificationResponse],
     summary="알림 생성",
-    description="현재 사용자에게 표시할 앱 알림을 생성한다.",
+    description=(
+        "현재 사용자에게 표시할 앱 알림을 생성한다. 등록된 디바이스로의 푸시 발송은 "
+        "응답 반환 이후 백그라운드에서 진행된다."
+    ),
 )
 async def create_notification(
     request: CreateNotificationRequest,
     principal: CurrentPrincipalDep,
     command_use_case: CreateNotificationCommandUseCaseDep,
+    push_dispatcher: NotificationPushDispatcherDep,
+    background_tasks: BackgroundTasks,
 ) -> CommonResponse[NotificationResponse]:
     result = await command_use_case.execute(
         CreateNotificationCommand(
@@ -138,6 +156,17 @@ async def create_notification(
             target_type=request.target_type,
             target_id=request.target_id,
         )
+    )
+    background_tasks.add_task(
+        push_dispatcher.dispatch,
+        SendNotificationPushCommand(
+            user_id=principal.user_id,
+            notification_id=result.notification_id,
+            kind=result.kind,
+            message=result.message,
+            target_type=result.target_type,
+            target_id=result.target_id,
+        ),
     )
     return CommonResponse(
         success=True,
@@ -223,6 +252,55 @@ async def update_notification(
         status=status.HTTP_200_OK,
         data=_notification_response(result),
     )
+
+
+@router.put(
+    "/notifications/devices",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="FCM 디바이스 등록",
+    description=(
+        "로그인한 사용자의 디바이스를 FID(Firebase Installation ID)로 등록한다. "
+        "같은 FID를 다시 등록하면 플랫폼과 갱신 시각을 덮어쓰는 멱등 upsert이며, "
+        "같은 FID가 다른 사용자에게 등록되어 있었다면 이번 사용자 소유로 이전된다. "
+        "성공하면 본문 없이 204를 반환한다."
+    ),
+)
+async def register_device(
+    request: RegisterDeviceRequest,
+    principal: CurrentPrincipalDep,
+    command_use_case: RegisterDeviceTokenCommandUseCaseDep,
+) -> Response:
+    await command_use_case.execute(
+        RegisterDeviceTokenCommand(
+            user_id=principal.user_id,
+            fid=request.fid,
+            platform=request.platform,
+        )
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.delete(
+    "/notifications/devices/{fid}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="FCM 디바이스 해제",
+    description=(
+        "로그인한 사용자의 디바이스 등록을 FID 기준으로 해제한다. 로그아웃 전에 호출한다. "
+        "등록되어 있지 않은 fid를 보내도 멱등하게 204를 반환한다."
+    ),
+)
+async def unregister_device(
+    fid: str,
+    principal: CurrentPrincipalDep,
+    command_use_case: UnregisterDeviceTokenCommandUseCaseDep,
+) -> Response:
+    await command_use_case.execute(
+        UnregisterDeviceTokenCommand(
+            user_id=principal.user_id,
+            fid=fid,
+        )
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 def _notification_response(notification: _NotificationResult) -> NotificationResponse:

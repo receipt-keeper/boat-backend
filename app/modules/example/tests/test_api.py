@@ -12,6 +12,15 @@ from app.modules.auth.api.security import authenticate_current_principal
 from app.modules.credits.application.commands.grant_credit.command import GrantCreditCommand
 from app.modules.credits.dependencies import get_grant_credit_command_use_case
 from app.modules.credits.domain import CreditAmount, CreditReason
+from app.modules.notifications.dependencies import (
+    get_push_sender,
+    get_push_token_repository,
+)
+from app.modules.notifications.domain.value_objects import DevicePlatform
+from app.modules.notifications.tests.test_application import (
+    FakePushSender,
+    InMemoryPushTokenRepository,
+)
 
 TEST_USER_ID = UUID("00000000-0000-0000-0000-000000000401")
 TEST_CREDENTIALS_ID = UUID("00000000-0000-0000-0000-000000000402")
@@ -103,3 +112,114 @@ def test_grant_ocr_test_credits_endpoint_is_documented_in_openapi() -> None:
 
     assert operation["summary"] == "임시 OCR 테스트 크레딧 발급"
     assert operation["responses"]["201"]["description"] == "OCR 테스트 크레딧 발급 성공"
+
+
+async def test_send_test_push_sends_to_registered_devices() -> None:
+    test_app = create_app(Settings(app_name="Boat Backend"))
+    push_token_repository = InMemoryPushTokenRepository()
+    await push_token_repository.register(
+        user_id=TEST_USER_ID,
+        fid="fid-1",
+        platform=DevicePlatform.ANDROID,
+    )
+    await push_token_repository.register(
+        user_id=UUID("00000000-0000-0000-0000-000000000501"),
+        fid="fid-other",
+        platform=DevicePlatform.IOS,
+    )
+    push_sender = FakePushSender()
+    test_app.dependency_overrides[authenticate_current_principal] = _authenticate_test_principal
+    test_app.dependency_overrides[get_push_token_repository] = lambda: push_token_repository
+    test_app.dependency_overrides[get_push_sender] = lambda: push_sender
+
+    async with AsyncClient(
+        transport=ASGITransport(app=test_app, raise_app_exceptions=False),
+        base_url="http://test",
+    ) as test_client:
+        response = await test_client.post("/api/v1/example/push", json={})
+
+    body = response.json()
+
+    assert response.status_code == 200
+    assert body == {
+        "success": True,
+        "status": 200,
+        "data": {"targetedDeviceCount": 1, "invalidDeviceCount": 0},
+    }
+    assert len(push_sender.calls) == 1
+    sent_tokens, sent_message = push_sender.calls[0]
+    assert [token.fid.value for token in sent_tokens] == ["fid-1"]
+    assert sent_message.title == "테스트 알림"
+    assert sent_message.body == "푸시 연결 확인용 테스트 메시지입니다."
+    assert sent_message.data == {"test": "true"}
+
+
+async def test_send_test_push_uses_custom_title_and_body() -> None:
+    test_app = create_app(Settings(app_name="Boat Backend"))
+    push_token_repository = InMemoryPushTokenRepository()
+    await push_token_repository.register(
+        user_id=TEST_USER_ID,
+        fid="fid-1",
+        platform=DevicePlatform.IOS,
+    )
+    push_sender = FakePushSender()
+    test_app.dependency_overrides[authenticate_current_principal] = _authenticate_test_principal
+    test_app.dependency_overrides[get_push_token_repository] = lambda: push_token_repository
+    test_app.dependency_overrides[get_push_sender] = lambda: push_sender
+
+    async with AsyncClient(
+        transport=ASGITransport(app=test_app, raise_app_exceptions=False),
+        base_url="http://test",
+    ) as test_client:
+        response = await test_client.post(
+            "/api/v1/example/push",
+            json={"title": "커스텀 제목", "body": "커스텀 본문"},
+        )
+
+    assert response.status_code == 200
+    assert len(push_sender.calls) == 1
+    _, sent_message = push_sender.calls[0]
+    assert sent_message.title == "커스텀 제목"
+    assert sent_message.body == "커스텀 본문"
+
+
+async def test_send_test_push_without_registered_devices_reports_zero() -> None:
+    test_app = create_app(Settings(app_name="Boat Backend"))
+    push_sender = FakePushSender()
+    test_app.dependency_overrides[authenticate_current_principal] = _authenticate_test_principal
+    test_app.dependency_overrides[get_push_token_repository] = lambda: InMemoryPushTokenRepository()
+    test_app.dependency_overrides[get_push_sender] = lambda: push_sender
+
+    async with AsyncClient(
+        transport=ASGITransport(app=test_app, raise_app_exceptions=False),
+        base_url="http://test",
+    ) as test_client:
+        response = await test_client.post("/api/v1/example/push", json={})
+
+    body = response.json()
+
+    assert response.status_code == 200
+    assert body["data"] == {"targetedDeviceCount": 0, "invalidDeviceCount": 0}
+    assert push_sender.calls == []
+
+
+async def test_send_test_push_requires_authentication() -> None:
+    test_app = create_app(Settings(app_name="Boat Backend"))
+
+    async with AsyncClient(
+        transport=ASGITransport(app=test_app, raise_app_exceptions=False),
+        base_url="http://test",
+    ) as test_client:
+        response = await test_client.post("/api/v1/example/push", json={})
+
+    body = response.json()
+
+    assert response.status_code == 401
+    assert body["success"] is False
+
+
+def test_send_test_push_endpoint_is_documented_in_openapi() -> None:
+    schema = create_app(Settings(app_name="Boat Backend")).openapi()
+    operation = schema["paths"]["/api/v1/example/push"]["post"]
+
+    assert operation["summary"] == "테스트 푸시 발송"

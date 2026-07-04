@@ -16,7 +16,6 @@ def test_prd_account_schema_tables_columns_and_constraints_are_declared() -> Non
 
     assert {"auth_sessions", "user_settings"}.issubset(metadata.tables)
     assert "user_entitlements" not in metadata.tables
-    assert "user_push_tokens" not in metadata.tables
     assert "notification_enabled" not in metadata.tables["user_settings"].columns
     assert "marketing_consent" not in metadata.tables["user_settings"].columns
     assert "profile_image_url" in metadata.tables["users"].columns
