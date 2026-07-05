@@ -254,5 +254,5 @@ def _python_sources(root: Path) -> list[Path]:
 
 
 def _is_promotion_credit_migration(path: Path) -> bool:
-    source = path.read_text(encoding="utf-8").casefold()
-    return "promotion" in source or "credit" in source
+    migration_name = path.name.casefold()
+    return "promotion" in migration_name or "credit" in migration_name
