@@ -133,6 +133,7 @@ async def test_create_notification_commits_once_and_returns_expected_result() ->
             message="영수증을 등록해 보세요.",
             resource_type="receipt",
             resource_id=receipt_id,
+            metadata={"subCategory": "receiptUpload"},
         )
     )
 
@@ -147,6 +148,7 @@ async def test_create_notification_commits_once_and_returns_expected_result() ->
     assert result.message == "영수증을 등록해 보세요."
     assert result.resource_type == "receipt"
     assert result.resource_id == receipt_id
+    assert result.metadata == {"subCategory": "receiptUpload"}
     assert result.read_at is None
 
     # And: NotificationCreated 이벤트가 정확한 payload로 정확히 한 번 발행된다.
@@ -174,12 +176,15 @@ def test_restore_does_not_record_creation_event() -> None:
         message="냉장고 보증이 30일 뒤 만료돼요.",
         resource_type="receipt",
         resource_id=uuid4(),
+        metadata={"subCategory": "warranty"},
         created_at=CREATED_AT,
         read_at=None,
     )
 
     # Then: 복원된 알림에는 생성 이벤트가 쌓이지 않는다(푸시 재발행 방지).
     assert restored.pull_events() == []
+    # And: metadata는 그대로 보존된다.
+    assert restored.metadata.value == {"subCategory": "warranty"}
 
 
 async def test_create_notification_succeeds_when_event_publish_fails() -> None:

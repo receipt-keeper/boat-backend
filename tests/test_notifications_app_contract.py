@@ -18,6 +18,7 @@ NOTIFICATION_RESPONSE_FIELDS: Final[frozenset[str]] = frozenset(
         "message",
         "resourceType",
         "resourceId",
+        "metadata",
         "createdAt",
         "readAt",
     }
@@ -54,6 +55,7 @@ async def test_notifications_match_cursor_paging_contract() -> None:
             "message": "영수증을 등록하면 보증 만료 알림을 받을 수 있어요.",
             "resourceType": None,
             "resourceId": None,
+            "metadata": {"subCategory": "receiptUpload"},
         },
         {
             "category": "marketing",
@@ -158,6 +160,7 @@ def test_notifications_openapi_uses_camel_case_contract() -> None:
         "message",
         "resourceType",
         "resourceId",
+        "metadata",
     }
     assert settings_fields == NOTIFICATION_SETTINGS_FIELDS
     assert update_settings_fields == NOTIFICATION_SETTINGS_FIELDS

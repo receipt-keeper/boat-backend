@@ -24,6 +24,7 @@ def notification_to_domain(record: orm.UserNotification) -> DomainUserNotificati
         message=record.message,
         resource_type=record.resource_type,
         resource_id=record.resource_id,
+        metadata=dict(record.metadata_),
         created_at=record.created_at,
         read_at=record.read_at,
     )
@@ -43,6 +44,7 @@ def notification_to_record(
             notification.resource_type.value if notification.resource_type is not None else None
         ),
         resource_id=notification.resource_id,
+        metadata_=dict(notification.metadata.value),
         created_at=notification.created_at,
         read_at=notification.read_at,
     )

@@ -170,6 +170,7 @@ async def _assert_downgrade_restored_legacy_columns(database_url: str) -> None:
             assert "resource_id" not in column_names
             assert "category" not in column_names
             assert "title" not in column_names
+            assert "metadata" not in column_names
 
             # receiptUpload/none 구분은 소실되어 전부 'none'으로 복원된다(비가역, docstring 명시).
             target_type_values = await connection.execute(
@@ -267,6 +268,7 @@ async def _assert_head_columns_present(database_url: str) -> None:
             assert "title" in column_names
             assert "resource_type" in column_names
             assert "resource_id" in column_names
+            assert "metadata" in column_names
             assert "target_type" not in column_names
             assert "target_id" not in column_names
     finally:

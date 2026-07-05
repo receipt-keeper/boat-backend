@@ -68,6 +68,7 @@ class StoredNotification:
     message: str
     resource_type: str | None
     resource_id: UUID | None
+    metadata: dict[str, str]
     created_at: datetime
     read_at: datetime | None = None
 
@@ -96,6 +97,7 @@ class NotificationsContractStore:
             message=command.message,
             resource_type=command.resource_type,
             resource_id=command.resource_id,
+            metadata=command.metadata,
             created_at=datetime(2026, 6, 28, 9, 0, tzinfo=UTC)
             + timedelta(seconds=len(self._notifications)),
         )
@@ -112,6 +114,7 @@ class NotificationsContractStore:
                 else None
             ),
             resource_id=domain_notification.resource_id,
+            metadata=dict(domain_notification.metadata.value),
             created_at=domain_notification.created_at,
         )
         self._notifications.append(notification)
@@ -123,6 +126,7 @@ class NotificationsContractStore:
             message=notification.message,
             resource_type=notification.resource_type,
             resource_id=notification.resource_id,
+            metadata=notification.metadata,
             created_at=notification.created_at,
             read_at=notification.read_at,
         )
@@ -174,6 +178,7 @@ class NotificationsContractStore:
                     message=read_notification.message,
                     resource_type=read_notification.resource_type,
                     resource_id=read_notification.resource_id,
+                    metadata=read_notification.metadata,
                     created_at=read_notification.created_at,
                     read_at=read_notification.read_at,
                 )
@@ -223,6 +228,7 @@ def _list_item(notification: StoredNotification) -> NotificationListItemResult:
         message=notification.message,
         resource_type=notification.resource_type,
         resource_id=notification.resource_id,
+        metadata=notification.metadata,
         created_at=notification.created_at,
         read_at=notification.read_at,
     )

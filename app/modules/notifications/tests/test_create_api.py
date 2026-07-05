@@ -282,3 +282,116 @@ async def test_create_notification_with_resource_pair_returns_created(
     assert response.status_code == 201
     assert body["data"]["resourceType"] == "receipt"
     assert body["data"]["resourceId"] == str(receipt_id)
+
+
+async def test_create_notification_with_metadata_returns_created_and_exposed(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    payload = {
+        "category": "service",
+        "kind": "warranty_risk",
+        "title": "보증 만료 임박",
+        "message": "보증 만료가 임박했습니다.",
+        "metadata": {
+            "subCategory": "warranty",
+            "productName": "냉장고",
+            "expiresAt": "2026-07-12",
+        },
+    }
+
+    async with notification_api_client(postgres_session_factory) as client:
+        response = await client.post("/api/v1/notifications", json=payload)
+
+    body = response.json()
+    assert response.status_code == 201
+    assert body["data"]["metadata"] == {
+        "subCategory": "warranty",
+        "productName": "냉장고",
+        "expiresAt": "2026-07-12",
+    }
+
+
+async def test_create_notification_without_metadata_defaults_to_empty_object(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    payload = {
+        "category": "service",
+        "kind": "registration_prompt",
+        "title": "영수증 등록 안내",
+        "message": "영수증을 등록해 보세요.",
+    }
+
+    async with notification_api_client(postgres_session_factory) as client:
+        response = await client.post("/api/v1/notifications", json=payload)
+
+    body = response.json()
+    assert response.status_code == 201
+    assert body["data"]["metadata"] == {}
+
+
+async def test_create_notification_rejects_oversized_metadata(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    too_many_keys_payload = {
+        "category": "service",
+        "kind": "registration_prompt",
+        "title": "영수증 등록 안내",
+        "message": "영수증을 등록해 보세요.",
+        "metadata": {f"key{i}": "value" for i in range(51)},
+    }
+    oversized_key_payload = {
+        "category": "service",
+        "kind": "registration_prompt",
+        "title": "영수증 등록 안내",
+        "message": "영수증을 등록해 보세요.",
+        "metadata": {"a" * 41: "value"},
+    }
+    oversized_value_payload = {
+        "category": "service",
+        "kind": "registration_prompt",
+        "title": "영수증 등록 안내",
+        "message": "영수증을 등록해 보세요.",
+        "metadata": {"key": "a" * 501},
+    }
+    blank_key_payload = {
+        "category": "service",
+        "kind": "registration_prompt",
+        "title": "영수증 등록 안내",
+        "message": "영수증을 등록해 보세요.",
+        "metadata": {" key ": "value"},
+    }
+
+    async with notification_api_client(postgres_session_factory) as client:
+        responses = [
+            await client.post("/api/v1/notifications", json=payload)
+            for payload in (
+                too_many_keys_payload,
+                oversized_key_payload,
+                oversized_value_payload,
+                blank_key_payload,
+            )
+        ]
+
+    assert [response.status_code for response in responses] == [422, 422, 422, 422]
+    assert all(response.json()["success"] is False for response in responses)
+
+
+async def test_create_notification_accepts_boundary_metadata(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    boundary_metadata = {f"k{i}": "v" * 500 for i in range(49)}
+    boundary_metadata["a" * 40] = "boundary"
+    payload = {
+        "category": "service",
+        "kind": "registration_prompt",
+        "title": "영수증 등록 안내",
+        "message": "영수증을 등록해 보세요.",
+        "metadata": boundary_metadata,
+    }
+
+    async with notification_api_client(postgres_session_factory) as client:
+        response = await client.post("/api/v1/notifications", json=payload)
+
+    body = response.json()
+    assert response.status_code == 201
+    assert body["data"]["metadata"] == boundary_metadata

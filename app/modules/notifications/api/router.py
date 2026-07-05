@@ -71,6 +71,9 @@ class _NotificationResult(Protocol):
     def resource_id(self) -> UUID | None: ...
 
     @property
+    def metadata(self) -> dict[str, str]: ...
+
+    @property
     def created_at(self) -> datetime: ...
 
     @property
@@ -138,7 +141,8 @@ async def list_notifications(
     description=(
         "현재 사용자에게 표시할 앱 알림을 생성한다. resourceType과 resourceId는 "
         "함께 있거나 함께 없어야 하며, category가 marketing인 알림은 사용자가 마케팅 "
-        "수신에 동의한 경우에만 발송된다. 등록된 디바이스로의 푸시 발송은 응답 반환 "
+        "수신에 동의한 경우에만 발송된다. metadata는 발신자 소유 부가 정보이며 서버는 "
+        "형식만 검증하고 내용은 해석하지 않는다. 등록된 디바이스로의 푸시 발송은 응답 반환 "
         "이후 백그라운드에서 진행된다."
     ),
 )
@@ -156,6 +160,7 @@ async def create_notification(
             message=request.message,
             resource_type=request.resource_type,
             resource_id=request.resource_id,
+            metadata=request.metadata,
         )
     )
     return CommonResponse(
@@ -302,6 +307,7 @@ def _notification_response(notification: _NotificationResult) -> NotificationRes
         message=notification.message,
         resourceType=notification.resource_type,
         resourceId=notification.resource_id,
+        metadata=notification.metadata,
         createdAt=notification.created_at,
         readAt=notification.read_at,
     )

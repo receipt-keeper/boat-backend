@@ -14,5 +14,6 @@ class CreateNotificationResult:
     message: str
     resource_type: str | None
     resource_id: UUID | None
+    metadata: dict[str, str]
     created_at: datetime
     read_at: datetime | None

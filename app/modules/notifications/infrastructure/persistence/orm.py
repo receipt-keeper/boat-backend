@@ -1,7 +1,9 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
+import sqlalchemy as sa
 from sqlalchemy import Boolean, CheckConstraint, DateTime, Index, String, UniqueConstraint, func
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PostgreSQLUUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.schema import conv
@@ -46,6 +48,14 @@ class UserNotification(Base):
     resource_id: Mapped[UUID | None] = mapped_column(
         type_=PostgreSQLUUID(as_uuid=True),
         nullable=True,
+    )
+    # 파이썬 속성명 "metadata"는 Declarative 예약어라 사용할 수 없으므로 컬럼명만 유지한다.
+    metadata_: Mapped[dict[str, str]] = mapped_column(
+        "metadata",
+        type_=JSONB,
+        nullable=False,
+        server_default=sa.text("'{}'::jsonb"),
+        default=dict,
     )
     created_at: Mapped[datetime] = mapped_column(
         type_=DateTime(timezone=True),

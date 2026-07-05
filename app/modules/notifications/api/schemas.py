@@ -23,6 +23,7 @@ class CreateNotificationRequest(AppBaseModel):
                     "message": "이번 달 혜택을 확인해 보세요.",
                     "resourceType": None,
                     "resourceId": None,
+                    "metadata": {},
                 }
             ]
         },
@@ -60,6 +61,14 @@ class CreateNotificationRequest(AppBaseModel):
         description="알림이 참조하는 리소스 ID. resourceType과 함께 있거나 함께 없어야 한다.",
         examples=[None],
     )
+    metadata: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "발신자 소유 부가 정보. 서버는 형식만 검증한다(최대 50키, 키 1~40자, 값 500자 이하). "
+            "내용의 의미는 해석하지 않는다."
+        ),
+        examples=[{}],
+    )
 
 
 class NotificationResponse(AppBaseModel):
@@ -75,6 +84,12 @@ class NotificationResponse(AppBaseModel):
     resource_id: UUID | None = Field(
         alias="resourceId",
         description="알림이 참조하는 리소스 ID.",
+    )
+    metadata: dict[str, str] = Field(
+        description=(
+            "발신자 소유 부가 정보. 서버는 형식만 검증하며 내용의 의미는 해석하지 않는다. "
+            "값이 없으면 빈 객체다."
+        ),
     )
     created_at: datetime = Field(alias="createdAt", description="알림 생성 시각.")
     read_at: datetime | None = Field(alias="readAt", description="알림 읽음 시각.")

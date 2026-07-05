@@ -45,6 +45,7 @@ class CreateNotificationCommandUseCase:
             message=command.message,
             resource_type=command.resource_type,
             resource_id=command.resource_id,
+            metadata=command.metadata,
             created_at=self._clock(),
         )
         saved = await self._notification_repository.create(notification=notification)
@@ -67,6 +68,7 @@ class CreateNotificationCommandUseCase:
             message=saved.message.value,
             resource_type=saved.resource_type.value if saved.resource_type else None,
             resource_id=saved.resource_id,
+            metadata=dict(saved.metadata.value),
             created_at=saved.created_at,
             read_at=saved.read_at,
         )

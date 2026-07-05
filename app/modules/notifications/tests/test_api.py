@@ -80,6 +80,7 @@ async def test_list_notifications_returns_persisted_current_user_notifications(
             "message": "영수증을 등록해 보세요.",
             "resourceType": None,
             "resourceId": None,
+            "metadata": {},
             "createdAt": "2026-06-28T10:00:00Z",
             "readAt": None,
         }
@@ -306,6 +307,7 @@ async def test_mark_notification_read_persists_for_current_user(
         "message": "보증 관리를 위해 영수증을 등록해 주세요.",
         "resourceType": None,
         "resourceId": None,
+        "metadata": {"subCategory": "receiptUpload"},
     }
 
     # When: 읽음 처리 후 목록을 다시 조회한다.
@@ -316,7 +318,7 @@ async def test_mark_notification_read_persists_for_current_user(
         read_response = await client.patch(f"/api/v1/notifications/{notification_id}")
         list_response = await client.get("/api/v1/notifications?limit=10")
 
-    # Then: 읽음 응답과 목록의 같은 알림 모두 readAt을 가진다.
+    # Then: 읽음 응답과 목록의 같은 알림 모두 readAt과 metadata를 가진다.
     read_body = read_response.json()
     notifications = list_response.json()["data"]["notifications"]
     persisted = next(
@@ -328,7 +330,9 @@ async def test_mark_notification_read_persists_for_current_user(
     assert read_response.status_code == 200
     assert read_body["data"]["notificationId"] == notification_id
     assert read_body["data"]["readAt"] is not None
+    assert read_body["data"]["metadata"] == {"subCategory": "receiptUpload"}
     assert persisted["readAt"] == read_body["data"]["readAt"]
+    assert persisted["metadata"] == {"subCategory": "receiptUpload"}
 
 
 async def test_mark_missing_notification_returns_not_found_envelope(

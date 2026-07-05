@@ -45,6 +45,7 @@ class ListNotificationsQueryUseCase:
                     notification.resource_type.value if notification.resource_type else None
                 ),
                 resource_id=notification.resource_id,
+                metadata=dict(notification.metadata.value),
                 created_at=notification.created_at,
                 read_at=notification.read_at,
             )

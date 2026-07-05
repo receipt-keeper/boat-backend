@@ -1,3 +1,4 @@
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID, uuid4
@@ -12,6 +13,7 @@ from app.modules.notifications.domain.value_objects import (
     NotificationCategory,
     NotificationKind,
     NotificationMessage,
+    NotificationMetadata,
     NotificationTitle,
     ResourceType,
 )
@@ -38,6 +40,7 @@ class UserNotification(Entity[UUID]):
     message: NotificationMessage
     resource_type: ResourceType | None
     resource_id: UUID | None
+    metadata: NotificationMetadata
     created_at: datetime
     read_at: datetime | None
 
@@ -52,6 +55,7 @@ class UserNotification(Entity[UUID]):
         message: str,
         resource_type: str | None = None,
         resource_id: UUID | None = None,
+        metadata: Mapping[str, str] | None = None,
         created_at: datetime,
         read_at: datetime | None = None,
         notification_id: UUID | None = None,
@@ -65,6 +69,7 @@ class UserNotification(Entity[UUID]):
             message=message,
             resource_type=resource_type,
             resource_id=resource_id,
+            metadata=metadata,
             created_at=created_at,
             read_at=read_at,
         )
@@ -96,6 +101,7 @@ class UserNotification(Entity[UUID]):
         message: str,
         resource_type: str | None,
         resource_id: UUID | None,
+        metadata: Mapping[str, str] | None = None,
         created_at: datetime,
         read_at: datetime | None,
     ) -> "UserNotification":
@@ -109,6 +115,7 @@ class UserNotification(Entity[UUID]):
             message=message,
             resource_type=resource_type,
             resource_id=resource_id,
+            metadata=metadata,
             created_at=created_at,
             read_at=read_at,
         )
@@ -125,6 +132,7 @@ class UserNotification(Entity[UUID]):
         message: str,
         resource_type: str | None,
         resource_id: UUID | None,
+        metadata: Mapping[str, str] | None,
         created_at: datetime,
         read_at: datetime | None,
     ) -> "UserNotification":
@@ -138,6 +146,9 @@ class UserNotification(Entity[UUID]):
             else None
         )
         notification.collect(lambda: _validate_resource_pair(resource_type, resource_id))
+        new_metadata = notification.collect(
+            lambda: NotificationMetadata(metadata if metadata is not None else {})
+        )
         notification.raise_if_any()
 
         return cls(
@@ -149,6 +160,7 @@ class UserNotification(Entity[UUID]):
             message=new_message,
             resource_type=new_resource_type,
             resource_id=resource_id,
+            metadata=new_metadata,
             created_at=created_at,
             read_at=read_at,
         )
@@ -163,6 +175,7 @@ class UserNotification(Entity[UUID]):
             message=self.message,
             resource_type=self.resource_type,
             resource_id=self.resource_id,
+            metadata=self.metadata,
             created_at=self.created_at,
             read_at=read_at,
         )

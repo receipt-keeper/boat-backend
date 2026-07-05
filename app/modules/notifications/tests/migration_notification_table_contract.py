@@ -75,6 +75,7 @@ async def assert_backfill_is_correct(database_url: str, row_ids: dict[str, UUID]
             await _assert_category_backfill(connection, row_ids)
             await _assert_title_backfill(connection, row_ids)
             await _assert_resource_pair_backfill(connection, row_ids)
+            await _assert_metadata_backfill(connection, row_ids)
             await _assert_not_null_constraints(connection)
             await _assert_check_constraint_names(connection)
         await _assert_resource_pair_check_rejects_partial_pair(engine)
@@ -130,7 +131,7 @@ async def _assert_resource_pair_backfill(
 
 
 async def _assert_not_null_constraints(connection: AsyncConnection) -> None:
-    for column_name in ("category", "title"):
+    for column_name in ("category", "title", "metadata"):
         is_nullable = await connection.scalar(
             text(
                 """
@@ -144,6 +145,16 @@ async def _assert_not_null_constraints(connection: AsyncConnection) -> None:
             {"column_name": column_name},
         )
         assert is_nullable == "NO", column_name
+
+
+async def _assert_metadata_backfill(connection: AsyncConnection, row_ids: dict[str, UUID]) -> None:
+    for key, row_id in row_ids.items():
+        result = await connection.execute(
+            text("SELECT metadata FROM user_notifications WHERE id = :id"),
+            {"id": row_id},
+        )
+        metadata = result.scalar_one()
+        assert metadata == {}, key
 
 
 async def _assert_check_constraint_names(connection: AsyncConnection) -> None:

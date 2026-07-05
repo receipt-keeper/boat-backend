@@ -6,7 +6,8 @@ Create Date: 2026-07-05 00:13:00.000000
 
 알림 BC가 발신 도메인 어휘(NotificationKind enum, 화면 어휘 target_type)를 모르도록
 category(불투명 kind 게이팅용) + title(발신자 완성 문구) + resource_type/resource_id
-(불투명 리소스 참조 쌍)로 일반화한다.
+(불투명 리소스 참조 쌍) + metadata(발신자 소유 부가 정보, JSONB NOT NULL DEFAULT '{}')로
+일반화한다.
 
 Backfill 규칙:
 - category: 기존 kind='benefit'이면 'marketing', 그 외는 'service'.
@@ -112,6 +113,17 @@ def upgrade() -> None:
         "(resource_type IS NULL) = (resource_id IS NULL)",
     )
 
+    # 6) metadata: 발신자 소유 부가 정보(JSONB), 기본값 '{}' NOT NULL
+    op.add_column(
+        "user_notifications",
+        sa.Column(
+            "metadata",
+            postgresql.JSONB(astext_type=sa.Text()),
+            nullable=False,
+            server_default=sa.text("'{}'::jsonb"),
+        ),
+    )
+
 
 def downgrade() -> None:
     # 구 리비전 코드는 kind를 NotificationKind enum으로 읽는다. enum 밖 불투명 kind가
@@ -130,6 +142,8 @@ def downgrade() -> None:
             f"{unknown_kind_count}건 남아 있어 downgrade할 수 없습니다. "
             "해당 행을 정리하거나 구 enum 값으로 갱신한 뒤 다시 시도하세요."
         )
+
+    op.drop_column("user_notifications", "metadata")
 
     op.drop_constraint(
         op.f("ck_user_notifications_resource_pair"),
