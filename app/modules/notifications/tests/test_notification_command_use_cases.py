@@ -766,7 +766,7 @@ async def test_register_device_token_commits_once_and_returns_saved_token() -> N
         unit_of_work=unit_of_work,
     )
 
-    # When: 유효한 FID를 등록한다.
+    # When: 유효한 토큰을 등록한다.
     saved = await use_case.execute(
         RegisterDeviceTokenCommand(
             user_id=TEST_USER_ID,
