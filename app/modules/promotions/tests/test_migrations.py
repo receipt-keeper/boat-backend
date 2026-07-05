@@ -42,7 +42,7 @@ def test_promotion_migration_revision_is_linear_through_content_extension() -> N
 
     migration_source = PROMOTION_MIGRATION_PATH.read_text(encoding="utf-8")
     assert 'revision: str = "20260703_0012"' in migration_source
-    assert 'down_revision: str | Sequence[str] | None = "20260702_0011"' in migration_source
+    assert 'down_revision: str | Sequence[str] | None = "20260705_0013"' in migration_source
     credit_source = CREDIT_SOURCE_MIGRATION_PATH.read_text(encoding="utf-8")
     assert 'down_revision: str | Sequence[str] | None = "20260703_0012"' in credit_source
     promotion_content = PROMOTION_CONTENT_MIGRATION_PATH.read_text(encoding="utf-8")
@@ -96,7 +96,7 @@ def test_promotion_migration_rejects_invalid_schema_inputs(
         # Then: DB가 각 제약 위반을 실제로 거절한다.
         for failure in observed_failures:
             print(failure)
-        assert len(observed_failures) == 6
+        assert len(observed_failures) == 5
     finally:
         if upgraded:
             command.downgrade(config, "base")

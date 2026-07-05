@@ -97,26 +97,6 @@ async def assert_invalid_promotion_insert_probes(
             """,
             expected_constraint="uq_promotion_redemptions_idempotency_key",
         ),
-        DuplicateProbe(
-            name="duplicate promotion_redemptions.user_id/promotion_id",
-            statement="""
-                INSERT INTO promotion_redemptions (
-                    id,
-                    promotion_id,
-                    user_id,
-                    status,
-                    idempotency_key
-                )
-                VALUES (
-                    '00000000-0000-0000-0000-000000000304',
-                    '00000000-0000-0000-0000-000000000101',
-                    '00000000-0000-0000-0000-000000000301',
-                    'granted',
-                    'promotionRedemption:other-key'
-                )
-            """,
-            expected_constraint="uq_promotion_redemptions_user_id_promotion_id",
-        ),
     ):
         await _insert_valid_promotion(connection)
         await _insert_valid_promotion_code(connection)

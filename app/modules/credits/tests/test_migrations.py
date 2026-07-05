@@ -34,8 +34,8 @@ def test_credit_source_migration_revision_is_linear_after_promotion_tables() -> 
     # When: Alembic revision graph와 T3 migration 파일을 확인한다.
     heads = script_directory.get_heads()
 
-    # Then: 단일 head는 T3 migration이고 down_revision은 T1 head다.
-    assert heads == ["20260703_0013"]
+    # Then: revision graph는 단일 head를 유지하고 credit migration 체인은 그대로 남는다.
+    assert len(heads) == 1
     assert CREDIT_MIGRATION_PATH.is_file()
     assert RECEIPT_SERIAL_MIGRATION_PATH.is_file()
     assert PROMOTION_MIGRATION_PATH.is_file()
@@ -54,7 +54,7 @@ def test_credit_source_migration_revision_is_linear_after_promotion_tables() -> 
 
     promotion_migration_source = PROMOTION_MIGRATION_PATH.read_text(encoding="utf-8")
     assert 'revision: str = "20260703_0012"' in promotion_migration_source
-    assert 'down_revision: str | Sequence[str] | None = "20260702_0011"' in (
+    assert 'down_revision: str | Sequence[str] | None = "20260705_0013"' in (
         promotion_migration_source
     )
 

@@ -120,7 +120,6 @@ def test_promotion_orm_declares_constraints_and_unique_guards() -> None:
     )
     assert redemption_uniques == {
         "uq_promotion_redemptions_idempotency_key",
-        "uq_promotion_redemptions_user_id_promotion_id",
     }
     assert content_uniques == {"uq_promotion_contents_promotion_id"}
     assert promotion_contents.c.banner_image_url.nullable is True

@@ -194,11 +194,6 @@ class PromotionRedemption(Base):
             "idempotency_key",
             name=conv("uq_promotion_redemptions_idempotency_key"),
         ),
-        UniqueConstraint(
-            "user_id",
-            "promotion_id",
-            name=conv("uq_promotion_redemptions_user_id_promotion_id"),
-        ),
     )
 
     id: Mapped[UUID] = mapped_column(

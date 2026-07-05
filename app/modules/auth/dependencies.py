@@ -28,6 +28,9 @@ from app.modules.auth.application.ports.external_identity_verifier import Extern
 from app.modules.auth.application.ports.notification_settings_initializer import (
     NotificationSettingsInitializer,
 )
+from app.modules.auth.application.ports.push_token_lifecycle import (
+    PushTokenWithdrawalCleaner,
+)
 from app.modules.auth.application.ports.token_issuer import (
     AccessTokenIssuer,
     AccessTokenVerifier,
@@ -46,6 +49,7 @@ from app.modules.auth.dependency_adapters import (
     CreditInitializerAdapter,
     CreditWithdrawalCleanerAdapter,
     NotificationSettingsInitializerAdapter,
+    PushTokenWithdrawalCleanerAdapter,
     RequestActiveSessionChecker,
 )
 from app.modules.auth.infrastructure.identity_providers.firebase import (
@@ -64,6 +68,7 @@ from app.modules.credits.dependencies import (
     build_grant_credit_command_use_case,
 )
 from app.modules.notifications.dependencies import (
+    build_delete_user_push_tokens_command_use_case,
     build_update_notification_settings_command_use_case,
 )
 from app.modules.users.application.commands.resolve_user_for_login.command import (
@@ -185,6 +190,17 @@ async def get_credit_withdrawal_cleaner(
     )
 
 
+async def get_push_token_withdrawal_cleaner(
+    session: AsyncSessionDep,
+) -> PushTokenWithdrawalCleaner:
+    return PushTokenWithdrawalCleanerAdapter(
+        build_delete_user_push_tokens_command_use_case(
+            session,
+            DeferredCommitUnitOfWork(),
+        )
+    )
+
+
 async def get_withdrawal_cleanup_command_use_case(
     session: AsyncSessionDep,
 ) -> WithdrawalCleanupCommandUseCase:
@@ -214,6 +230,10 @@ CreditInitializerDep = Annotated[CreditInitializer, Depends(get_credit_initializ
 CreditWithdrawalCleanerDep = Annotated[
     CreditWithdrawalCleaner,
     Depends(get_credit_withdrawal_cleaner),
+]
+PushTokenWithdrawalCleanerDep = Annotated[
+    PushTokenWithdrawalCleaner,
+    Depends(get_push_token_withdrawal_cleaner),
 ]
 UnitOfWorkDep = Annotated[UnitOfWork, Depends(get_unit_of_work)]
 ActiveSessionCheckerDep = Annotated[ActiveSessionChecker, Depends(get_active_session_checker)]
@@ -307,12 +327,14 @@ async def get_withdraw_account_command_use_case(
     credential_repository: CredentialRepositoryDep,
     withdrawal_cleanup_command_use_case: WithdrawalCleanupUseCaseDep,
     credit_withdrawal_cleaner: CreditWithdrawalCleanerDep,
+    push_token_withdrawal_cleaner: PushTokenWithdrawalCleanerDep,
     unit_of_work: UnitOfWorkDep,
 ) -> WithdrawAccountCommandUseCase:
     return WithdrawAccountCommandUseCase(
         credential_repository=credential_repository,
         withdrawal_cleanup_command_use_case=withdrawal_cleanup_command_use_case,
         credit_withdrawal_cleaner=credit_withdrawal_cleaner,
+        push_token_withdrawal_cleaner=push_token_withdrawal_cleaner,
         unit_of_work=unit_of_work,
     )
 

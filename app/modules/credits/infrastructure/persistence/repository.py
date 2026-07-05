@@ -19,6 +19,13 @@ from app.modules.credits.domain import (
 )
 from app.modules.credits.infrastructure.persistence import mapper, orm
 
+_IDEMPOTENT_CREDIT_TRANSACTION_CONSTRAINTS = frozenset(
+    {
+        "ix_credit_transactions_idempotency_key_unique",
+        "ix_credit_transactions_source_unique",
+    }
+)
+
 
 class SqlAlchemyCreditRepository(CreditRepository):
     def __init__(self, session: AsyncSession) -> None:
@@ -87,7 +94,9 @@ class SqlAlchemyCreditRepository(CreditRepository):
         try:
             await self._session.flush()
         except IntegrityError as exc:
-            raise CreditTransactionWriteConflictError from exc
+            if _integrity_constraint_name(exc) in _IDEMPOTENT_CREDIT_TRANSACTION_CONSTRAINTS:
+                raise CreditTransactionWriteConflictError from exc
+            raise
 
     async def exists_transaction_with_idempotency_key(
         self,
@@ -173,3 +182,11 @@ class SqlAlchemyCreditRepository(CreditRepository):
             has_next=len(records) > limit,
             total_count=total_count,
         )
+
+
+def _integrity_constraint_name(exc: IntegrityError) -> str | None:
+    for candidate in (exc.orig, getattr(exc.orig, "__cause__", None)):
+        constraint_name = getattr(candidate, "constraint_name", None)
+        if isinstance(constraint_name, str):
+            return constraint_name
+    return None

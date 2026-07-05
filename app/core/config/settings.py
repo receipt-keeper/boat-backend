@@ -56,6 +56,16 @@ class Settings(BaseSettings):
         "apple.com": "apple",
     }
 
+    push_send_enabled: bool = Field(
+        default=False,
+        description="FCM 푸시 발송 사용 여부. 꺼져 있으면 발송 없이 알림만 저장한다.",
+    )
+    push_token_stale_days: int = Field(
+        default=60,
+        gt=0,
+        description="이 일수 이상 갱신되지 않은 푸시 토큰을 정리 배치의 삭제 대상으로 본다.",
+    )
+
     jwt_secret_key: str = Field(
         default=DEFAULT_JWT_SECRET_KEY,
         description="Symmetric key for service access JWT signing.",

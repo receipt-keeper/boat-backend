@@ -99,10 +99,11 @@ async def get_grant_credit_command_use_case(
 
 async def get_deferred_grant_credit_command_use_case(
     credit_repository: Annotated[CreditRepository, Depends(get_credit_repository)],
+    session: AsyncSessionDep,
 ) -> GrantCreditCommandUseCase:
     return GrantCreditCommandUseCase(
         credit_repository=credit_repository,
-        unit_of_work=DeferredCommitUnitOfWork(),
+        unit_of_work=DeferredCommitUnitOfWork(rollback=session.rollback),
     )
 
 

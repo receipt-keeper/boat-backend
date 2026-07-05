@@ -20,6 +20,7 @@ from app.modules.auth.infrastructure.persistence.credential_repository import (
 )
 from app.modules.auth.infrastructure.tokens.jwt import JwtAccessTokenService
 from app.modules.credits.infrastructure.persistence import orm as credit_orm
+from app.modules.notifications.infrastructure.persistence import orm as notifications_orm
 from app.modules.users.application.commands.withdrawal_cleanup.command import (
     WithdrawalCleanupCommand,
 )
@@ -98,6 +99,13 @@ async def _seed_full_account(
             amount=5,
         )
     )
+    session.add(
+        notifications_orm.UserPushToken(
+            user_id=user.id,
+            fid=f"fid-{subject}",
+            platform="android",
+        )
+    )
     await SqlAlchemyCredentialRepository(session).save_refresh_token(
         credentials_id=credentials.credentials_id,
         session_id=session_id,
@@ -154,6 +162,9 @@ async def _count_all_rows(
         credit_transactions_count = await session.scalar(
             select(func.count()).select_from(credit_orm.CreditTransaction)
         )
+        push_tokens_count = await session.scalar(
+            select(func.count()).select_from(notifications_orm.UserPushToken)
+        )
 
     def _req(v: int | None) -> int:
         if v is None:
@@ -169,6 +180,7 @@ async def _count_all_rows(
         "user_settings": _req(settings_count),
         "user_credits": _req(user_credits_count),
         "credit_transactions": _req(credit_transactions_count),
+        "user_push_tokens": _req(push_tokens_count),
     }
 
 
@@ -327,6 +339,10 @@ async def test_delete_me_withdraws_full_account(
             is not None
         )
 
+    async with postgres_session_factory() as session:
+        remaining_push_tokens = list(await session.scalars(select(notifications_orm.UserPushToken)))
+    assert [token.user_id for token in remaining_push_tokens] == [other.user_id]
+
     counts = await _count_all_rows(postgres_session_factory)
     assert counts == {
         "users": 1,
@@ -337,6 +353,7 @@ async def test_delete_me_withdraws_full_account(
         "user_settings": 1,
         "user_credits": 1,
         "credit_transactions": 1,
+        "user_push_tokens": 1,
     }
 
 
@@ -374,4 +391,5 @@ async def test_delete_me_rolls_back_when_users_cleanup_fails(
         "user_settings": 1,
         "user_credits": 1,
         "credit_transactions": 1,
+        "user_push_tokens": 1,
     }, f"Expected all rows intact after rollback but got: {counts}"

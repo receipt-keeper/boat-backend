@@ -75,7 +75,6 @@ FORBIDDEN_PUBLIC_PATHS: Final[frozenset[str]] = frozenset(
         "/api/v1/products",
         "/api/v1/assets",
         "/api/v1/assets/{asset_id}",
-        "/api/v1/notifications/devices/{device_id}",
         "/api/v1/credits/free-recharge",
         "/api/v1/credits/free-recharges",
         "/api/v1/credits/grant",

@@ -1,13 +1,29 @@
-from typing import Final
+from typing import Annotated, Final
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Depends, status
 
 from app.core.http.responses import ApiErrorData, CommonResponse
 from app.modules.auth.api.security import CurrentPrincipalDep
 from app.modules.credits.application.commands.grant_credit.command import GrantCreditCommand
 from app.modules.credits.dependencies import GrantCreditCommandUseCaseDep
 from app.modules.credits.domain import CreditAmount, CreditReason, FeatureKey
-from app.modules.example.api.schemas import OcrTestCreditGrantResponse
+from app.modules.example.api.schemas import (
+    OcrTestCreditGrantResponse,
+    TestPushRequest,
+    TestPushResponse,
+)
+from app.modules.notifications.application.ports.push_sender import (
+    PushMessage,
+    PushSender,
+    PushSendReport,
+)
+from app.modules.notifications.application.ports.push_token_repository import (
+    PushTokenRepository,
+)
+from app.modules.notifications.dependencies import (
+    get_push_sender,
+    get_push_token_repository,
+)
 
 _FORCED_SERVER_ERROR_MESSAGE: Final = "테스트용 서버 오류를 강제로 발생시켰습니다."
 _OCR_TEST_CREDIT_GRANT_COUNT: Final = 5
@@ -85,5 +101,48 @@ async def grant_ocr_test_credits(
             featureKey=FeatureKey.OCR,
             reason=CreditReason.EVENT_OCR_ALLOWANCE,
             grantedCount=_OCR_TEST_CREDIT_GRANT_COUNT,
+        ),
+    )
+
+
+@router.post(
+    "/push",
+    response_model=CommonResponse[TestPushResponse],
+    summary="테스트 푸시 발송",
+    description=(
+        "앱 푸시 연동 확인을 위해 로그인한 사용자의 등록된 모든 디바이스로 테스트 푸시를 "
+        "즉시 발송한다. 알림 레코드를 만들지 않고 알림 수신 설정도 확인하지 않는 "
+        "example 모듈의 테스트 보조 API다. 발송 실패 시 외부 서비스 오류로 응답한다."
+    ),
+    responses={
+        status.HTTP_401_UNAUTHORIZED: {
+            "model": CommonResponse[ApiErrorData],
+            "description": "인증 실패",
+        },
+    },
+)
+async def send_test_push(
+    request: TestPushRequest,
+    principal: CurrentPrincipalDep,
+    push_token_repository: Annotated[PushTokenRepository, Depends(get_push_token_repository)],
+    push_sender: Annotated[PushSender, Depends(get_push_sender)],
+) -> CommonResponse[TestPushResponse]:
+    tokens = await push_token_repository.list_by_user(user_id=principal.user_id)
+    report = PushSendReport()
+    if tokens:
+        report = await push_sender.send(
+            tokens=tokens,
+            message=PushMessage(
+                title=request.title,
+                body=request.body,
+                data={"test": "true"},
+            ),
+        )
+    return CommonResponse(
+        success=True,
+        status=status.HTTP_200_OK,
+        data=TestPushResponse(
+            targetedDeviceCount=len(tokens),
+            invalidDeviceCount=len(report.invalid_fids),
         ),
     )

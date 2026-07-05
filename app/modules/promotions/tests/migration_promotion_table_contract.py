@@ -200,8 +200,7 @@ async def _assert_unique_indexes(connection: AsyncConnection) -> None:
               )
               AND index_class.relname IN (
                   'ix_promotion_codes_code_unique',
-                  'uq_promotion_redemptions_idempotency_key',
-                  'uq_promotion_redemptions_user_id_promotion_id'
+                  'uq_promotion_redemptions_idempotency_key'
               )
             """
         )
@@ -217,11 +216,6 @@ async def _assert_unique_indexes(connection: AsyncConnection) -> None:
             True,
             "CREATE UNIQUE INDEX uq_promotion_redemptions_idempotency_key "
             "ON public.promotion_redemptions USING btree (idempotency_key)",
-        ),
-        "uq_promotion_redemptions_user_id_promotion_id": (
-            True,
-            "CREATE UNIQUE INDEX uq_promotion_redemptions_user_id_promotion_id "
-            "ON public.promotion_redemptions USING btree (user_id, promotion_id)",
         ),
     }
 

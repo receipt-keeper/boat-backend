@@ -1,7 +1,7 @@
 """create promotion tables
 
 Revision ID: 20260703_0012
-Revises: 20260702_0011
+Revises: 20260705_0013
 Create Date: 2026-07-03 00:12:00.000000
 """
 
@@ -13,7 +13,7 @@ from sqlalchemy.dialects import postgresql
 from alembic import op
 
 revision: str = "20260703_0012"
-down_revision: str | Sequence[str] | None = "20260702_0011"
+down_revision: str | Sequence[str] | None = "20260705_0013"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -152,11 +152,6 @@ def upgrade() -> None:
         sa.UniqueConstraint(
             "idempotency_key",
             name=op.f("uq_promotion_redemptions_idempotency_key"),
-        ),
-        sa.UniqueConstraint(
-            "user_id",
-            "promotion_id",
-            name=op.f("uq_promotion_redemptions_user_id_promotion_id"),
         ),
     )
 

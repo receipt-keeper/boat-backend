@@ -25,7 +25,8 @@ async def _assert_invalid_source_type_is_rejected(connection: AsyncConnection) -
                         reason,
                         action,
                         amount,
-                        source_type
+                        source_type,
+                        source_id
                     )
                     VALUES (
                         '00000000-0000-0000-0000-000000000601',
@@ -34,7 +35,8 @@ async def _assert_invalid_source_type_is_rejected(connection: AsyncConnection) -
                         'eventOcrAllowance',
                         'grant',
                         1,
-                        'manualAdjustment'
+                        'manualAdjustment',
+                        '00000000-0000-0000-0000-000000000602'
                     )
                     """
                 )

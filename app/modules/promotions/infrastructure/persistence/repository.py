@@ -63,7 +63,7 @@ class SqlAlchemyPromotionRepository(PromotionRepository):
     async def find_code_by_code_for_update(self, *, code: str) -> PromotionCode | None:
         record = await self._session.scalar(
             select(orm.PromotionCode)
-            .where(func.lower(orm.PromotionCode.code) == code.casefold())
+            .where(func.lower(orm.PromotionCode.code) == code.lower())
             .with_for_update()
         )
         if record is None:

@@ -1,16 +1,17 @@
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from uuid import UUID
 
-from app.modules.notifications.domain.value_objects import (
-    NotificationKind,
-    NotificationTargetType,
-)
+from app.modules.notifications.domain.value_objects import NotificationMessageType
 
 
 @dataclass(frozen=True, slots=True)
 class CreateNotificationCommand:
     user_id: UUID
-    kind: NotificationKind
+    message_type: NotificationMessageType
+    kind: str
+    title: str
     message: str
-    target_type: NotificationTargetType = NotificationTargetType.NONE
-    target_id: UUID | None = None
+    resource_type: str | None = None
+    resource_id: UUID | None = None
+    metadata: Mapping[str, str] = field(default_factory=dict)

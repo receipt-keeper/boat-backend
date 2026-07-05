@@ -11,6 +11,9 @@ from app.modules.auth.application.ports.credit_lifecycle import (
 from app.modules.auth.application.ports.notification_settings_initializer import (
     NotificationSettingsInitializer,
 )
+from app.modules.auth.application.ports.push_token_lifecycle import (
+    PushTokenWithdrawalCleaner,
+)
 from app.modules.auth.infrastructure.persistence.credential_repository import (
     SqlAlchemyCredentialRepository,
 )
@@ -23,6 +26,12 @@ from app.modules.credits.application.commands.delete_user_credits.use_case impor
 from app.modules.credits.application.commands.grant_credit.command import GrantCreditCommand
 from app.modules.credits.application.commands.grant_credit.use_case import GrantCreditCommandUseCase
 from app.modules.credits.domain import CreditAmount, CreditReason
+from app.modules.notifications.application.commands.delete_user_push_tokens.command import (
+    DeleteUserPushTokensCommand,
+)
+from app.modules.notifications.application.commands.delete_user_push_tokens.use_case import (
+    DeleteUserPushTokensCommandUseCase,
+)
 from app.modules.notifications.application.commands.update_notification_settings.command import (
     UpdateNotificationSettingsCommand,
 )
@@ -53,6 +62,14 @@ class CreditWithdrawalCleanerAdapter(CreditWithdrawalCleaner):
 
     async def delete_account_state(self, *, user_id: UUID) -> None:
         await self._command_use_case.execute(DeleteUserCreditsCommand(user_id=user_id))
+
+
+class PushTokenWithdrawalCleanerAdapter(PushTokenWithdrawalCleaner):
+    def __init__(self, command_use_case: DeleteUserPushTokensCommandUseCase) -> None:
+        self._command_use_case = command_use_case
+
+    async def delete_account_state(self, *, user_id: UUID) -> None:
+        await self._command_use_case.execute(DeleteUserPushTokensCommand(user_id=user_id))
 
 
 class NotificationSettingsInitializerAdapter(NotificationSettingsInitializer):

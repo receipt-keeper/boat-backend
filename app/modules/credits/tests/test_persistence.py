@@ -3,9 +3,13 @@ from uuid import UUID
 
 import pytest
 from sqlalchemy import CheckConstraint, String, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.domain.exceptions import ValidationError
+from app.modules.credits.application.ports.credit_repository import (
+    CreditTransactionWriteConflictError,
+)
 from app.modules.credits.application.queries.list_credit_transactions.query import (
     ListCreditTransactionsQuery,
 )
@@ -157,6 +161,51 @@ async def test_credit_repository_rejects_inconsistent_account_counts(
     assert [detail.field for detail in exc_info.value.details] == ["total_granted_count"]
 
 
+async def test_credit_repository_maps_idempotent_unique_conflict(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with postgres_session_factory() as session:
+        repository = SqlAlchemyCreditRepository(session)
+        session.add_all(
+            [
+                _transaction_with_idempotency(
+                    transaction_id=UUID("00000000-0000-0000-0000-000000000901"),
+                    idempotency_key="credit:duplicate",
+                ),
+                _transaction_with_idempotency(
+                    transaction_id=UUID("00000000-0000-0000-0000-000000000902"),
+                    idempotency_key="credit:duplicate",
+                ),
+            ]
+        )
+
+        with pytest.raises(CreditTransactionWriteConflictError):
+            await repository.flush_pending_writes()
+
+        await session.rollback()
+
+
+async def test_credit_repository_preserves_non_idempotent_integrity_error(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with postgres_session_factory() as session:
+        repository = SqlAlchemyCreditRepository(session)
+        session.add(
+            orm.CreditTransaction(
+                user_id=USER_ID,
+                feature_key="ocr",
+                reason=CreditReason.EVENT_OCR_ALLOWANCE.value,
+                action=CreditAction.GRANT.value,
+                amount=0,
+            )
+        )
+
+        with pytest.raises(IntegrityError):
+            await repository.flush_pending_writes()
+
+        await session.rollback()
+
+
 async def test_credit_transaction_query_pages_by_created_at_and_id_cursor(
     postgres_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
@@ -276,6 +325,22 @@ def _transaction(
         action=action.value,
         amount=amount,
         created_at=created_at,
+    )
+
+
+def _transaction_with_idempotency(
+    *,
+    transaction_id: UUID,
+    idempotency_key: str,
+) -> orm.CreditTransaction:
+    return orm.CreditTransaction(
+        id=transaction_id,
+        user_id=USER_ID,
+        feature_key="ocr",
+        reason=CreditReason.EVENT_OCR_ALLOWANCE.value,
+        action=CreditAction.GRANT.value,
+        amount=1,
+        idempotency_key=idempotency_key,
     )
 
 
