@@ -1,8 +1,11 @@
+from dataclasses import dataclass
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, Depends, Query, status
 
+from app.core.config.dependencies import get_request_settings
+from app.core.config.settings import Settings
 from app.core.http.auth import CurrentPrincipalDep
 from app.core.http.responses import ApiErrorData, CommonResponse
 from app.modules.promotions.api.schemas import (
@@ -46,6 +49,29 @@ _ERROR_RESPONSES: dict[int | str, _OpenApiResponse] = {
     },
 }
 
+
+@dataclass(frozen=True, slots=True)
+class PromotionApiContext:
+    user_id: UUID
+    api_prefix: str
+
+
+async def get_promotion_api_context(
+    principal: CurrentPrincipalDep,
+    settings: Annotated[Settings, Depends(get_request_settings)],
+) -> PromotionApiContext:
+    return PromotionApiContext(
+        user_id=principal.user_id,
+        api_prefix=settings.api_prefix.rstrip("/"),
+    )
+
+
+PromotionApiContextDep = Annotated[
+    PromotionApiContext,
+    Depends(get_promotion_api_context),
+]
+
+
 router = APIRouter(
     prefix="/promotions",
     tags=["promotions"],
@@ -61,16 +87,19 @@ router = APIRouter(
 )
 async def get_promotions(
     query: Annotated[PromotionListQuery, Query()],
-    principal: CurrentPrincipalDep,
+    context: PromotionApiContextDep,
     query_use_case: CurrentOcrCreditPromotionQueryUseCaseDep,
 ) -> CommonResponse[PromotionResponse]:
     result = await query_use_case.execute(
-        GetCurrentOcrCreditPromotionQuery(user_id=principal.user_id)
+        GetCurrentOcrCreditPromotionQuery(user_id=context.user_id)
     )
     data = (
         PromotionResponse.unavailable()
         if result is None
-        else PromotionResponse.from_current_result(result)
+        else PromotionResponse.from_current_result(
+            result,
+            banner_image_url=_with_api_prefix(context.api_prefix, result.banner_image_url),
+        )
     )
     return CommonResponse(success=True, status=status.HTTP_200_OK, data=data)
 
@@ -83,19 +112,22 @@ async def get_promotions(
 )
 async def create_promotion_code_redemption(
     payload: PromotionCodeRedemptionRequest,
-    principal: CurrentPrincipalDep,
+    context: PromotionApiContextDep,
     command_use_case: CreatePromotionCodeRedemptionCommandUseCaseDep,
 ) -> CommonResponse[PromotionResponse]:
     result = await command_use_case.execute(
         CreatePromotionCodeRedemptionCommand(
-            user_id=principal.user_id,
+            user_id=context.user_id,
             code=payload.code,
         )
     )
     return CommonResponse(
         success=True,
         status=status.HTTP_200_OK,
-        data=PromotionResponse.from_redemption_result(result),
+        data=PromotionResponse.from_redemption_result(
+            result,
+            banner_image_url=_with_api_prefix(context.api_prefix, result.banner_image_url),
+        ),
     )
 
 
@@ -107,17 +139,26 @@ async def create_promotion_code_redemption(
 )
 async def create_promotion_redemption(
     promotion_id: UUID,
-    principal: CurrentPrincipalDep,
+    context: PromotionApiContextDep,
     command_use_case: CreatePromotionRedemptionCommandUseCaseDep,
 ) -> CommonResponse[PromotionResponse]:
     result = await command_use_case.execute(
         CreatePromotionRedemptionCommand(
-            user_id=principal.user_id,
+            user_id=context.user_id,
             promotion_id=promotion_id,
         )
     )
     return CommonResponse(
         success=True,
         status=status.HTTP_200_OK,
-        data=PromotionResponse.from_redemption_result(result),
+        data=PromotionResponse.from_redemption_result(
+            result,
+            banner_image_url=_with_api_prefix(context.api_prefix, result.banner_image_url),
+        ),
     )
+
+
+def _with_api_prefix(api_prefix: str, path: str | None) -> str | None:
+    if path is None or not path.startswith("/"):
+        return path
+    return f"{api_prefix}{path}"

@@ -12,6 +12,7 @@ from app.modules.credits.domain import CreditReason, CreditSourceType
 from app.modules.credits.infrastructure.persistence import orm as credits_orm
 from app.modules.promotions.infrastructure.persistence import orm as promotions_orm
 from app.modules.promotions.tests.api_helpers import (
+    PUBLIC_BANNER_IMAGE_URL,
     TEST_CREDENTIALS_ID,
     TEST_SESSION_ID,
     TEST_SETTINGS,
@@ -25,6 +26,7 @@ from app.modules.promotions.tests.helpers import (
     PROMOTION_IDEMPOTENCY_KEY,
     USER_ID,
     seed_promotion,
+    seed_promotion_content,
 )
 
 CODE_PROMOTION_ID = UUID("00000000-0000-0000-0000-000000000203")
@@ -36,7 +38,8 @@ async def test_no_code_promotion_redemption_grants_credit_once_through_real_wiri
     # Given: 실제 Promotion API dependency graph와 받을 수 있는 no-code 프로모션이 있다.
     test_app = _promotion_integration_app(postgres_session_factory)
     async with postgres_session_factory() as session:
-        await seed_promotion(session)
+        await seed_promotion(session, expires_at=None)
+        await seed_promotion_content(session)
 
     async with api_client(test_app) as test_client:
         # When: 같은 프로모션 혜택 수령을 두 번 요청한다.
@@ -53,6 +56,12 @@ async def test_no_code_promotion_redemption_grants_credit_once_through_real_wiri
     assert second_response.json()["data"]["balance"] == {
         "totalGrantedCount": 3,
         "remainingCount": 3,
+    }
+    assert first_response.json()["data"]["bannerImage"] == {
+        "imageUrl": PUBLIC_BANNER_IMAGE_URL,
+    }
+    assert second_response.json()["data"]["bannerImage"] == {
+        "imageUrl": PUBLIC_BANNER_IMAGE_URL,
     }
 
     async with postgres_session_factory() as session:
@@ -83,6 +92,7 @@ async def test_code_promotion_redemption_grants_credit_once_through_real_wiring(
     test_app = _promotion_integration_app(postgres_session_factory)
     async with postgres_session_factory() as session:
         await _seed_code_promotion(session)
+        await seed_promotion_content(session, promotion_id=CODE_PROMOTION_ID)
 
     async with api_client(test_app) as test_client:
         # When: 같은 프로모션 코드 혜택 수령을 두 번 요청한다.
@@ -105,6 +115,12 @@ async def test_code_promotion_redemption_grants_credit_once_through_real_wiring(
     assert second_response.json()["data"]["balance"] == {
         "totalGrantedCount": 3,
         "remainingCount": 3,
+    }
+    assert first_response.json()["data"]["bannerImage"] == {
+        "imageUrl": PUBLIC_BANNER_IMAGE_URL,
+    }
+    assert second_response.json()["data"]["bannerImage"] == {
+        "imageUrl": PUBLIC_BANNER_IMAGE_URL,
     }
 
     async with postgres_session_factory() as session:

@@ -2,6 +2,7 @@ import pytest
 
 from app.modules.promotions.tests.api_helpers import (
     PROMOTION_ID,
+    PUBLIC_BANNER_IMAGE_URL,
     RedemptionOutcome,
     api_client,
     promotion_api_app,
@@ -19,11 +20,13 @@ async def test_create_promotion_redemption_returns_balance_and_benefit() -> None
     # Then: 지급 결과와 변경된 잔액 표면을 받는다.
     data = response.json()["data"]
     assert response.status_code == 200
+    _assert_public_promotion_fields(data)
     assert data["state"] == "alreadyRedeemed"
     assert data["promotionId"] == str(PROMOTION_ID)
     assert data["benefit"] == {"featureKey": "ocr", "amount": 3}
     assert data["redemption"] == {"remainingRedemptions": 7}
     assert data["balance"] == {"totalGrantedCount": 8, "remainingCount": 6}
+    assert data["bannerImage"] == {"imageUrl": PUBLIC_BANNER_IMAGE_URL}
 
 
 async def test_create_promotion_code_redemption_uses_static_route() -> None:
@@ -38,9 +41,12 @@ async def test_create_promotion_code_redemption_uses_static_route() -> None:
         )
 
     # Then: promotion_id 동적 path에 포획되지 않고 코드 리딤으로 처리된다.
+    data = response.json()["data"]
     assert response.status_code == 200
-    assert response.json()["data"]["promotionId"] == str(PROMOTION_ID)
-    assert response.json()["data"]["redemption"] == {"remainingRedemptions": 7}
+    _assert_public_promotion_fields(data)
+    assert data["promotionId"] == str(PROMOTION_ID)
+    assert data["redemption"] == {"remainingRedemptions": 7}
+    assert data["bannerImage"] == {"imageUrl": PUBLIC_BANNER_IMAGE_URL}
 
 
 async def test_repeat_redemption_returns_already_redeemed_with_unchanged_balance() -> None:
@@ -136,3 +142,22 @@ async def test_invalid_code_format_returns_422(payload: dict[str, str]) -> None:
 
     # Then: request body boundary에서 422로 거절된다.
     assert response.status_code == 422
+
+
+def _assert_public_promotion_fields(data: dict[str, object]) -> None:
+    assert set(data) == {
+        "state",
+        "promotionId",
+        "benefit",
+        "redemption",
+        "balance",
+        "bannerImage",
+    }
+    assert not {
+        "fileId",
+        "title",
+        "body",
+        "ctaLabel",
+        "surface",
+        "metadata",
+    }.intersection(data)

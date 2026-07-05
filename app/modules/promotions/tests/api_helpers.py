@@ -45,10 +45,13 @@ TEST_CREDENTIALS_ID = UUID("00000000-0000-0000-0000-000000000102")
 TEST_SESSION_ID = UUID("00000000-0000-0000-0000-000000000103")
 PROMOTION_ID = UUID("00000000-0000-0000-0000-000000000201")
 REDEMPTION_ID = UUID("00000000-0000-0000-0000-000000000301")
+BANNER_IMAGE_URL = "/files/00000000-0000-0000-0000-000000000901/content"
+PUBLIC_BANNER_IMAGE_URL = "/api/v1/files/00000000-0000-0000-0000-000000000901/content"
 
 
 class CurrentPromotionOutcome(StrEnum):
     REDEEMABLE = "redeemable"
+    REDEEMABLE_WITHOUT_BANNER = "redeemableWithoutBanner"
     UNAVAILABLE = "unavailable"
     ALREADY_REDEEMED = "alreadyRedeemed"
 
@@ -71,11 +74,19 @@ class CurrentPromotionQueryUseCaseStub:
     ) -> GetCurrentOcrCreditPromotionResult | None:
         match self.outcome:
             case CurrentPromotionOutcome.REDEEMABLE:
-                return _current_result(already_redeemed=False)
+                return _current_result(
+                    already_redeemed=False,
+                    banner_image_url=BANNER_IMAGE_URL,
+                )
+            case CurrentPromotionOutcome.REDEEMABLE_WITHOUT_BANNER:
+                return _current_result(already_redeemed=False, banner_image_url=None)
             case CurrentPromotionOutcome.UNAVAILABLE:
                 return None
             case CurrentPromotionOutcome.ALREADY_REDEEMED:
-                return _current_result(already_redeemed=True)
+                return _current_result(
+                    already_redeemed=True,
+                    banner_image_url=BANNER_IMAGE_URL,
+                )
             case unreachable:
                 assert_never(unreachable)
 
@@ -140,7 +151,11 @@ def api_client(test_app: FastAPI) -> AsyncClient:
     )
 
 
-def _current_result(*, already_redeemed: bool) -> GetCurrentOcrCreditPromotionResult:
+def _current_result(
+    *,
+    already_redeemed: bool,
+    banner_image_url: str | None,
+) -> GetCurrentOcrCreditPromotionResult:
     return GetCurrentOcrCreditPromotionResult(
         promotion_id=PROMOTION_ID,
         name="Internal OCR promotion",
@@ -150,6 +165,7 @@ def _current_result(*, already_redeemed: bool) -> GetCurrentOcrCreditPromotionRe
         expires_at=datetime(2026, 8, 1, tzinfo=UTC),
         already_redeemed=already_redeemed,
         redemption_status=PromotionRedemptionStatus.GRANTED if already_redeemed else None,
+        banner_image_url=banner_image_url,
     )
 
 
@@ -185,4 +201,5 @@ def _redemption_result(
         remaining_redemptions=7,
         credit_balance_after=8,
         credit_remaining_after=6,
+        banner_image_url=BANNER_IMAGE_URL,
     )

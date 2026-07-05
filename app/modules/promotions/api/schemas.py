@@ -64,6 +64,12 @@ class PromotionBalanceResponse(AppBaseModel):
     remaining_count: int | None = Field(default=None, alias="remainingCount")
 
 
+class PromotionBannerImageResponse(AppBaseModel):
+    model_config = ConfigDict(frozen=True, populate_by_name=True)
+
+    image_url: str = Field(alias="imageUrl")
+
+
 class PromotionResponse(AppBaseModel):
     model_config = ConfigDict(
         frozen=True,
@@ -76,6 +82,9 @@ class PromotionResponse(AppBaseModel):
                     "benefit": {"featureKey": "ocr", "amount": 3},
                     "redemption": {"remainingRedemptions": 10},
                     "balance": None,
+                    "bannerImage": {
+                        "imageUrl": ("/api/v1/files/00000000-0000-0000-0000-000000000901/content")
+                    },
                 }
             ]
         },
@@ -86,6 +95,7 @@ class PromotionResponse(AppBaseModel):
     benefit: PromotionBenefitResponse | None
     redemption: PromotionRedemptionResponse
     balance: PromotionBalanceResponse | None
+    banner_image: PromotionBannerImageResponse | None = Field(default=None, alias="bannerImage")
 
     @classmethod
     def unavailable(cls) -> "PromotionResponse":
@@ -95,10 +105,16 @@ class PromotionResponse(AppBaseModel):
             benefit=None,
             redemption=PromotionRedemptionResponse(),
             balance=None,
+            bannerImage=None,
         )
 
     @classmethod
-    def from_current_result(cls, result: GetCurrentOcrCreditPromotionResult) -> "PromotionResponse":
+    def from_current_result(
+        cls,
+        result: GetCurrentOcrCreditPromotionResult,
+        *,
+        banner_image_url: str | None,
+    ) -> "PromotionResponse":
         state = (
             PromotionState.ALREADY_REDEEMED
             if result.already_redeemed
@@ -115,10 +131,16 @@ class PromotionResponse(AppBaseModel):
                 remainingRedemptions=result.remaining_redemptions,
             ),
             balance=None,
+            bannerImage=_banner_image_response(banner_image_url),
         )
 
     @classmethod
-    def from_redemption_result(cls, result: CreatePromotionRedemptionResult) -> "PromotionResponse":
+    def from_redemption_result(
+        cls,
+        result: CreatePromotionRedemptionResult,
+        *,
+        banner_image_url: str | None,
+    ) -> "PromotionResponse":
         return cls(
             state=PromotionState.ALREADY_REDEEMED,
             promotionId=result.promotion_id,
@@ -133,4 +155,11 @@ class PromotionResponse(AppBaseModel):
                 totalGrantedCount=result.credit_balance_after,
                 remainingCount=result.credit_remaining_after,
             ),
+            bannerImage=_banner_image_response(banner_image_url),
         )
+
+
+def _banner_image_response(image_url: str | None) -> PromotionBannerImageResponse | None:
+    if image_url is None:
+        return None
+    return PromotionBannerImageResponse(imageUrl=image_url)

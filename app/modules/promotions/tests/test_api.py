@@ -1,5 +1,6 @@
 from app.main import create_app
 from app.modules.promotions.tests.api_helpers import (
+    PUBLIC_BANNER_IMAGE_URL,
     TEST_SETTINGS,
     CurrentPromotionOutcome,
     api_client,
@@ -18,14 +19,30 @@ async def test_get_promotions_route_returns_redeemable_app_state() -> None:
     # Then: 표시 문구 없이 상태/혜택/리딤/잔액 표면만 반환한다.
     body = response.json()
     assert response.status_code == 200
-    assert set(body["data"]) == {"state", "promotionId", "benefit", "redemption", "balance"}
+    _assert_public_promotion_fields(body["data"])
     assert body["data"] == {
         "state": "redeemable",
         "promotionId": "00000000-0000-0000-0000-000000000201",
         "benefit": {"featureKey": "ocr", "amount": 3},
         "redemption": {"remainingRedemptions": 10},
         "balance": None,
+        "bannerImage": {"imageUrl": PUBLIC_BANNER_IMAGE_URL},
     }
+
+
+async def test_get_promotions_route_returns_null_banner_image_without_image() -> None:
+    # Given: 받을 수 있는 OCR 프로모션이 있지만 배너 이미지가 없다.
+    test_app = promotion_api_app(current_outcome=CurrentPromotionOutcome.REDEEMABLE_WITHOUT_BANNER)
+
+    async with api_client(test_app) as test_client:
+        # When: OCR 혜택 프로모션을 조회한다.
+        response = await test_client.get("/api/v1/promotions?featureKey=ocr")
+
+    # Then: 배너 이미지는 null이고 서버 주도 문구 필드는 노출하지 않는다.
+    body = response.json()
+    assert response.status_code == 200
+    _assert_public_promotion_fields(body["data"])
+    assert body["data"]["bannerImage"] is None
 
 
 async def test_get_promotions_route_returns_unavailable_without_display_fields() -> None:
@@ -44,6 +61,7 @@ async def test_get_promotions_route_returns_unavailable_without_display_fields()
         "benefit": None,
         "redemption": {"remainingRedemptions": None},
         "balance": None,
+        "bannerImage": None,
     }
 
 
@@ -87,3 +105,22 @@ async def test_promotions_openapi_exposes_static_redemption_before_dynamic_path(
     assert paths.index("/api/v1/promotions/redemptions") < paths.index(
         "/api/v1/promotions/{promotion_id}/redemptions"
     )
+
+
+def _assert_public_promotion_fields(data: dict[str, object]) -> None:
+    assert set(data) == {
+        "state",
+        "promotionId",
+        "benefit",
+        "redemption",
+        "balance",
+        "bannerImage",
+    }
+    assert not {
+        "fileId",
+        "title",
+        "body",
+        "ctaLabel",
+        "surface",
+        "metadata",
+    }.intersection(data)
