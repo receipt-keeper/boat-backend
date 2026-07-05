@@ -168,7 +168,7 @@ async def test_create_notification_rejects_oversized_kind_and_title(
 async def test_create_notification_sends_push_to_registered_device(
     postgres_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    # Given: 로그인한 사용자가 디바이스를 FID로 등록해 두었다.
+    # Given: 로그인한 사용자가 디바이스를 token으로 등록해 두었다.
     push_sender = FakePushSender()
     async with notification_api_client(
         postgres_session_factory,
@@ -176,7 +176,7 @@ async def test_create_notification_sends_push_to_registered_device(
     ) as client:
         await client.put(
             "/api/v1/notifications/devices",
-            json={"fid": "fid-1", "platform": "android"},
+            json={"token": "token-1", "platform": "android"},
         )
 
         # When: 알림을 생성한다.
@@ -190,11 +190,11 @@ async def test_create_notification_sends_push_to_registered_device(
             },
         )
 
-    # Then: 등록된 FID로 제목/본문이 채워진 푸시가 한 번 발송된다.
+    # Then: 등록된 token으로 제목/본문이 채워진 푸시가 한 번 발송된다.
     assert response.status_code == 201
     assert len(push_sender.calls) == 1
     sent_tokens, sent_message = push_sender.calls[0]
-    assert [token.fid.value for token in sent_tokens] == ["fid-1"]
+    assert [token.token.value for token in sent_tokens] == ["token-1"]
     assert sent_message.title == "크레딧 안내"
     assert sent_message.body == "분석 가능 횟수를 확인해 보세요."
     assert sent_message.data["kind"] == "credit_prompt"
@@ -211,7 +211,7 @@ async def test_create_marketing_notification_skips_push_without_marketing_consen
     ) as client:
         await client.put(
             "/api/v1/notifications/devices",
-            json={"fid": "fid-1", "platform": "android"},
+            json={"token": "token-1", "platform": "android"},
         )
 
         # When: marketing 알림을 생성한다.
@@ -233,15 +233,15 @@ async def test_create_marketing_notification_skips_push_without_marketing_consen
 async def test_create_notification_removes_registration_rejected_by_fcm(
     postgres_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    # Given: 등록된 FID가 FCM에서 무효 판정을 받는 상황이다.
-    push_sender = FakePushSender(report=PushSendReport(invalid_fids=("fid-dead",)))
+    # Given: 등록된 token이 FCM에서 무효 판정을 받는 상황이다.
+    push_sender = FakePushSender(report=PushSendReport(invalid_tokens=("token-dead",)))
     async with notification_api_client(
         postgres_session_factory,
         dependency_overrides={get_push_sender: lambda: push_sender},
     ) as client:
         await client.put(
             "/api/v1/notifications/devices",
-            json={"fid": "fid-dead", "platform": "ios"},
+            json={"token": "token-dead", "platform": "ios"},
         )
 
         # When: 알림을 생성한다.

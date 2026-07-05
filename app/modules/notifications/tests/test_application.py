@@ -130,7 +130,7 @@ class InMemoryPushTokenRepository(PushTokenRepository):
         self.tokens: dict[str, UserPushToken] = {}
         self.register_count = 0
         self.unregister_count = 0
-        self.delete_by_fids_count = 0
+        self.delete_by_tokens_count = 0
         self.delete_by_user_id_count = 0
         self.delete_stale_count = 0
 
@@ -138,49 +138,51 @@ class InMemoryPushTokenRepository(PushTokenRepository):
         self,
         *,
         user_id: UUID,
-        fid: str,
+        token: str,
         platform: DevicePlatform,
     ) -> UserPushToken:
         self.register_count += 1
         now = CREATED_AT
-        existing = self.tokens.get(fid)
+        existing = self.tokens.get(token)
         saved = UserPushToken.create(
             push_token_id=existing.id if existing is not None else None,
             user_id=user_id,
-            fid=fid,
+            token=token,
             platform=platform,
             created_at=existing.created_at if existing is not None else now,
             updated_at=now,
         )
-        self.tokens[fid] = saved
+        self.tokens[token] = saved
         return saved
 
-    async def unregister(self, *, user_id: UUID, fid: str) -> None:
+    async def unregister(self, *, user_id: UUID, token: str) -> None:
         self.unregister_count += 1
-        existing = self.tokens.get(fid)
+        existing = self.tokens.get(token)
         if existing is not None and existing.user_id == user_id:
-            del self.tokens[fid]
+            del self.tokens[token]
 
     async def list_by_user(self, *, user_id: UUID) -> tuple[UserPushToken, ...]:
         return tuple(token for token in self.tokens.values() if token.user_id == user_id)
 
-    async def delete_by_fids(self, *, fids: Sequence[str]) -> None:
-        self.delete_by_fids_count += 1
-        for fid in fids:
-            self.tokens.pop(fid, None)
+    async def delete_by_tokens(self, *, tokens: Sequence[str]) -> None:
+        self.delete_by_tokens_count += 1
+        for token in tokens:
+            self.tokens.pop(token, None)
 
     async def delete_by_user_id(self, *, user_id: UUID) -> None:
         self.delete_by_user_id_count += 1
-        for fid, token in list(self.tokens.items()):
-            if token.user_id == user_id:
-                del self.tokens[fid]
+        for token, push_token in list(self.tokens.items()):
+            if push_token.user_id == user_id:
+                del self.tokens[token]
 
     async def delete_stale(self, *, older_than: datetime) -> int:
         self.delete_stale_count += 1
-        stale_fids = [fid for fid, token in self.tokens.items() if token.updated_at < older_than]
-        for fid in stale_fids:
-            del self.tokens[fid]
-        return len(stale_fids)
+        stale_tokens = [
+            token for token, push_token in self.tokens.items() if push_token.updated_at < older_than
+        ]
+        for token in stale_tokens:
+            del self.tokens[token]
+        return len(stale_tokens)
 
 
 class FakePushSender(PushSender):

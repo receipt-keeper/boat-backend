@@ -5,7 +5,7 @@ from fastapi import BackgroundTasks, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.application.event_dispatcher import EventDispatcher
-from app.core.application.event_publisher import EventPublisher
+from app.core.application.event_publisher import EventPublisher, NoOpEventPublisher
 from app.core.application.unit_of_work import UnitOfWork
 from app.core.config.dependencies import get_request_settings
 from app.core.config.settings import Settings
@@ -201,6 +201,27 @@ async def get_create_notification_command_use_case(
         notification_repository=notification_repository,
         unit_of_work=unit_of_work,
         event_publisher=event_publisher,
+    )
+
+
+async def get_test_notification_create_use_case(
+    notification_repository: Annotated[
+        NotificationRepository,
+        Depends(get_notification_repository),
+    ],
+    unit_of_work: Annotated[UnitOfWork, Depends(get_unit_of_work)],
+) -> CreateNotificationCommandUseCase:
+    """이벤트 미발행 — example 테스트 보조용.
+
+    example 모듈의 테스트 푸시 API가 표준 생성 경로(및 그에 연쇄되는
+    background 푸시 발송)와 이중 발송되지 않도록, 이벤트를 발행하지 않는
+    `NoOpEventPublisher`로 조립한 `CreateNotificationCommandUseCase`를
+    제공한다. 표준 `POST /notifications` 경로에서는 사용하지 않는다.
+    """
+    return CreateNotificationCommandUseCase(
+        notification_repository=notification_repository,
+        unit_of_work=unit_of_work,
+        event_publisher=NoOpEventPublisher(),
     )
 
 

@@ -72,7 +72,7 @@ def push_token_to_domain(record: orm.UserPushToken) -> DomainUserPushToken:
     return DomainUserPushToken.create(
         push_token_id=record.id,
         user_id=record.user_id,
-        fid=record.fid,
+        token=record.token,
         platform=DevicePlatform(record.platform),
         created_at=record.created_at,
         updated_at=record.updated_at,
