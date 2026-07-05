@@ -15,9 +15,13 @@ Backfill 규칙:
   target_id가 NULL인 행은 쌍을 모두 NULL로 정리한다. 그 외(target_type='receipt'이고
   target_id가 있는 행)는 target_type -> resource_type, target_id -> resource_id로 이전한다.
 
-downgrade는 역순으로 복원하지만, 'receiptUpload'(등록 유도)와 'none'(대상 없음)의
-구분은 resource 쌍 NULL 정리 과정에서 소실되므로 downgrade 시 두 값 모두 'none'으로
-복원된다(비가역).
+downgrade는 역순으로 복원한다. 단, 구 리비전 코드는 kind/target_type을 enum으로 읽으므로:
+- 'receiptUpload'(등록 유도)와 'none'(대상 없음)의 구분은 resource 쌍 NULL 정리 과정에서
+  소실되어 downgrade 시 두 값 모두 'none'으로 복원된다(비가역).
+- 구 enum 밖 불투명 resource_type(새 API가 수용한 값)은 '대상 없음'('none')으로
+  정규화한다(비가역).
+- 구 enum 밖 불투명 kind는 구 코드가 읽을 수 없고 안전한 대체 값도 없으므로 downgrade를
+  명시적으로 실패시킨다(해당 행을 정리한 뒤 재시도).
 """
 
 from collections.abc import Sequence
@@ -41,6 +45,10 @@ _PUSH_TITLE_BY_KIND = {
     "credit_prompt": "크레딧 안내",
     "benefit": "혜택 안내",
 }
+
+# 구 리비전(20260704_0012 이하) 코드가 enum으로 읽을 수 있는 값 전체.
+_LEGACY_KINDS: tuple[str, ...] = tuple(_PUSH_TITLE_BY_KIND)
+_LEGACY_TARGET_TYPES: tuple[str, ...] = ("receipt", "receiptUpload", "none")
 
 
 def upgrade() -> None:
@@ -106,6 +114,23 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # 구 리비전 코드는 kind를 NotificationKind enum으로 읽는다. enum 밖 불투명 kind가
+    # 남은 채 내리면 rollback 후 목록/조회가 ValueError로 죽고 안전한 대체 값도 없으므로,
+    # downgrade를 명시적으로 실패시킨다(해당 행을 정리한 뒤 재시도).
+    connection = op.get_bind()
+    unknown_kind_count = connection.execute(
+        sa.text("SELECT COUNT(*) FROM user_notifications WHERE kind NOT IN :kinds").bindparams(
+            sa.bindparam("kinds", expanding=True)
+        ),
+        {"kinds": list(_LEGACY_KINDS)},
+    ).scalar_one()
+    if unknown_kind_count:
+        raise RuntimeError(
+            "user_notifications에 구 NotificationKind enum 밖의 kind 값이 "
+            f"{unknown_kind_count}건 남아 있어 downgrade할 수 없습니다. "
+            "해당 행을 정리하거나 구 enum 값으로 갱신한 뒤 다시 시도하세요."
+        )
+
     op.drop_constraint(
         op.f("ck_user_notifications_resource_pair"),
         "user_notifications",
@@ -127,6 +152,15 @@ def downgrade() -> None:
         new_column_name="target_type",
         existing_type=sa.String(length=50),
         nullable=True,
+    )
+    # 구 enum 밖 불투명 resource_type은 구 코드가 읽을 수 없으므로 '대상 없음'으로
+    # 정규화한다(비가역). 쌍 불변식에 따라 target_id도 함께 정리한다.
+    connection.execute(
+        sa.text(
+            "UPDATE user_notifications SET target_type = NULL, target_id = NULL "
+            "WHERE target_type IS NOT NULL AND target_type NOT IN :types"
+        ).bindparams(sa.bindparam("types", expanding=True)),
+        {"types": list(_LEGACY_TARGET_TYPES)},
     )
     op.execute("UPDATE user_notifications SET target_type = 'none' WHERE target_type IS NULL")
     op.alter_column("user_notifications", "target_type", nullable=False)

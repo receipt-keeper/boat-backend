@@ -1,5 +1,5 @@
 from pathlib import Path
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import anyio
 import pytest
@@ -111,6 +111,45 @@ def test_generalize_notifications_migration_downgrade_round_trip(
         get_settings.cache_clear()
 
 
+def test_generalize_notifications_migration_downgrade_normalizes_opaque_values(
+    postgres_async_database_url: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given: head 스키마에 새 API가 수용한 불투명 값 행이 존재한다 —
+    # 구 enum 밖 resource_type('file') 행과 구 enum 밖 kind('ocr_completed') 행.
+    monkeypatch.setenv("DATABASE_URL", postgres_async_database_url)
+    get_settings.cache_clear()
+    config = _alembic_config()
+
+    upgraded = False
+    try:
+        command.upgrade(config, "head")
+        upgraded = True
+        opaque_resource_row_id, opaque_kind_row_id = anyio.run(
+            _insert_head_rows_with_opaque_values, postgres_async_database_url
+        )
+
+        # When/Then: 구 enum 밖 kind가 남아 있으면 downgrade는 명시적으로 실패하고
+        # 스키마는 head 상태를 유지한다.
+        with pytest.raises(RuntimeError, match="kind"):
+            command.downgrade(config, _PRE_MIGRATION_REVISION)
+        anyio.run(_assert_head_columns_present, postgres_async_database_url)
+
+        # And: 문제 행을 정리하면 downgrade가 성공하고, 구 enum 밖 resource_type은
+        # 구 코드가 읽을 수 있는 '대상 없음'('none')으로 정규화된다.
+        anyio.run(_delete_notification_row, postgres_async_database_url, opaque_kind_row_id)
+        command.downgrade(config, _PRE_MIGRATION_REVISION)
+        anyio.run(
+            _assert_opaque_resource_row_normalized,
+            postgres_async_database_url,
+            opaque_resource_row_id,
+        )
+    finally:
+        if upgraded:
+            command.downgrade(config, "base")
+        get_settings.cache_clear()
+
+
 async def _insert_legacy_rows(database_url: str) -> dict[str, UUID]:
     engine = build_engine(database_url)
     try:
@@ -157,6 +196,64 @@ async def _assert_downgrade_restored_legacy_columns(database_url: str) -> None:
             )
             assert receipt_row_count is not None
             assert receipt_row_count > 0
+    finally:
+        await engine.dispose()
+
+
+async def _insert_head_rows_with_opaque_values(database_url: str) -> tuple[UUID, UUID]:
+    opaque_resource_row_id = uuid4()
+    opaque_kind_row_id = uuid4()
+    engine = build_engine(database_url)
+    try:
+        async with engine.begin() as connection:
+            await connection.execute(
+                text(
+                    """
+                    INSERT INTO user_notifications
+                        (id, user_id, category, kind, title, message, resource_type, resource_id)
+                    VALUES
+                        (:opaque_resource_id, :user_id, 'service', 'warranty_risk',
+                         '보증 만료 임박', '냉장고 보증이 30일 뒤 만료돼요', 'file', :resource_id),
+                        (:opaque_kind_id, :user_id, 'service', 'ocr_completed',
+                         '영수증 분석 완료', '영수증 정보가 등록됐어요', NULL, NULL)
+                    """
+                ),
+                {
+                    "opaque_resource_id": opaque_resource_row_id,
+                    "opaque_kind_id": opaque_kind_row_id,
+                    "user_id": uuid4(),
+                    "resource_id": uuid4(),
+                },
+            )
+    finally:
+        await engine.dispose()
+    return opaque_resource_row_id, opaque_kind_row_id
+
+
+async def _delete_notification_row(database_url: str, row_id: UUID) -> None:
+    engine = build_engine(database_url)
+    try:
+        async with engine.begin() as connection:
+            await connection.execute(
+                text("DELETE FROM user_notifications WHERE id = :id"),
+                {"id": row_id},
+            )
+    finally:
+        await engine.dispose()
+
+
+async def _assert_opaque_resource_row_normalized(database_url: str, row_id: UUID) -> None:
+    engine = build_engine(database_url)
+    try:
+        async with engine.connect() as connection:
+            row = (
+                await connection.execute(
+                    text("SELECT target_type, target_id FROM user_notifications WHERE id = :id"),
+                    {"id": row_id},
+                )
+            ).one()
+            assert row.target_type == "none"
+            assert row.target_id is None
     finally:
         await engine.dispose()
 
