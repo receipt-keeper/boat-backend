@@ -38,6 +38,9 @@ class GetCurrentOcrCreditPromotionQueryUseCase:
             user_id=query.user_id,
             promotion_id=promotion.id,
         )
+        content = await self._promotion_repository.find_content_by_promotion_id(
+            promotion_id=promotion.id,
+        )
         return GetCurrentOcrCreditPromotionResult(
             promotion_id=promotion.id,
             name=promotion.name,
@@ -47,6 +50,7 @@ class GetCurrentOcrCreditPromotionQueryUseCase:
             expires_at=promotion.expires_at,
             already_redeemed=redemption is not None,
             redemption_status=redemption.status if redemption is not None else None,
+            banner_image_url=content.banner_image_url if content is not None else None,
         )
 
 

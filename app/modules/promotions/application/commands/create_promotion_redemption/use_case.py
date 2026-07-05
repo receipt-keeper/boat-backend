@@ -16,7 +16,7 @@ from app.modules.promotions.application.ports.promotion_repository import (
     PromotionRepository,
 )
 from app.modules.promotions.domain.exceptions import PromotionNotFoundError
-from app.modules.promotions.domain.model import Promotion, PromotionRedemption
+from app.modules.promotions.domain.model import Promotion, PromotionContent, PromotionRedemption
 
 
 def _utc_now() -> datetime:
@@ -54,9 +54,13 @@ class CreatePromotionRedemptionCommandUseCase:
             balance = await self._credit_grant_port.get_ocr_credit_balance(
                 user_id=command.user_id,
             )
+            content = await self._promotion_repository.find_content_by_promotion_id(
+                promotion_id=promotion.id,
+            )
             return _result(
                 redemption=existing,
                 promotion=promotion,
+                banner_image_url=_banner_image_url(content),
                 already_redeemed=True,
                 credit_granted=False,
                 credit_balance_after=balance.total_granted_count,
@@ -77,9 +81,13 @@ class CreatePromotionRedemptionCommandUseCase:
             balance = await self._credit_grant_port.get_ocr_credit_balance(
                 user_id=command.user_id,
             )
+            content = await self._promotion_repository.find_content_by_promotion_id(
+                promotion_id=promotion.id,
+            )
             return _result(
                 redemption=already_redeemed,
                 promotion=promotion,
+                banner_image_url=_banner_image_url(content),
                 already_redeemed=True,
                 credit_granted=False,
                 credit_balance_after=balance.total_granted_count,
@@ -125,9 +133,13 @@ class CreatePromotionRedemptionCommandUseCase:
             )
         )
         await self._unit_of_work.commit()
+        content = await self._promotion_repository.find_content_by_promotion_id(
+            promotion_id=promotion.id,
+        )
         return _result(
             redemption=redemption,
             promotion=promotion,
+            banner_image_url=_banner_image_url(content),
             already_redeemed=False,
             credit_granted=True,
             credit_balance_after=grant_result.credit_balance_after,
@@ -153,6 +165,7 @@ def _result(
     *,
     redemption: PromotionRedemption,
     promotion: Promotion,
+    banner_image_url: str | None,
     already_redeemed: bool,
     credit_granted: bool,
     credit_balance_after: int | None,
@@ -169,6 +182,7 @@ def _result(
         remaining_redemptions=_remaining_redemptions(promotion),
         credit_balance_after=credit_balance_after,
         credit_remaining_after=credit_remaining_after,
+        banner_image_url=banner_image_url,
     )
 
 
@@ -176,3 +190,9 @@ def _remaining_redemptions(promotion: Promotion) -> int | None:
     if promotion.max_redemptions is None:
         return None
     return max(promotion.max_redemptions - promotion.times_redeemed, 0)
+
+
+def _banner_image_url(content: PromotionContent | None) -> str | None:
+    if content is None:
+        return None
+    return content.banner_image_url

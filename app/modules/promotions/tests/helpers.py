@@ -33,6 +33,8 @@ USER_ID = UUID("00000000-0000-0000-0000-000000000101")
 PROMOTION_ID = UUID("00000000-0000-0000-0000-000000000201")
 EXPIRED_PROMOTION_ID = UUID("00000000-0000-0000-0000-000000000202")
 CODE_ID = UUID("00000000-0000-0000-0000-000000000301")
+PROMOTION_CONTENT_ID = UUID("00000000-0000-0000-0000-000000000401")
+BANNER_IMAGE_URL = "/files/00000000-0000-0000-0000-000000000901/content"
 PROMOTION_IDEMPOTENCY_KEY = f"promotionRedemption:{PROMOTION_ID}:{USER_ID}"
 CODE_IDEMPOTENCY_KEY = f"promotionCodeRedemption:{CODE_ID}:{USER_ID}"
 
@@ -132,6 +134,22 @@ async def seed_promotion(
             max_redemptions_per_user=1,
             benefit_feature_key="ocr",
             benefit_amount=3,
+        )
+    )
+    await session.commit()
+
+
+async def seed_promotion_content(
+    session: AsyncSession,
+    *,
+    promotion_id: UUID = PROMOTION_ID,
+    banner_image_url: str | None = BANNER_IMAGE_URL,
+) -> None:
+    session.add(
+        orm.PromotionContent(
+            id=PROMOTION_CONTENT_ID,
+            promotion_id=promotion_id,
+            banner_image_url=banner_image_url,
         )
     )
     await session.commit()

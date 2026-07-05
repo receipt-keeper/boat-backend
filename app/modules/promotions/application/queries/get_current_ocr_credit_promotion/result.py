@@ -15,3 +15,4 @@ class GetCurrentOcrCreditPromotionResult:
     expires_at: datetime | None
     already_redeemed: bool
     redemption_status: PromotionRedemptionStatus | None
+    banner_image_url: str | None = None

@@ -16,3 +16,4 @@ class CreatePromotionRedemptionResult:
     remaining_redemptions: int | None
     credit_balance_after: int | None
     credit_remaining_after: int | None
+    banner_image_url: str | None = None

@@ -9,6 +9,7 @@ from app.modules.promotions.application.commands.create_promotion_redemption.res
     CreatePromotionRedemptionResult,
 )
 from app.modules.promotions.application.commands.create_promotion_redemption.use_case import (
+    _banner_image_url,
     _credit_grant,
     _result,
 )
@@ -60,9 +61,13 @@ class CreatePromotionCodeRedemptionCommandUseCase:
             balance = await self._credit_grant_port.get_ocr_credit_balance(
                 user_id=command.user_id,
             )
+            content = await self._promotion_repository.find_content_by_promotion_id(
+                promotion_id=promotion.id,
+            )
             return _result(
                 redemption=existing,
                 promotion=promotion,
+                banner_image_url=_banner_image_url(content),
                 already_redeemed=True,
                 credit_granted=False,
                 credit_balance_after=balance.total_granted_count,
@@ -83,9 +88,13 @@ class CreatePromotionCodeRedemptionCommandUseCase:
             balance = await self._credit_grant_port.get_ocr_credit_balance(
                 user_id=command.user_id,
             )
+            content = await self._promotion_repository.find_content_by_promotion_id(
+                promotion_id=promotion.id,
+            )
             return _result(
                 redemption=already_redeemed,
                 promotion=promotion,
+                banner_image_url=_banner_image_url(content),
                 already_redeemed=True,
                 credit_granted=False,
                 credit_balance_after=balance.total_granted_count,
@@ -139,9 +148,13 @@ class CreatePromotionCodeRedemptionCommandUseCase:
             )
         )
         await self._unit_of_work.commit()
+        content = await self._promotion_repository.find_content_by_promotion_id(
+            promotion_id=promotion.id,
+        )
         return _result(
             redemption=redemption,
             promotion=promotion,
+            banner_image_url=_banner_image_url(content),
             already_redeemed=False,
             credit_granted=True,
             credit_balance_after=grant_result.credit_balance_after,

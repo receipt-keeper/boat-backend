@@ -13,6 +13,7 @@ from app.modules.promotions.domain.exceptions import PromotionRedemptionConflict
 from app.modules.promotions.domain.model import PromotionRedemptionStatus
 from app.modules.promotions.infrastructure.persistence import orm
 from app.modules.promotions.tests.helpers import (
+    BANNER_IMAGE_URL,
     EXPIRED_PROMOTION_ID,
     NOW,
     PROMOTION_ID,
@@ -22,6 +23,7 @@ from app.modules.promotions.tests.helpers import (
     promotion_command,
     promotion_use_case,
     seed_promotion,
+    seed_promotion_content,
 )
 
 
@@ -47,6 +49,7 @@ async def test_create_promotion_redemption_grants_credit_and_persists_redemption
     assert result.already_redeemed is False
     assert result.credit_granted is True
     assert result.benefit_amount == 3
+    assert result.banner_image_url is None
     assert result.remaining_redemptions == 9
     assert result.credit_balance_after == 8
     assert result.credit_remaining_after == 6
@@ -70,6 +73,7 @@ async def test_create_promotion_redemption_idempotent_retry_uses_current_respons
 ) -> None:
     async with postgres_session_factory() as session:
         await seed_promotion(session)
+        await seed_promotion_content(session)
         grant_port = FakePromotionCreditGrantPort(
             result=PromotionCreditGrantResult(
                 credit_balance_after=8,
@@ -95,11 +99,27 @@ async def test_create_promotion_redemption_idempotent_retry_uses_current_respons
     assert second.already_redeemed is True
     assert second.credit_granted is False
     assert second.benefit_amount == 99
+    assert first.banner_image_url == BANNER_IMAGE_URL
+    assert second.banner_image_url == BANNER_IMAGE_URL
     assert second.remaining_redemptions == 0
     assert second.credit_balance_after == first.credit_balance_after
     assert second.credit_remaining_after == first.credit_remaining_after
     assert len(grant_port.grants) == grant_call_count
     assert grant_port.grants[0].idempotency_key == PROMOTION_IDEMPOTENCY_KEY
+
+
+async def test_create_promotion_redemption_returns_banner_image_url(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with postgres_session_factory() as session:
+        await seed_promotion(session)
+        await seed_promotion_content(session)
+        grant_port = FakePromotionCreditGrantPort()
+
+        result = await promotion_use_case(session, grant_port).execute(promotion_command())
+
+    assert result.status == PromotionRedemptionStatus.GRANTED
+    assert result.banner_image_url == BANNER_IMAGE_URL
 
 
 @pytest.mark.parametrize(
