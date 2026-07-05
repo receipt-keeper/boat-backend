@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from pydantic import ConfigDict, Field
 
 from app.core.http.responses import AppBaseModel
@@ -59,6 +61,7 @@ class TestPushResponse(AppBaseModel):
         json_schema_extra={
             "examples": [
                 {
+                    "notificationId": "00000000-0000-0000-0000-000000000001",
                     "targetedDeviceCount": 1,
                     "invalidDeviceCount": 0,
                 }
@@ -66,6 +69,10 @@ class TestPushResponse(AppBaseModel):
         },
     )
 
+    notification_id: UUID = Field(
+        alias="notificationId",
+        description="이번 요청으로 저장된 알림 레코드의 ID.",
+    )
     targeted_device_count: int = Field(
         alias="targetedDeviceCount",
         description="발송을 시도한 등록 디바이스 수.",

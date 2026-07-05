@@ -12,6 +12,12 @@ from app.modules.example.api.schemas import (
     TestPushRequest,
     TestPushResponse,
 )
+from app.modules.notifications.application.commands.create_notification.command import (
+    CreateNotificationCommand,
+)
+from app.modules.notifications.application.commands.create_notification.use_case import (
+    CreateNotificationCommandUseCase,
+)
 from app.modules.notifications.application.ports.push_sender import (
     PushMessage,
     PushSender,
@@ -23,7 +29,9 @@ from app.modules.notifications.application.ports.push_token_repository import (
 from app.modules.notifications.dependencies import (
     get_push_sender,
     get_push_token_repository,
+    get_test_notification_create_use_case,
 )
+from app.modules.notifications.domain.value_objects import NotificationMessageType
 
 _FORCED_SERVER_ERROR_MESSAGE: Final = "테스트용 서버 오류를 강제로 발생시켰습니다."
 _OCR_TEST_CREDIT_GRANT_COUNT: Final = 5
@@ -111,8 +119,9 @@ async def grant_ocr_test_credits(
     summary="테스트 푸시 발송",
     description=(
         "앱 푸시 연동 확인을 위해 로그인한 사용자의 등록된 모든 디바이스로 테스트 푸시를 "
-        "즉시 발송한다. 알림 레코드를 만들지 않고 알림 수신 설정도 확인하지 않는 "
-        "example 모듈의 테스트 보조 API다. 발송 실패 시 외부 서비스 오류로 응답한다."
+        "즉시 발송한다. 알림 레코드를 생성해 알림 목록 조회 API에서 확인할 수 있으며, "
+        "알림 수신 설정은 확인하지 않는 example 모듈의 테스트 보조 API다. "
+        "발송 실패 시 외부 서비스 오류로 응답한다."
     ),
     responses={
         status.HTTP_401_UNAUTHORIZED: {
@@ -126,7 +135,20 @@ async def send_test_push(
     principal: CurrentPrincipalDep,
     push_token_repository: Annotated[PushTokenRepository, Depends(get_push_token_repository)],
     push_sender: Annotated[PushSender, Depends(get_push_sender)],
+    notification_create_use_case: Annotated[
+        CreateNotificationCommandUseCase,
+        Depends(get_test_notification_create_use_case),
+    ],
 ) -> CommonResponse[TestPushResponse]:
+    notification_result = await notification_create_use_case.execute(
+        CreateNotificationCommand(
+            user_id=principal.user_id,
+            message_type=NotificationMessageType.TRANSACTIONAL,
+            kind="test",
+            title=request.title,
+            message=request.body,
+        )
+    )
     tokens = await push_token_repository.list_by_user(user_id=principal.user_id)
     report = PushSendReport()
     if tokens:
@@ -142,6 +164,7 @@ async def send_test_push(
         success=True,
         status=status.HTTP_200_OK,
         data=TestPushResponse(
+            notificationId=notification_result.notification_id,
             targetedDeviceCount=len(tokens),
             invalidDeviceCount=len(report.invalid_tokens),
         ),
