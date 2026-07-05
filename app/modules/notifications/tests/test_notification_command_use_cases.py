@@ -163,6 +163,56 @@ async def test_create_notification_commits_once_and_returns_expected_result() ->
     assert published_event.resource_id == receipt_id
 
 
+def test_restore_does_not_record_creation_event() -> None:
+    # Given/When: 저장소 레코드 복원 전용 팩토리로 알림을 재구성한다.
+    restored = UserNotification.restore(
+        notification_id=uuid4(),
+        user_id=TEST_USER_ID,
+        category=NotificationCategory.SERVICE,
+        kind="warranty_risk",
+        title="보증 만료 임박",
+        message="냉장고 보증이 30일 뒤 만료돼요.",
+        resource_type="receipt",
+        resource_id=uuid4(),
+        created_at=CREATED_AT,
+        read_at=None,
+    )
+
+    # Then: 복원된 알림에는 생성 이벤트가 쌓이지 않는다(푸시 재발행 방지).
+    assert restored.pull_events() == []
+
+
+async def test_create_notification_succeeds_when_event_publish_fails() -> None:
+    # Given: publish가 항상 실패하는 event publisher가 주입되어 있다.
+    class FailingEventPublisher(FakeEventPublisher):
+        async def publish(self, events: object) -> None:
+            raise RuntimeError("publish 실패")
+
+    repository = InMemoryNotificationRepository()
+    unit_of_work = FakeUnitOfWork()
+    use_case = CreateNotificationCommandUseCase(
+        notification_repository=repository,
+        unit_of_work=unit_of_work,
+        event_publisher=FailingEventPublisher(),
+        clock=lambda: CREATED_AT,
+    )
+
+    # When: 알림을 생성한다.
+    result = await use_case.execute(
+        CreateNotificationCommand(
+            user_id=TEST_USER_ID,
+            category=NotificationCategory.SERVICE,
+            kind="warranty_risk",
+            title="보증 만료 임박",
+            message="냉장고 보증이 30일 뒤 만료돼요.",
+        )
+    )
+
+    # Then: 알림은 이미 커밋됐으므로 발행 실패가 생성 결과를 깨지 않는다(best-effort).
+    assert unit_of_work.commit_count == 1
+    assert result.notification_id in repository.notifications
+
+
 async def test_create_notification_propagates_validation_without_commit() -> None:
     # Given: 알림 생성 use case가 준비되어 있다.
     repository = InMemoryNotificationRepository()

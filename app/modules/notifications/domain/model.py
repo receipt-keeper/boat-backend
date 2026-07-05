@@ -56,6 +56,78 @@ class UserNotification(Entity[UUID]):
         read_at: datetime | None = None,
         notification_id: UUID | None = None,
     ) -> "UserNotification":
+        created = cls._assemble(
+            notification_id=notification_id,
+            user_id=user_id,
+            category=category,
+            kind=kind,
+            title=title,
+            message=message,
+            resource_type=resource_type,
+            resource_id=resource_id,
+            created_at=created_at,
+            read_at=read_at,
+        )
+        created.record_event(
+            NotificationCreated(
+                notification_id=created.id,
+                user_id=created.user_id,
+                category=created.category,
+                kind=created.kind.value,
+                title=created.title.value,
+                message=created.message.value,
+                resource_type=(
+                    created.resource_type.value if created.resource_type is not None else None
+                ),
+                resource_id=created.resource_id,
+            )
+        )
+        return created
+
+    @classmethod
+    def restore(
+        cls,
+        *,
+        notification_id: UUID,
+        user_id: UUID,
+        category: NotificationCategory,
+        kind: str,
+        title: str,
+        message: str,
+        resource_type: str | None,
+        resource_id: UUID | None,
+        created_at: datetime,
+        read_at: datetime | None,
+    ) -> "UserNotification":
+        # 저장된 레코드 복원 전용 — 생성 이벤트를 기록하지 않는다.
+        return cls._assemble(
+            notification_id=notification_id,
+            user_id=user_id,
+            category=category,
+            kind=kind,
+            title=title,
+            message=message,
+            resource_type=resource_type,
+            resource_id=resource_id,
+            created_at=created_at,
+            read_at=read_at,
+        )
+
+    @classmethod
+    def _assemble(
+        cls,
+        *,
+        notification_id: UUID | None,
+        user_id: UUID,
+        category: NotificationCategory,
+        kind: str,
+        title: str,
+        message: str,
+        resource_type: str | None,
+        resource_id: UUID | None,
+        created_at: datetime,
+        read_at: datetime | None,
+    ) -> "UserNotification":
         notification = ValidationNotification()
         new_kind = notification.collect(lambda: NotificationKind(kind))
         new_title = notification.collect(lambda: NotificationTitle(title))
@@ -68,9 +140,8 @@ class UserNotification(Entity[UUID]):
         notification.collect(lambda: _validate_resource_pair(resource_type, resource_id))
         notification.raise_if_any()
 
-        new_id = notification_id or uuid4()
-        created = cls(
-            id=new_id,
+        return cls(
+            id=notification_id or uuid4(),
             user_id=user_id,
             category=category,
             kind=new_kind,
@@ -81,19 +152,6 @@ class UserNotification(Entity[UUID]):
             created_at=created_at,
             read_at=read_at,
         )
-        created.record_event(
-            NotificationCreated(
-                notification_id=new_id,
-                user_id=user_id,
-                category=category,
-                kind=new_kind.value,
-                title=new_title.value,
-                message=new_message.value,
-                resource_type=new_resource_type.value if new_resource_type else None,
-                resource_id=resource_id,
-            )
-        )
-        return created
 
     def mark_read(self, *, read_at: datetime) -> "UserNotification":
         return UserNotification(

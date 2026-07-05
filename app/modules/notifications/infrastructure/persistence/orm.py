@@ -1,9 +1,10 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import Boolean, DateTime, Index, String, UniqueConstraint, func
+from sqlalchemy import Boolean, CheckConstraint, DateTime, Index, String, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import UUID as PostgreSQLUUID
 from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.schema import conv
 
 from app.core.db.base import Base
 
@@ -16,6 +17,14 @@ class UserNotification(Base):
             "user_id",
             "created_at",
             "id",
+        ),
+        CheckConstraint(
+            "category IN ('service', 'marketing')",
+            name=conv("ck_user_notifications_category_allowed"),
+        ),
+        CheckConstraint(
+            "(resource_type IS NULL) = (resource_id IS NULL)",
+            name=conv("ck_user_notifications_resource_pair"),
         ),
     )
 

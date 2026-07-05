@@ -1,3 +1,4 @@
+import logging
 from collections.abc import Callable
 from datetime import UTC, datetime
 
@@ -13,6 +14,8 @@ from app.modules.notifications.application.ports.notification_repository import 
     NotificationRepository,
 )
 from app.modules.notifications.domain.model import UserNotification
+
+logger = logging.getLogger(__name__)
 
 
 def _utc_now() -> datetime:
@@ -46,8 +49,16 @@ class CreateNotificationCommandUseCase:
         )
         saved = await self._notification_repository.create(notification=notification)
         await self._unit_of_work.commit()
+        # 알림은 이미 커밋됐다 — 발행 실패가 생성 요청을 실패시키면 안 된다(best-effort).
         events = saved.pull_events()
-        await self._event_publisher.publish(events)
+        try:
+            await self._event_publisher.publish(events)
+        except Exception:
+            logger.warning(
+                "알림 생성 이벤트 발행에 실패했습니다. notification_id=%s",
+                saved.id,
+                exc_info=True,
+            )
         return CreateNotificationResult(
             notification_id=saved.id,
             category=saved.category,

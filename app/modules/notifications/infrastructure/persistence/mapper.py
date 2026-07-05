@@ -15,7 +15,7 @@ from app.modules.notifications.infrastructure.persistence import orm
 
 
 def notification_to_domain(record: orm.UserNotification) -> DomainUserNotification:
-    return DomainUserNotification.create(
+    return DomainUserNotification.restore(
         notification_id=record.id,
         user_id=record.user_id,
         category=NotificationCategory(record.category),
@@ -39,7 +39,9 @@ def notification_to_record(
         kind=notification.kind.value,
         title=notification.title.value,
         message=notification.message.value,
-        resource_type=notification.resource_type.value if notification.resource_type else None,
+        resource_type=(
+            notification.resource_type.value if notification.resource_type is not None else None
+        ),
         resource_id=notification.resource_id,
         created_at=notification.created_at,
         read_at=notification.read_at,

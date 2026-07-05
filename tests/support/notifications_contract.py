@@ -2,7 +2,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from typing import Final
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from fastapi import FastAPI, Request
 
@@ -49,6 +49,7 @@ from app.modules.notifications.dependencies import (
     get_notification_settings_query_use_case,
     get_update_notification_settings_command_use_case,
 )
+from app.modules.notifications.domain.model import UserNotification
 from app.modules.notifications.domain.value_objects import NotificationCategory
 
 TEST_USER_ID: Final = UUID("00000000-0000-0000-0000-000000000101")
@@ -86,8 +87,8 @@ class NotificationsContractStore:
         self._marketing_consent = False
 
     def create(self, command: CreateNotificationCommand) -> CreateNotificationResult:
-        notification = StoredNotification(
-            notification_id=uuid4(),
+        # 프로덕션과 동일한 도메인 검증을 거쳐 계약 앱이 실제 API와 갈라지지 않게 한다.
+        domain_notification = UserNotification.create(
             user_id=command.user_id,
             category=command.category,
             kind=command.kind,
@@ -97,6 +98,21 @@ class NotificationsContractStore:
             resource_id=command.resource_id,
             created_at=datetime(2026, 6, 28, 9, 0, tzinfo=UTC)
             + timedelta(seconds=len(self._notifications)),
+        )
+        notification = StoredNotification(
+            notification_id=domain_notification.id,
+            user_id=domain_notification.user_id,
+            category=domain_notification.category,
+            kind=domain_notification.kind.value,
+            title=domain_notification.title.value,
+            message=domain_notification.message.value,
+            resource_type=(
+                domain_notification.resource_type.value
+                if domain_notification.resource_type is not None
+                else None
+            ),
+            resource_id=domain_notification.resource_id,
+            created_at=domain_notification.created_at,
         )
         self._notifications.append(notification)
         return CreateNotificationResult(
