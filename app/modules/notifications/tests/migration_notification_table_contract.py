@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from app.core.db.session import build_engine
 
-_EXPECTED_CATEGORY_CHECK = "ck_user_notifications_category_allowed"
+_EXPECTED_MESSAGE_TYPE_CHECK = "ck_user_notifications_message_type_allowed"
 _EXPECTED_RESOURCE_PAIR_CHECK = "ck_user_notifications_resource_pair"
 
 _PUSH_TITLE_BY_KIND = {
@@ -36,7 +36,7 @@ _LEGACY_ROWS: list[tuple[str, str, bool]] = [
 
 
 async def insert_legacy_notification_rows(connection: AsyncConnection) -> dict[str, UUID]:
-    """20260704_0012 스키마(구형: target_type/target_id, category/title 없음)에
+    """20260704_0012 스키마(구형: target_type/target_id, message_type/title 없음)에
     대표 kind 7종 + 엣지 케이스 1건을 삽입하고, row id를 (kind, target_type, has_id) 키로 반환한다.
     """
     user_id = uuid4()
@@ -72,7 +72,7 @@ async def assert_backfill_is_correct(database_url: str, row_ids: dict[str, UUID]
     engine = build_engine(database_url)
     try:
         async with engine.connect() as connection:
-            await _assert_category_backfill(connection, row_ids)
+            await _assert_message_type_backfill(connection, row_ids)
             await _assert_title_backfill(connection, row_ids)
             await _assert_resource_pair_backfill(connection, row_ids)
             await _assert_metadata_backfill(connection, row_ids)
@@ -87,7 +87,7 @@ async def _row(connection: AsyncConnection, row_id: UUID) -> RowMapping:
     result = await connection.execute(
         text(
             """
-            SELECT category, title, kind, resource_type, resource_id
+            SELECT message_type, title, kind, resource_type, resource_id
             FROM user_notifications
             WHERE id = :id
             """
@@ -98,12 +98,14 @@ async def _row(connection: AsyncConnection, row_id: UUID) -> RowMapping:
     return row
 
 
-async def _assert_category_backfill(connection: AsyncConnection, row_ids: dict[str, UUID]) -> None:
+async def _assert_message_type_backfill(
+    connection: AsyncConnection, row_ids: dict[str, UUID]
+) -> None:
     for key, row_id in row_ids.items():
         row = await _row(connection, row_id)
         kind = key.split(":", 1)[0]
-        expected_category = "marketing" if kind == "benefit" else "service"
-        assert row["category"] == expected_category, key
+        expected_message_type = "marketing" if kind == "benefit" else "transactional"
+        assert row["message_type"] == expected_message_type, key
 
 
 async def _assert_title_backfill(connection: AsyncConnection, row_ids: dict[str, UUID]) -> None:
@@ -131,7 +133,7 @@ async def _assert_resource_pair_backfill(
 
 
 async def _assert_not_null_constraints(connection: AsyncConnection) -> None:
-    for column_name in ("category", "title", "metadata"):
+    for column_name in ("message_type", "title", "metadata"):
         is_nullable = await connection.scalar(
             text(
                 """
@@ -169,7 +171,7 @@ async def _assert_check_constraint_names(connection: AsyncConnection) -> None:
         )
     )
     constraint_names = {row[0] for row in constraint_rows.tuples()}
-    assert _EXPECTED_CATEGORY_CHECK in constraint_names
+    assert _EXPECTED_MESSAGE_TYPE_CHECK in constraint_names
     assert _EXPECTED_RESOURCE_PAIR_CHECK in constraint_names
 
 
@@ -180,7 +182,7 @@ async def _assert_resource_pair_check_rejects_partial_pair(engine: AsyncEngine) 
                 text(
                     """
                     INSERT INTO user_notifications
-                        (id, user_id, kind, category, title, message,
+                        (id, user_id, kind, message_type, title, message,
                          resource_type, created_at)
                     VALUES
                         (:id, :user_id, 'benefit', 'marketing', '알림', 'msg',

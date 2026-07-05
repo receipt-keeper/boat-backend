@@ -5,12 +5,12 @@ Revises: 20260704_0012
 Create Date: 2026-07-05 00:13:00.000000
 
 알림 BC가 발신 도메인 어휘(NotificationKind enum, 화면 어휘 target_type)를 모르도록
-category(불투명 kind 게이팅용) + title(발신자 완성 문구) + resource_type/resource_id
+message_type(불투명 kind 게이팅용) + title(발신자 완성 문구) + resource_type/resource_id
 (불투명 리소스 참조 쌍) + metadata(발신자 소유 부가 정보, JSONB NOT NULL DEFAULT '{}')로
 일반화한다.
 
 Backfill 규칙:
-- category: 기존 kind='benefit'이면 'marketing', 그 외는 'service'.
+- message_type: 기존 kind='benefit'이면 'marketing', 그 외는 'transactional'.
 - title: 기존 kind별 PUSH_TITLES 매핑(ELSE '알림').
 - resource_type/resource_id: 기존 target_type이 'none' 또는 'receiptUpload'이거나
   target_id가 NULL인 행은 쌍을 모두 NULL로 정리한다. 그 외(target_type='receipt'이고
@@ -53,20 +53,20 @@ _LEGACY_TARGET_TYPES: tuple[str, ...] = ("receipt", "receiptUpload", "none")
 
 
 def upgrade() -> None:
-    # 1) category: nullable로 추가 -> backfill -> NOT NULL + CHECK
+    # 1) message_type: nullable로 추가 -> backfill -> NOT NULL + CHECK
     op.add_column(
         "user_notifications",
-        sa.Column("category", sa.String(length=20), nullable=True),
+        sa.Column("message_type", sa.String(length=20), nullable=True),
     )
     op.execute(
-        "UPDATE user_notifications SET category = "
-        "CASE WHEN kind = 'benefit' THEN 'marketing' ELSE 'service' END"
+        "UPDATE user_notifications SET message_type = "
+        "CASE WHEN kind = 'benefit' THEN 'marketing' ELSE 'transactional' END"
     )
-    op.alter_column("user_notifications", "category", nullable=False)
+    op.alter_column("user_notifications", "message_type", nullable=False)
     op.create_check_constraint(
-        op.f("ck_user_notifications_category_allowed"),
+        op.f("ck_user_notifications_message_type_allowed"),
         "user_notifications",
-        "category IN ('service', 'marketing')",
+        "message_type IN ('transactional', 'marketing')",
     )
 
     # 2) title: nullable로 추가 -> backfill(kind별 매핑, ELSE '알림') -> NOT NULL
@@ -182,8 +182,8 @@ def downgrade() -> None:
     op.drop_column("user_notifications", "title")
 
     op.drop_constraint(
-        op.f("ck_user_notifications_category_allowed"),
+        op.f("ck_user_notifications_message_type_allowed"),
         "user_notifications",
         type_="check",
     )
-    op.drop_column("user_notifications", "category")
+    op.drop_column("user_notifications", "message_type")

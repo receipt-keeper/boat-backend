@@ -72,7 +72,7 @@ def test_generalize_notifications_migration_backfills_legacy_rows(
         # And: head(20260705_0013)로 upgrade한다.
         command.upgrade(config, "head")
 
-        # Then: category/title/resource backfill과 제약조건이 계약과 일치한다.
+        # Then: message_type/title/resource backfill과 제약조건이 계약과 일치한다.
         anyio.run(assert_backfill_is_correct, postgres_async_database_url, row_ids)
     finally:
         if upgraded:
@@ -99,7 +99,7 @@ def test_generalize_notifications_migration_downgrade_round_trip(
         # When: downgrade로 이전 리비전까지 내린다.
         command.downgrade(config, _PRE_MIGRATION_REVISION)
 
-        # Then: target_type/target_id가 복원되고 category/title 컬럼은 사라진다.
+        # Then: target_type/target_id가 복원되고 message_type/title 컬럼은 사라진다.
         anyio.run(_assert_downgrade_restored_legacy_columns, postgres_async_database_url)
 
         # And: 다시 head로 upgrade해도 성공한다.
@@ -168,7 +168,7 @@ async def _assert_downgrade_restored_legacy_columns(database_url: str) -> None:
             assert "target_id" in column_names
             assert "resource_type" not in column_names
             assert "resource_id" not in column_names
-            assert "category" not in column_names
+            assert "message_type" not in column_names
             assert "title" not in column_names
             assert "metadata" not in column_names
 
@@ -211,11 +211,12 @@ async def _insert_head_rows_with_opaque_values(database_url: str) -> tuple[UUID,
                 text(
                     """
                     INSERT INTO user_notifications
-                        (id, user_id, category, kind, title, message, resource_type, resource_id)
+                        (id, user_id, message_type, kind, title, message,
+                         resource_type, resource_id)
                     VALUES
-                        (:opaque_resource_id, :user_id, 'service', 'warranty_risk',
+                        (:opaque_resource_id, :user_id, 'transactional', 'warranty_risk',
                          '보증 만료 임박', '냉장고 보증이 30일 뒤 만료돼요', 'file', :resource_id),
-                        (:opaque_kind_id, :user_id, 'service', 'ocr_completed',
+                        (:opaque_kind_id, :user_id, 'transactional', 'ocr_completed',
                          '영수증 분석 완료', '영수증 정보가 등록됐어요', NULL, NULL)
                     """
                 ),
@@ -264,7 +265,7 @@ async def _assert_head_columns_present(database_url: str) -> None:
     try:
         async with engine.connect() as connection:
             column_names = await _column_names(connection)
-            assert "category" in column_names
+            assert "message_type" in column_names
             assert "title" in column_names
             assert "resource_type" in column_names
             assert "resource_id" in column_names

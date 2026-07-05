@@ -6,7 +6,7 @@ from pydantic import ConfigDict, Field
 from app.core.http.responses import AppBaseModel, CursorPaginationResponse
 from app.modules.notifications.domain.value_objects import (
     DevicePlatform,
-    NotificationCategory,
+    NotificationMessageType,
 )
 
 
@@ -17,7 +17,7 @@ class CreateNotificationRequest(AppBaseModel):
         json_schema_extra={
             "examples": [
                 {
-                    "category": "marketing",
+                    "messageType": "marketing",
                     "kind": "benefit",
                     "title": "혜택 안내",
                     "message": "이번 달 혜택을 확인해 보세요.",
@@ -29,8 +29,13 @@ class CreateNotificationRequest(AppBaseModel):
         },
     )
 
-    category: NotificationCategory = Field(
-        description="알림 분류. 마케팅 수신 동의 게이트는 이 값으로만 집행된다.",
+    message_type: NotificationMessageType = Field(
+        alias="messageType",
+        description=(
+            "알림 메시지 유형. transactional=거래성(사용자 행동에서 파생, 동의 불필요), "
+            "marketing=광고성(마케팅 수신 동의 필요). 마케팅 수신 동의 게이트는 이 값으로만 "
+            "집행된다. 참고: transactional은 결제나 DB 처리 단위와 무관한 메시징 업계 용어다."
+        ),
         examples=["marketing"],
     )
     kind: str = Field(
@@ -73,7 +78,13 @@ class CreateNotificationRequest(AppBaseModel):
 
 class NotificationResponse(AppBaseModel):
     notification_id: UUID = Field(alias="notificationId", description="알림 ID.")
-    category: NotificationCategory = Field(description="알림 분류.")
+    message_type: NotificationMessageType = Field(
+        alias="messageType",
+        description=(
+            "알림 메시지 유형. transactional=거래성(사용자 행동에서 파생, 동의 불필요), "
+            "marketing=광고성(마케팅 수신 동의 필요)."
+        ),
+    )
     kind: str = Field(description="알림 유형을 나타내는 발신자 소유 식별자.")
     title: str = Field(description="알림 제목.")
     message: str = Field(description="알림 문구.")

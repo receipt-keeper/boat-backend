@@ -61,7 +61,7 @@ from app.modules.notifications.domain.model import (
 )
 from app.modules.notifications.domain.value_objects import (
     DevicePlatform,
-    NotificationCategory,
+    NotificationMessageType,
 )
 from app.modules.notifications.tests.test_application import (
     CREATED_AT,
@@ -93,7 +93,7 @@ def _send_push_use_case(
 
 def _send_push_command(
     *,
-    category: NotificationCategory = NotificationCategory.SERVICE,
+    message_type: NotificationMessageType = NotificationMessageType.TRANSACTIONAL,
     kind: str,
     title: str,
     message: str,
@@ -101,7 +101,7 @@ def _send_push_command(
     return SendNotificationPushCommand(
         user_id=TEST_USER_ID,
         notification_id=uuid4(),
-        category=category,
+        message_type=message_type,
         kind=kind,
         title=title,
         message=message,
@@ -127,7 +127,7 @@ async def test_create_notification_commits_once_and_returns_expected_result() ->
     result = await use_case.execute(
         CreateNotificationCommand(
             user_id=TEST_USER_ID,
-            category=NotificationCategory.SERVICE,
+            message_type=NotificationMessageType.TRANSACTIONAL,
             kind="registration_prompt",
             title="영수증 등록 안내",
             message="영수증을 등록해 보세요.",
@@ -142,7 +142,7 @@ async def test_create_notification_commits_once_and_returns_expected_result() ->
     assert unit_of_work.commit_count == 1
     assert repository.create_count == 1
     assert saved.user_id == TEST_USER_ID
-    assert result.category == NotificationCategory.SERVICE
+    assert result.message_type == NotificationMessageType.TRANSACTIONAL
     assert result.kind == "registration_prompt"
     assert result.title == "영수증 등록 안내"
     assert result.message == "영수증을 등록해 보세요."
@@ -157,7 +157,7 @@ async def test_create_notification_commits_once_and_returns_expected_result() ->
     assert isinstance(published_event, NotificationCreated)
     assert published_event.notification_id == result.notification_id
     assert published_event.user_id == TEST_USER_ID
-    assert published_event.category == NotificationCategory.SERVICE
+    assert published_event.message_type == NotificationMessageType.TRANSACTIONAL
     assert published_event.kind == "registration_prompt"
     assert published_event.title == "영수증 등록 안내"
     assert published_event.message == "영수증을 등록해 보세요."
@@ -170,7 +170,7 @@ def test_restore_does_not_record_creation_event() -> None:
     restored = UserNotification.restore(
         notification_id=uuid4(),
         user_id=TEST_USER_ID,
-        category=NotificationCategory.SERVICE,
+        message_type=NotificationMessageType.TRANSACTIONAL,
         kind="warranty_risk",
         title="보증 만료 임박",
         message="냉장고 보증이 30일 뒤 만료돼요.",
@@ -206,7 +206,7 @@ async def test_create_notification_succeeds_when_event_publish_fails() -> None:
     result = await use_case.execute(
         CreateNotificationCommand(
             user_id=TEST_USER_ID,
-            category=NotificationCategory.SERVICE,
+            message_type=NotificationMessageType.TRANSACTIONAL,
             kind="warranty_risk",
             title="보증 만료 임박",
             message="냉장고 보증이 30일 뒤 만료돼요.",
@@ -234,7 +234,7 @@ async def test_create_notification_propagates_validation_without_commit() -> Non
         await use_case.execute(
             CreateNotificationCommand(
                 user_id=TEST_USER_ID,
-                category=NotificationCategory.MARKETING,
+                message_type=NotificationMessageType.MARKETING,
                 kind="benefit",
                 title="혜택 안내",
                 message=" 앞뒤 공백은 허용되지 않습니다.",
@@ -264,7 +264,7 @@ async def test_create_notification_rejects_resource_pair_mismatch_without_commit
         await use_case.execute(
             CreateNotificationCommand(
                 user_id=TEST_USER_ID,
-                category=NotificationCategory.SERVICE,
+                message_type=NotificationMessageType.TRANSACTIONAL,
                 kind="registration_prompt",
                 title="영수증 등록 안내",
                 message="영수증을 등록해 보세요.",
@@ -294,7 +294,7 @@ async def test_create_notification_rejects_oversized_kind_without_commit() -> No
         await use_case.execute(
             CreateNotificationCommand(
                 user_id=TEST_USER_ID,
-                category=NotificationCategory.SERVICE,
+                message_type=NotificationMessageType.TRANSACTIONAL,
                 kind="a" * 51,
                 title="제목",
                 message="문구",
@@ -322,7 +322,7 @@ async def test_create_notification_rejects_oversized_title_without_commit() -> N
         await use_case.execute(
             CreateNotificationCommand(
                 user_id=TEST_USER_ID,
-                category=NotificationCategory.SERVICE,
+                message_type=NotificationMessageType.TRANSACTIONAL,
                 kind="benefit",
                 title="a" * 101,
                 message="문구",
@@ -378,7 +378,7 @@ async def test_send_notification_push_sends_to_registered_devices() -> None:
     assert sent_message.body == "보증 만료가 임박했습니다."
     assert sent_message.data == {
         "notificationId": str(command.notification_id),
-        "category": "service",
+        "messageType": "transactional",
         "kind": "warranty_risk",
     }
     assert unit_of_work.commit_count == 0
@@ -405,7 +405,7 @@ async def test_send_notification_push_includes_resource_fields_when_present() ->
     command = SendNotificationPushCommand(
         user_id=TEST_USER_ID,
         notification_id=uuid4(),
-        category=NotificationCategory.SERVICE,
+        message_type=NotificationMessageType.TRANSACTIONAL,
         kind="warranty_risk",
         title="보증 만료 임박",
         message="보증 만료가 임박했습니다.",
@@ -420,7 +420,7 @@ async def test_send_notification_push_includes_resource_fields_when_present() ->
     _, sent_message = push_sender.calls[0]
     assert sent_message.data == {
         "notificationId": str(command.notification_id),
-        "category": "service",
+        "messageType": "transactional",
         "kind": "warranty_risk",
         "resourceType": "receipt",
         "resourceId": str(receipt_id),
@@ -451,7 +451,7 @@ async def test_send_notification_push_skips_when_push_disabled() -> None:
     # When: 알림 푸시 발송을 실행한다.
     await use_case.execute(
         _send_push_command(
-            category=NotificationCategory.MARKETING,
+            message_type=NotificationMessageType.MARKETING,
             kind="benefit",
             title="혜택 안내",
             message="이번 달 혜택을 확인해 보세요.",
@@ -552,7 +552,7 @@ async def test_send_marketing_push_skips_without_marketing_consent() -> None:
     # When: 마케팅성(marketing) 알림 푸시 발송을 실행한다.
     await use_case.execute(
         _send_push_command(
-            category=NotificationCategory.MARKETING,
+            message_type=NotificationMessageType.MARKETING,
             kind="benefit",
             title="혜택 안내",
             message="이번 달 혜택을 확인해 보세요.",
@@ -583,14 +583,14 @@ async def test_send_service_push_sends_without_marketing_consent() -> None:
     # When: service 알림 푸시 발송을 실행한다.
     await use_case.execute(
         _send_push_command(
-            category=NotificationCategory.SERVICE,
+            message_type=NotificationMessageType.TRANSACTIONAL,
             kind="credit_prompt",
             title="크레딧 안내",
             message="분석 가능 횟수를 확인해 보세요.",
         )
     )
 
-    # Then: category가 marketing이 아니므로 마케팅 동의 없이도 발송된다.
+    # Then: message_type가 marketing이 아니므로 마케팅 동의 없이도 발송된다.
     assert len(push_sender.calls) == 1
 
 
@@ -619,7 +619,7 @@ async def test_send_marketing_push_sends_with_marketing_consent() -> None:
     # When: 마케팅성(marketing) 알림 푸시 발송을 실행한다.
     await use_case.execute(
         _send_push_command(
-            category=NotificationCategory.MARKETING,
+            message_type=NotificationMessageType.MARKETING,
             kind="benefit",
             title="혜택 안내",
             message="이번 달 혜택을 확인해 보세요.",
@@ -637,7 +637,7 @@ async def test_mark_notification_read_commits_once_and_returns_expected_result()
     repository = InMemoryNotificationRepository()
     notification = UserNotification.create(
         user_id=TEST_USER_ID,
-        category=NotificationCategory.SERVICE,
+        message_type=NotificationMessageType.TRANSACTIONAL,
         kind="warranty_notice",
         title="보증 기간 안내",
         message="보증 만료가 다가옵니다.",
@@ -664,7 +664,7 @@ async def test_mark_notification_read_commits_once_and_returns_expected_result()
     assert unit_of_work.commit_count == 1
     assert repository.mark_read_count == 1
     assert result.notification_id == notification.id
-    assert result.category == NotificationCategory.SERVICE
+    assert result.message_type == NotificationMessageType.TRANSACTIONAL
     assert result.kind == "warranty_notice"
     assert result.title == "보증 기간 안내"
     assert result.message == "보증 만료가 다가옵니다."
@@ -697,7 +697,7 @@ async def test_mark_foreign_notification_raises_not_found_without_commit() -> No
     repository = InMemoryNotificationRepository()
     foreign_notification = UserNotification.create(
         user_id=OTHER_USER_ID,
-        category=NotificationCategory.MARKETING,
+        message_type=NotificationMessageType.MARKETING,
         kind="benefit",
         title="혜택 안내",
         message="다른 사용자 알림입니다.",

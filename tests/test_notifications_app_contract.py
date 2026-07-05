@@ -12,7 +12,7 @@ from tests.support.notifications_contract import (
 NOTIFICATION_RESPONSE_FIELDS: Final[frozenset[str]] = frozenset(
     {
         "notificationId",
-        "category",
+        "messageType",
         "kind",
         "title",
         "message",
@@ -27,6 +27,7 @@ NOTIFICATION_SETTINGS_FIELDS: Final[frozenset[str]] = frozenset({"pushEnabled", 
 NOTIFICATION_SNAKE_CASE_FIELDS: Final[frozenset[str]] = frozenset(
     {
         "notification_id",
+        "message_type",
         "resource_type",
         "resource_id",
         "created_at",
@@ -49,7 +50,7 @@ async def test_notifications_match_cursor_paging_contract() -> None:
     test_app = create_notifications_contract_app()
     payloads = [
         {
-            "category": "service",
+            "messageType": "transactional",
             "kind": "registration_prompt",
             "title": "영수증 등록 안내",
             "message": "영수증을 등록하면 보증 만료 알림을 받을 수 있어요.",
@@ -58,13 +59,13 @@ async def test_notifications_match_cursor_paging_contract() -> None:
             "metadata": {"subCategory": "receiptUpload"},
         },
         {
-            "category": "marketing",
+            "messageType": "marketing",
             "kind": "benefit",
             "title": "혜택 안내",
             "message": "이번 달 혜택을 확인해 보세요.",
         },
         {
-            "category": "service",
+            "messageType": "transactional",
             "kind": "credit_prompt",
             "title": "크레딧 안내",
             "message": "분석 가능 횟수를 확인해 보세요.",
@@ -154,7 +155,7 @@ def test_notifications_openapi_uses_camel_case_contract() -> None:
 
     assert notification_fields == NOTIFICATION_RESPONSE_FIELDS
     assert create_fields == {
-        "category",
+        "messageType",
         "kind",
         "title",
         "message",

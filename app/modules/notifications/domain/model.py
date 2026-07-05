@@ -10,9 +10,9 @@ from app.modules.notifications.domain.events import NotificationCreated
 from app.modules.notifications.domain.value_objects import (
     DevicePlatform,
     Fid,
-    NotificationCategory,
     NotificationKind,
     NotificationMessage,
+    NotificationMessageType,
     NotificationMetadata,
     NotificationTitle,
     ResourceType,
@@ -34,7 +34,7 @@ def _validate_resource_pair(resource_type: str | None, resource_id: UUID | None)
 @dataclass(eq=False)
 class UserNotification(Entity[UUID]):
     user_id: UUID
-    category: NotificationCategory
+    message_type: NotificationMessageType
     kind: NotificationKind
     title: NotificationTitle
     message: NotificationMessage
@@ -49,7 +49,7 @@ class UserNotification(Entity[UUID]):
         cls,
         *,
         user_id: UUID,
-        category: NotificationCategory,
+        message_type: NotificationMessageType,
         kind: str,
         title: str,
         message: str,
@@ -63,7 +63,7 @@ class UserNotification(Entity[UUID]):
         created = cls._assemble(
             notification_id=notification_id,
             user_id=user_id,
-            category=category,
+            message_type=message_type,
             kind=kind,
             title=title,
             message=message,
@@ -77,7 +77,7 @@ class UserNotification(Entity[UUID]):
             NotificationCreated(
                 notification_id=created.id,
                 user_id=created.user_id,
-                category=created.category,
+                message_type=created.message_type,
                 kind=created.kind.value,
                 title=created.title.value,
                 message=created.message.value,
@@ -95,7 +95,7 @@ class UserNotification(Entity[UUID]):
         *,
         notification_id: UUID,
         user_id: UUID,
-        category: NotificationCategory,
+        message_type: NotificationMessageType,
         kind: str,
         title: str,
         message: str,
@@ -109,7 +109,7 @@ class UserNotification(Entity[UUID]):
         return cls._assemble(
             notification_id=notification_id,
             user_id=user_id,
-            category=category,
+            message_type=message_type,
             kind=kind,
             title=title,
             message=message,
@@ -126,7 +126,7 @@ class UserNotification(Entity[UUID]):
         *,
         notification_id: UUID | None,
         user_id: UUID,
-        category: NotificationCategory,
+        message_type: NotificationMessageType,
         kind: str,
         title: str,
         message: str,
@@ -154,7 +154,7 @@ class UserNotification(Entity[UUID]):
         return cls(
             id=notification_id or uuid4(),
             user_id=user_id,
-            category=category,
+            message_type=message_type,
             kind=new_kind,
             title=new_title,
             message=new_message,
@@ -169,7 +169,7 @@ class UserNotification(Entity[UUID]):
         return UserNotification(
             id=self.id,
             user_id=self.user_id,
-            category=self.category,
+            message_type=self.message_type,
             kind=self.kind,
             title=self.title,
             message=self.message,

@@ -27,7 +27,7 @@ async def test_list_notifications_returns_persisted_current_user_notifications(
                 orm.UserNotification(
                     id=newer_notification_id,
                     user_id=TEST_USER_ID,
-                    category="service",
+                    message_type="transactional",
                     kind="registration_prompt",
                     title="영수증 등록 안내",
                     message="영수증을 등록해 보세요.",
@@ -39,7 +39,7 @@ async def test_list_notifications_returns_persisted_current_user_notifications(
                 orm.UserNotification(
                     id=older_notification_id,
                     user_id=TEST_USER_ID,
-                    category="service",
+                    message_type="transactional",
                     kind="registration_prompt",
                     title="영수증 등록 안내",
                     message="이전 알림입니다.",
@@ -51,7 +51,7 @@ async def test_list_notifications_returns_persisted_current_user_notifications(
                 orm.UserNotification(
                     id=other_notification_id,
                     user_id=UUID("00000000-0000-0000-0000-000000000201"),
-                    category="marketing",
+                    message_type="marketing",
                     kind="benefit",
                     title="혜택 안내",
                     message="다른 사용자 알림입니다.",
@@ -74,7 +74,7 @@ async def test_list_notifications_returns_persisted_current_user_notifications(
     assert first_body["data"]["notifications"] == [
         {
             "notificationId": str(newer_notification_id),
-            "category": "service",
+            "messageType": "transactional",
             "kind": "registration_prompt",
             "title": "영수증 등록 안내",
             "message": "영수증을 등록해 보세요.",
@@ -98,7 +98,7 @@ async def test_list_notifications_returns_persisted_current_user_notifications(
             orm.UserNotification(
                 id=inserted_notification_id,
                 user_id=TEST_USER_ID,
-                category="marketing",
+                message_type="marketing",
                 kind="benefit",
                 title="혜택 안내",
                 message="새로 도착한 알림입니다.",
@@ -139,7 +139,7 @@ async def test_list_notifications_uses_id_tiebreaker_for_same_created_at_cursor(
                 orm.UserNotification(
                     id=higher_notification_id,
                     user_id=TEST_USER_ID,
-                    category="service",
+                    message_type="transactional",
                     kind="registration_prompt",
                     title="영수증 등록 안내",
                     message="같은 시각의 최신 알림입니다.",
@@ -151,7 +151,7 @@ async def test_list_notifications_uses_id_tiebreaker_for_same_created_at_cursor(
                 orm.UserNotification(
                     id=lower_notification_id,
                     user_id=TEST_USER_ID,
-                    category="service",
+                    message_type="transactional",
                     kind="registration_prompt",
                     title="영수증 등록 안내",
                     message="같은 시각의 다음 알림입니다.",
@@ -163,7 +163,7 @@ async def test_list_notifications_uses_id_tiebreaker_for_same_created_at_cursor(
                 orm.UserNotification(
                     id=older_notification_id,
                     user_id=TEST_USER_ID,
-                    category="marketing",
+                    message_type="marketing",
                     kind="benefit",
                     title="혜택 안내",
                     message="이전 시각의 알림입니다.",
@@ -301,7 +301,7 @@ async def test_mark_notification_read_persists_for_current_user(
 ) -> None:
     # Given: 현재 사용자의 읽지 않은 알림이 생성되어 있다.
     payload = {
-        "category": "service",
+        "messageType": "transactional",
         "kind": "registration_prompt",
         "title": "영수증 등록 안내",
         "message": "보증 관리를 위해 영수증을 등록해 주세요.",
@@ -356,7 +356,7 @@ async def test_mark_foreign_notification_returns_not_found_envelope(
 ) -> None:
     # Given: 다른 사용자에게 알림이 생성되어 있다.
     payload = {
-        "category": "marketing",
+        "messageType": "marketing",
         "kind": "benefit",
         "title": "혜택 안내",
         "message": "다른 사용자에게만 보이는 알림입니다.",

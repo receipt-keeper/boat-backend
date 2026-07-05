@@ -9,7 +9,7 @@ from app.modules.notifications.domain.model import (
 )
 from app.modules.notifications.domain.value_objects import (
     DevicePlatform,
-    NotificationCategory,
+    NotificationMessageType,
 )
 from app.modules.notifications.infrastructure.persistence import orm
 
@@ -18,7 +18,7 @@ def notification_to_domain(record: orm.UserNotification) -> DomainUserNotificati
     return DomainUserNotification.restore(
         notification_id=record.id,
         user_id=record.user_id,
-        category=NotificationCategory(record.category),
+        message_type=NotificationMessageType(record.message_type),
         kind=record.kind,
         title=record.title,
         message=record.message,
@@ -36,7 +36,7 @@ def notification_to_record(
     return orm.UserNotification(
         id=notification.id,
         user_id=notification.user_id,
-        category=notification.category.value,
+        message_type=notification.message_type.value,
         kind=notification.kind.value,
         title=notification.title.value,
         message=notification.message.value,

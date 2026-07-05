@@ -17,7 +17,7 @@ async def test_create_notification_returns_created_common_response(
     postgres_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     payload = {
-        "category": "service",
+        "messageType": "transactional",
         "kind": "registration_prompt",
         "title": "영수증 등록 안내",
         "message": "영수증을 등록해 보세요.",
@@ -32,7 +32,7 @@ async def test_create_notification_returns_created_common_response(
     assert response.status_code == 201
     assert body["success"] is True
     assert body["status"] == 201
-    assert body["data"]["category"] == "service"
+    assert body["data"]["messageType"] == "transactional"
     assert body["data"]["kind"] == "registration_prompt"
     assert body["data"]["title"] == "영수증 등록 안내"
     assert body["data"]["message"] == "영수증을 등록해 보세요."
@@ -50,7 +50,7 @@ async def test_create_notification_persists_to_current_user_list(
     postgres_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     payload = {
-        "category": "marketing",
+        "messageType": "marketing",
         "kind": "benefit",
         "title": "혜택 안내",
         "message": "이번 달 혜택을 확인해 보세요.",
@@ -86,7 +86,7 @@ async def test_create_notification_rejects_extra_field_contract(
     postgres_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     payload = {
-        "category": "service",
+        "messageType": "transactional",
         "kind": "registration_prompt",
         "title": "영수증 등록 안내",
         "message": "영수증을 등록해 보세요.",
@@ -113,7 +113,7 @@ async def test_create_notification_rejects_resource_pair_mismatch(
     receipt_id = UUID("00000000-0000-0000-0000-000000000701")
     invalid_payloads = [
         {
-            "category": "service",
+            "messageType": "transactional",
             "kind": "benefit",
             "title": "혜택 안내",
             "message": "영수증 상세를 확인해 보세요.",
@@ -121,7 +121,7 @@ async def test_create_notification_rejects_resource_pair_mismatch(
             "resourceId": None,
         },
         {
-            "category": "service",
+            "messageType": "transactional",
             "kind": "benefit",
             "title": "혜택 안내",
             "message": "이번 달 혜택을 확인해 보세요.",
@@ -144,13 +144,13 @@ async def test_create_notification_rejects_oversized_kind_and_title(
 ) -> None:
     invalid_payloads = [
         {
-            "category": "service",
+            "messageType": "transactional",
             "kind": "a" * 51,
             "title": "제목",
             "message": "문구",
         },
         {
-            "category": "service",
+            "messageType": "transactional",
             "kind": "benefit",
             "title": "a" * 101,
             "message": "문구",
@@ -183,7 +183,7 @@ async def test_create_notification_sends_push_to_registered_device(
         response = await client.post(
             "/api/v1/notifications",
             json={
-                "category": "service",
+                "messageType": "transactional",
                 "kind": "credit_prompt",
                 "title": "크레딧 안내",
                 "message": "분석 가능 횟수를 확인해 보세요.",
@@ -218,7 +218,7 @@ async def test_create_marketing_notification_skips_push_without_marketing_consen
         response = await client.post(
             "/api/v1/notifications",
             json={
-                "category": "marketing",
+                "messageType": "marketing",
                 "kind": "benefit",
                 "title": "혜택 안내",
                 "message": "이번 달 혜택을 확인해 보세요.",
@@ -248,7 +248,7 @@ async def test_create_notification_removes_registration_rejected_by_fcm(
         response = await client.post(
             "/api/v1/notifications",
             json={
-                "category": "service",
+                "messageType": "transactional",
                 "kind": "credit_prompt",
                 "title": "크레딧 안내",
                 "message": "분석 가능 횟수를 확인해 보세요.",
@@ -267,7 +267,7 @@ async def test_create_notification_with_resource_pair_returns_created(
 ) -> None:
     receipt_id = uuid4()
     payload = {
-        "category": "service",
+        "messageType": "transactional",
         "kind": "warranty_risk",
         "title": "보증 만료 임박",
         "message": "보증 만료가 임박했습니다.",
@@ -288,7 +288,7 @@ async def test_create_notification_with_metadata_returns_created_and_exposed(
     postgres_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     payload = {
-        "category": "service",
+        "messageType": "transactional",
         "kind": "warranty_risk",
         "title": "보증 만료 임박",
         "message": "보증 만료가 임박했습니다.",
@@ -315,7 +315,7 @@ async def test_create_notification_without_metadata_defaults_to_empty_object(
     postgres_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     payload = {
-        "category": "service",
+        "messageType": "transactional",
         "kind": "registration_prompt",
         "title": "영수증 등록 안내",
         "message": "영수증을 등록해 보세요.",
@@ -333,28 +333,28 @@ async def test_create_notification_rejects_oversized_metadata(
     postgres_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     too_many_keys_payload = {
-        "category": "service",
+        "messageType": "transactional",
         "kind": "registration_prompt",
         "title": "영수증 등록 안내",
         "message": "영수증을 등록해 보세요.",
         "metadata": {f"key{i}": "value" for i in range(51)},
     }
     oversized_key_payload = {
-        "category": "service",
+        "messageType": "transactional",
         "kind": "registration_prompt",
         "title": "영수증 등록 안내",
         "message": "영수증을 등록해 보세요.",
         "metadata": {"a" * 41: "value"},
     }
     oversized_value_payload = {
-        "category": "service",
+        "messageType": "transactional",
         "kind": "registration_prompt",
         "title": "영수증 등록 안내",
         "message": "영수증을 등록해 보세요.",
         "metadata": {"key": "a" * 501},
     }
     blank_key_payload = {
-        "category": "service",
+        "messageType": "transactional",
         "kind": "registration_prompt",
         "title": "영수증 등록 안내",
         "message": "영수증을 등록해 보세요.",
@@ -382,7 +382,7 @@ async def test_create_notification_accepts_boundary_metadata(
     boundary_metadata = {f"k{i}": "v" * 500 for i in range(49)}
     boundary_metadata["a" * 40] = "boundary"
     payload = {
-        "category": "service",
+        "messageType": "transactional",
         "kind": "registration_prompt",
         "title": "영수증 등록 안내",
         "message": "영수증을 등록해 보세요.",

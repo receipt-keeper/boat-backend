@@ -39,7 +39,7 @@ class CreateNotificationCommandUseCase:
     async def execute(self, command: CreateNotificationCommand) -> CreateNotificationResult:
         notification = UserNotification.create(
             user_id=command.user_id,
-            category=command.category,
+            message_type=command.message_type,
             kind=command.kind,
             title=command.title,
             message=command.message,
@@ -62,7 +62,7 @@ class CreateNotificationCommandUseCase:
             )
         return CreateNotificationResult(
             notification_id=saved.id,
-            category=saved.category,
+            message_type=saved.message_type,
             kind=saved.kind.value,
             title=saved.title.value,
             message=saved.message.value,

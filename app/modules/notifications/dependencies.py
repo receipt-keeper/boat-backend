@@ -118,7 +118,7 @@ async def _handle_notification_created(
         SendNotificationPushCommand(
             user_id=event.user_id,
             notification_id=event.notification_id,
-            category=event.category,
+            message_type=event.message_type,
             kind=event.kind,
             title=event.title,
             message=event.message,

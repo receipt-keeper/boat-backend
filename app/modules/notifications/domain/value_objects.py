@@ -7,8 +7,8 @@ from app.core.domain.exceptions import ErrorDetail, ValidationError
 from app.core.domain.value_object import ValueObject
 
 
-class NotificationCategory(StrEnum):
-    SERVICE = "service"
+class NotificationMessageType(StrEnum):
+    TRANSACTIONAL = "transactional"
     MARKETING = "marketing"
 
 

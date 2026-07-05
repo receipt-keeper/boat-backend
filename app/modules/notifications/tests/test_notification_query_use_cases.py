@@ -11,7 +11,7 @@ from app.modules.notifications.application.queries.list_notifications.use_case i
     ListNotificationsQueryUseCase,
 )
 from app.modules.notifications.domain.model import NotificationSettings, UserNotification
-from app.modules.notifications.domain.value_objects import NotificationCategory
+from app.modules.notifications.domain.value_objects import NotificationMessageType
 from app.modules.notifications.tests.test_application import (
     CREATED_AT,
     TEST_USER_ID,
@@ -24,7 +24,7 @@ async def test_list_notifications_returns_user_page_without_writes() -> None:
     repository = InMemoryNotificationRepository()
     notification = UserNotification.create(
         user_id=TEST_USER_ID,
-        category=NotificationCategory.SERVICE,
+        message_type=NotificationMessageType.TRANSACTIONAL,
         kind="warranty_notice",
         title="보증 기간 안내",
         message="보증 만료가 다가옵니다.",

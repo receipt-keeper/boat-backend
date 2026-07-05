@@ -41,7 +41,7 @@ class MarkNotificationReadCommandUseCase:
         await self._unit_of_work.commit()
         return MarkNotificationReadResult(
             notification_id=notification.id,
-            category=notification.category,
+            message_type=notification.message_type,
             kind=notification.kind.value,
             title=notification.title.value,
             message=notification.message.value,

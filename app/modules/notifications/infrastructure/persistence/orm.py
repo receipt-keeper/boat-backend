@@ -21,8 +21,8 @@ class UserNotification(Base):
             "id",
         ),
         CheckConstraint(
-            "category IN ('service', 'marketing')",
-            name=conv("ck_user_notifications_category_allowed"),
+            "message_type IN ('transactional', 'marketing')",
+            name=conv("ck_user_notifications_message_type_allowed"),
         ),
         CheckConstraint(
             "(resource_type IS NULL) = (resource_id IS NULL)",
@@ -40,7 +40,7 @@ class UserNotification(Base):
         nullable=False,
         index=True,
     )
-    category: Mapped[str] = mapped_column(type_=String(20), nullable=False)
+    message_type: Mapped[str] = mapped_column(type_=String(20), nullable=False)
     kind: Mapped[str] = mapped_column(type_=String(50), nullable=False)
     title: Mapped[str] = mapped_column(type_=String(100), nullable=False)
     message: Mapped[str] = mapped_column(type_=String(255), nullable=False)

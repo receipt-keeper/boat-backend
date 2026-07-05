@@ -45,7 +45,7 @@ from app.modules.notifications.dependencies import (
     UnregisterDeviceTokenCommandUseCaseDep,
     UpdateNotificationSettingsCommandUseCaseDep,
 )
-from app.modules.notifications.domain.value_objects import NotificationCategory
+from app.modules.notifications.domain.value_objects import NotificationMessageType
 
 
 class _NotificationResult(Protocol):
@@ -53,7 +53,7 @@ class _NotificationResult(Protocol):
     def notification_id(self) -> UUID: ...
 
     @property
-    def category(self) -> NotificationCategory: ...
+    def message_type(self) -> NotificationMessageType: ...
 
     @property
     def kind(self) -> str: ...
@@ -140,8 +140,9 @@ async def list_notifications(
     summary="알림 생성",
     description=(
         "현재 사용자에게 표시할 앱 알림을 생성한다. resourceType과 resourceId는 "
-        "함께 있거나 함께 없어야 하며, category가 marketing인 알림은 사용자가 마케팅 "
-        "수신에 동의한 경우에만 발송된다. metadata는 발신자 소유 부가 정보이며 서버는 "
+        "함께 있거나 함께 없어야 하며, messageType이 marketing인 알림은 사용자가 마케팅 "
+        "수신에 동의한 경우에만 발송된다(transactional=거래성, marketing=광고성). "
+        "metadata는 발신자 소유 부가 정보이며 서버는 "
         "형식만 검증하고 내용은 해석하지 않는다. 등록된 디바이스로의 푸시 발송은 응답 반환 "
         "이후 백그라운드에서 진행된다."
     ),
@@ -154,7 +155,7 @@ async def create_notification(
     result = await command_use_case.execute(
         CreateNotificationCommand(
             user_id=principal.user_id,
-            category=request.category,
+            message_type=request.message_type,
             kind=request.kind,
             title=request.title,
             message=request.message,
@@ -301,7 +302,7 @@ async def unregister_device(
 def _notification_response(notification: _NotificationResult) -> NotificationResponse:
     return NotificationResponse(
         notificationId=notification.notification_id,
-        category=notification.category,
+        messageType=notification.message_type,
         kind=notification.kind,
         title=notification.title,
         message=notification.message,

@@ -1,14 +1,14 @@
 from dataclasses import dataclass
 from uuid import UUID
 
-from app.modules.notifications.domain.value_objects import NotificationCategory
+from app.modules.notifications.domain.value_objects import NotificationMessageType
 
 
 @dataclass(frozen=True, slots=True)
 class SendNotificationPushCommand:
     user_id: UUID
     notification_id: UUID
-    category: NotificationCategory
+    message_type: NotificationMessageType
     kind: str
     title: str
     message: str

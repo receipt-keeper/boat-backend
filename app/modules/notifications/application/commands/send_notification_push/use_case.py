@@ -14,7 +14,7 @@ from app.modules.notifications.application.ports.push_sender import (
 from app.modules.notifications.application.ports.push_token_repository import (
     PushTokenRepository,
 )
-from app.modules.notifications.domain.value_objects import NotificationCategory
+from app.modules.notifications.domain.value_objects import NotificationMessageType
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +40,7 @@ class SendNotificationPushCommandUseCase:
             if not settings.push_enabled:
                 return
             is_unconsented_marketing = (
-                command.category == NotificationCategory.MARKETING
+                command.message_type == NotificationMessageType.MARKETING
                 and not settings.marketing_consent
             )
             if is_unconsented_marketing:
@@ -69,7 +69,7 @@ class SendNotificationPushCommandUseCase:
 def _push_data(command: SendNotificationPushCommand) -> dict[str, str]:
     data = {
         "notificationId": str(command.notification_id),
-        "category": command.category.value,
+        "messageType": command.message_type.value,
         "kind": command.kind,
     }
     if command.resource_type is not None:

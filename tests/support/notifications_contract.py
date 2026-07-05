@@ -50,7 +50,7 @@ from app.modules.notifications.dependencies import (
     get_update_notification_settings_command_use_case,
 )
 from app.modules.notifications.domain.model import UserNotification
-from app.modules.notifications.domain.value_objects import NotificationCategory
+from app.modules.notifications.domain.value_objects import NotificationMessageType
 
 TEST_USER_ID: Final = UUID("00000000-0000-0000-0000-000000000101")
 TEST_CREDENTIALS_ID: Final = UUID("00000000-0000-0000-0000-000000000102")
@@ -62,7 +62,7 @@ TEST_SETTINGS: Final = Settings(app_name="Boat Backend")
 class StoredNotification:
     notification_id: UUID
     user_id: UUID
-    category: NotificationCategory
+    message_type: NotificationMessageType
     kind: str
     title: str
     message: str
@@ -91,7 +91,7 @@ class NotificationsContractStore:
         # 프로덕션과 동일한 도메인 검증을 거쳐 계약 앱이 실제 API와 갈라지지 않게 한다.
         domain_notification = UserNotification.create(
             user_id=command.user_id,
-            category=command.category,
+            message_type=command.message_type,
             kind=command.kind,
             title=command.title,
             message=command.message,
@@ -104,7 +104,7 @@ class NotificationsContractStore:
         notification = StoredNotification(
             notification_id=domain_notification.id,
             user_id=domain_notification.user_id,
-            category=domain_notification.category,
+            message_type=domain_notification.message_type,
             kind=domain_notification.kind.value,
             title=domain_notification.title.value,
             message=domain_notification.message.value,
@@ -120,7 +120,7 @@ class NotificationsContractStore:
         self._notifications.append(notification)
         return CreateNotificationResult(
             notification_id=notification.notification_id,
-            category=notification.category,
+            message_type=notification.message_type,
             kind=notification.kind,
             title=notification.title,
             message=notification.message,
@@ -172,7 +172,7 @@ class NotificationsContractStore:
                 self._notifications[index] = read_notification
                 return MarkNotificationReadResult(
                     notification_id=read_notification.notification_id,
-                    category=read_notification.category,
+                    message_type=read_notification.message_type,
                     kind=read_notification.kind,
                     title=read_notification.title,
                     message=read_notification.message,
@@ -222,7 +222,7 @@ def _format_contract_cursor(notification: StoredNotification) -> str:
 def _list_item(notification: StoredNotification) -> NotificationListItemResult:
     return NotificationListItemResult(
         notification_id=notification.notification_id,
-        category=notification.category,
+        message_type=notification.message_type,
         kind=notification.kind,
         title=notification.title,
         message=notification.message,
