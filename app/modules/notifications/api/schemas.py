@@ -163,6 +163,7 @@ class RegisterDeviceRequest(AppBaseModel):
     token: str = Field(
         description=("FCM registration token. FirebaseMessaging에서 발급받은 기기 등록 토큰."),
         examples=["c8z9HXZRSE2jciNYw6yPAD:APA91b..."],
+        max_length=512,
     )
     platform: DevicePlatform = Field(
         description="디바이스 플랫폼.",
