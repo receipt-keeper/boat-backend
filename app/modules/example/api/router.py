@@ -143,6 +143,6 @@ async def send_test_push(
         status=status.HTTP_200_OK,
         data=TestPushResponse(
             targetedDeviceCount=len(tokens),
-            invalidDeviceCount=len(report.invalid_fids),
+            invalidDeviceCount=len(report.invalid_tokens),
         ),
     )

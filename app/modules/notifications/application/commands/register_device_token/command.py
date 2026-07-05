@@ -7,5 +7,5 @@ from app.modules.notifications.domain.value_objects import DevicePlatform
 @dataclass(frozen=True, slots=True)
 class RegisterDeviceTokenCommand:
     user_id: UUID
-    fid: str
+    token: str
     platform: DevicePlatform

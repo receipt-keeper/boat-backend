@@ -13,13 +13,13 @@ class PushTokenRepository(ABC):
         self,
         *,
         user_id: UUID,
-        fid: str,
+        token: str,
         platform: DevicePlatform,
     ) -> UserPushToken:
         raise NotImplementedError
 
     @abstractmethod
-    async def unregister(self, *, user_id: UUID, fid: str) -> None:
+    async def unregister(self, *, user_id: UUID, token: str) -> None:
         raise NotImplementedError
 
     @abstractmethod
@@ -27,7 +27,7 @@ class PushTokenRepository(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def delete_by_fids(self, *, fids: Sequence[str]) -> None:
+    async def delete_by_tokens(self, *, tokens: Sequence[str]) -> None:
         raise NotImplementedError
 
     @abstractmethod

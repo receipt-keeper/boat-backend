@@ -20,6 +20,6 @@ class UnregisterDeviceTokenCommandUseCase:
     async def execute(self, command: UnregisterDeviceTokenCommand) -> None:
         await self._push_token_repository.unregister(
             user_id=command.user_id,
-            fid=command.fid,
+            token=command.token,
         )
         await self._unit_of_work.commit()

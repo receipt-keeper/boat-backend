@@ -9,12 +9,12 @@ from app.core.domain.validation import Notification as ValidationNotification
 from app.modules.notifications.domain.events import NotificationCreated
 from app.modules.notifications.domain.value_objects import (
     DevicePlatform,
-    Fid,
     NotificationKind,
     NotificationMessage,
     NotificationMessageType,
     NotificationMetadata,
     NotificationTitle,
+    RegistrationToken,
     ResourceType,
 )
 
@@ -204,7 +204,7 @@ class NotificationSettings(Entity[UUID]):
 @dataclass(eq=False)
 class UserPushToken(Entity[UUID]):
     user_id: UUID
-    fid: Fid
+    token: RegistrationToken
     platform: DevicePlatform
     created_at: datetime
     updated_at: datetime
@@ -214,20 +214,20 @@ class UserPushToken(Entity[UUID]):
         cls,
         *,
         user_id: UUID,
-        fid: str,
+        token: str,
         platform: DevicePlatform,
         created_at: datetime,
         updated_at: datetime,
         push_token_id: UUID | None = None,
     ) -> "UserPushToken":
         notification = ValidationNotification()
-        new_fid = notification.collect(lambda: Fid(fid))
+        new_token = notification.collect(lambda: RegistrationToken(token))
         notification.raise_if_any()
 
         return cls(
             id=push_token_id or uuid4(),
             user_id=user_id,
-            fid=new_fid,
+            token=new_token,
             platform=platform,
             created_at=created_at,
             updated_at=updated_at,

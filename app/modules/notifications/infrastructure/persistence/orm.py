@@ -102,7 +102,7 @@ class NotificationSettings(Base):
 
 class UserPushToken(Base):
     __tablename__ = "user_push_tokens"
-    __table_args__ = (UniqueConstraint("fid"),)
+    __table_args__ = (UniqueConstraint("token"),)
 
     id: Mapped[UUID] = mapped_column(
         type_=PostgreSQLUUID(as_uuid=True),
@@ -114,7 +114,7 @@ class UserPushToken(Base):
         nullable=False,
         index=True,
     )
-    fid: Mapped[str] = mapped_column(type_=String(255), nullable=False)
+    token: Mapped[str] = mapped_column(type_=String(512), nullable=False)
     platform: Mapped[str] = mapped_column(type_=String(50), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         type_=DateTime(timezone=True),

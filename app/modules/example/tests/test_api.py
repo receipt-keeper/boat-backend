@@ -119,12 +119,12 @@ async def test_send_test_push_sends_to_registered_devices() -> None:
     push_token_repository = InMemoryPushTokenRepository()
     await push_token_repository.register(
         user_id=TEST_USER_ID,
-        fid="fid-1",
+        token="token-1",
         platform=DevicePlatform.ANDROID,
     )
     await push_token_repository.register(
         user_id=UUID("00000000-0000-0000-0000-000000000501"),
-        fid="fid-other",
+        token="token-other",
         platform=DevicePlatform.IOS,
     )
     push_sender = FakePushSender()
@@ -148,7 +148,7 @@ async def test_send_test_push_sends_to_registered_devices() -> None:
     }
     assert len(push_sender.calls) == 1
     sent_tokens, sent_message = push_sender.calls[0]
-    assert [token.fid.value for token in sent_tokens] == ["fid-1"]
+    assert [token.token.value for token in sent_tokens] == ["token-1"]
     assert sent_message.title == "테스트 알림"
     assert sent_message.body == "푸시 연결 확인용 테스트 메시지입니다."
     assert sent_message.data == {"test": "true"}
@@ -159,7 +159,7 @@ async def test_send_test_push_uses_custom_title_and_body() -> None:
     push_token_repository = InMemoryPushTokenRepository()
     await push_token_repository.register(
         user_id=TEST_USER_ID,
-        fid="fid-1",
+        token="token-1",
         platform=DevicePlatform.IOS,
     )
     push_sender = FakePushSender()

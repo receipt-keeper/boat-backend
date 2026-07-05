@@ -41,7 +41,7 @@ def test_notifications_openapi_exposes_create_without_alias_routes() -> None:
     assert set(paths["/api/v1/notifications/{notification_id}"]) == {"patch"}
     assert set(paths["/api/v1/notifications/settings"]) == {"get", "patch"}
     assert set(paths["/api/v1/notifications/devices"]) == {"put"}
-    assert set(paths["/api/v1/notifications/devices/{fid}"]) == {"delete"}
+    assert set(paths["/api/v1/notifications/devices/{token}"]) == {"delete"}
     assert "/api/v1/notifications/device-token" not in paths
     assert "/api/v1/notification-reads/{notification_id}" not in paths
     assert "/api/v1/notification-settings" not in paths

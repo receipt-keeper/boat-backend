@@ -1,4 +1,5 @@
 import asyncio
+import warnings
 from collections.abc import Sequence
 from itertools import batched
 
@@ -64,7 +65,7 @@ class FcmPushSender(PushSender):
         tokens: Sequence[UserPushToken],
         message: PushMessage,
     ) -> PushSendReport:
-        invalid_fids: list[str] = []
+        invalid_tokens: list[str] = []
         for chunk in batched(tokens, _SEND_BATCH_LIMIT):
             fcm_messages = [_to_fcm_message(token, message) for token in chunk]
             try:
@@ -72,17 +73,25 @@ class FcmPushSender(PushSender):
             except firebase_exceptions.FirebaseError as exc:
                 raise ExternalServiceError("푸시 발송에 실패했습니다.") from exc
 
-            invalid_fids.extend(
-                token.fid.value
+            invalid_tokens.extend(
+                token.token.value
                 for token, response in zip(chunk, batch.responses, strict=True)
                 if isinstance(response.exception, _DEAD_REGISTRATION_ERRORS)
             )
-        return PushSendReport(invalid_fids=tuple(invalid_fids))
+        return PushSendReport(invalid_tokens=tuple(invalid_tokens))
 
 
 def _to_fcm_message(token: UserPushToken, message: PushMessage) -> messaging.Message:
-    return messaging.Message(
-        fid=token.fid.value,
-        notification=messaging.Notification(title=message.title, body=message.body),
-        data=dict(message.data),
-    )
+    # firebase-admin 7.5.0에서 Message.token은 DeprecationWarning을 발생시키지만,
+    # 클라이언트(Samsung SMP 래퍼)가 신규 FID 등록 경로를 생성하지 않아 FID 발송이
+    # 수신되지 않는 것이 실측 확정됐다. token 발송은 deprecated지만 제거 공지가 없고
+    # 실제로 동작하므로 의도적으로 사용한다(FID 전환 롤백). pyproject의
+    # filterwarnings=["error"]가 이 경고를 예외로 승격시키므로 이 생성 지점에서만
+    # 국소적으로 억제한다.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        return messaging.Message(
+            token=token.token.value,
+            notification=messaging.Notification(title=message.title, body=message.body),
+            data=dict(message.data),
+        )

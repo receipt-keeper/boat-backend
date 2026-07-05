@@ -55,8 +55,8 @@ class SendNotificationPushCommandUseCase:
                 data=_push_data(command),
             )
             report = await self._push_sender.send(tokens=tokens, message=message)
-            if report.invalid_fids:
-                await self._push_token_repository.delete_by_fids(fids=report.invalid_fids)
+            if report.invalid_tokens:
+                await self._push_token_repository.delete_by_tokens(tokens=report.invalid_tokens)
                 await self._unit_of_work.commit()
         except Exception:
             logger.warning(

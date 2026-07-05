@@ -27,10 +27,10 @@ class _FakeBatchResponse:
         self.responses = responses
 
 
-def _push_token(*, fid: str, platform: DevicePlatform) -> UserPushToken:
+def _push_token(*, token: str, platform: DevicePlatform) -> UserPushToken:
     return UserPushToken.create(
         user_id=uuid4(),
-        fid=fid,
+        token=token,
         platform=platform,
         created_at=CREATED_AT,
         updated_at=CREATED_AT,
@@ -46,8 +46,8 @@ async def test_fcm_push_sender_builds_messages_and_reports_dead_registrations(
 ) -> None:
     # Given: 살아 있는 등록과 해제된 등록이 섞여 있다.
     tokens = [
-        _push_token(fid="fid-live", platform=DevicePlatform.ANDROID),
-        _push_token(fid="fid-dead", platform=DevicePlatform.IOS),
+        _push_token(token="token-live", platform=DevicePlatform.ANDROID),
+        _push_token(token="token-dead", platform=DevicePlatform.IOS),
     ]
     sent_batches: list[list[messaging.Message]] = []
 
@@ -74,13 +74,13 @@ async def test_fcm_push_sender_builds_messages_and_reports_dead_registrations(
     # When: 두 등록에 발송한다.
     report = await _sender().send(tokens=tokens, message=message)
 
-    # Then: 등록별 FCM 메시지가 fid로 구성되고 죽은 등록만 보고된다.
-    assert report.invalid_fids == ("fid-dead",)
+    # Then: 등록별 FCM 메시지가 token으로 구성되고 죽은 등록만 보고된다.
+    assert report.invalid_tokens == ("token-dead",)
     assert len(sent_batches) == 1
     fcm_messages = cast(list[Any], sent_batches[0])
-    assert [fcm_message.fid for fcm_message in fcm_messages] == [
-        "fid-live",
-        "fid-dead",
+    assert [fcm_message.token for fcm_message in fcm_messages] == [
+        "token-live",
+        "token-dead",
     ]
     assert all(fcm_message.notification.title == "혜택 안내" for fcm_message in fcm_messages)
     assert all(
@@ -95,7 +95,7 @@ async def test_fcm_push_sender_splits_sends_into_batches_of_500(
 ) -> None:
     # Given: FCM 배치 한도(500)를 넘는 501개 등록이 있다.
     tokens = [
-        _push_token(fid=f"fid-{index}", platform=DevicePlatform.ANDROID) for index in range(501)
+        _push_token(token=f"token-{index}", platform=DevicePlatform.ANDROID) for index in range(501)
     ]
     sent_batch_sizes: list[int] = []
 
@@ -120,7 +120,7 @@ async def test_fcm_push_sender_splits_sends_into_batches_of_500(
 
     # Then: 500개 단위로 나뉘어 호출되고 무효 등록은 배치 전체에서 집계된다.
     assert sent_batch_sizes == [500, 1]
-    assert report.invalid_fids == ("fid-500",)
+    assert report.invalid_tokens == ("token-500",)
 
 
 async def test_fcm_push_sender_wraps_batch_failure_as_external_service_error(
@@ -135,7 +135,7 @@ async def test_fcm_push_sender_wraps_batch_failure_as_external_service_error(
         raise firebase_exceptions.UnavailableError("FCM 연결 실패")
 
     monkeypatch.setattr(messaging, "send_each", fake_send_each)
-    tokens = [_push_token(fid="fid-1", platform=DevicePlatform.ANDROID)]
+    tokens = [_push_token(token="token-1", platform=DevicePlatform.ANDROID)]
 
     # When/Then: ExternalServiceError로 변환되어 전파된다.
     with pytest.raises(ExternalServiceError):
@@ -148,10 +148,10 @@ async def test_fcm_push_sender_wraps_batch_failure_as_external_service_error(
 async def test_disabled_push_sender_reports_nothing() -> None:
     # Given: 푸시 발송이 꺼진 환경이다.
     sender = DisabledPushSender()
-    tokens = [_push_token(fid="fid-1", platform=DevicePlatform.IOS)]
+    tokens = [_push_token(token="token-1", platform=DevicePlatform.IOS)]
 
     # When: 발송을 요청한다.
     report = await sender.send(tokens=tokens, message=PushMessage(title="제목", body="본문"))
 
     # Then: 아무것도 발송하지 않고 빈 보고를 돌려준다.
-    assert report.invalid_fids == ()
+    assert report.invalid_tokens == ()
