@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 
-from app.core.domain.entity import Entity
+import pytest
+
+from app.core.domain.entity import AggregateRoot, Entity
 from app.core.domain.events import DomainEvent
 
 
@@ -11,6 +13,11 @@ class StubEntity(Entity[int]):
 
 @dataclass(eq=False)
 class OtherEntity(Entity[int]):
+    name: str
+
+
+@dataclass(eq=False)
+class StubAggregateRoot(AggregateRoot[int]):
     name: str
 
 
@@ -32,11 +39,28 @@ def test_entity_is_usable_in_sets() -> None:
     assert entity in {entity}
 
 
-def test_entity_records_and_pulls_domain_events() -> None:
+def test_plain_entity_has_no_record_event() -> None:
     entity = StubEntity(id=1, name="a")
+
+    assert not hasattr(entity, "record_event")
+    with pytest.raises(AttributeError):
+        entity.record_event(DomainEvent())  # type: ignore[attr-defined]
+
+
+def test_aggregate_root_records_and_pulls_domain_events() -> None:
+    root = StubAggregateRoot(id=1, name="a")
     event = DomainEvent()
 
-    entity.record_event(event)
+    root.record_event(event)
 
-    assert entity.pull_events() == [event]
-    assert entity.pull_events() == []
+    assert root.pull_events() == [event]
+    assert root.pull_events() == []
+
+
+def test_aggregate_root_preserves_entity_identity_semantics() -> None:
+    first = StubAggregateRoot(id=1, name="a")
+    second = StubAggregateRoot(id=1, name="b")
+
+    assert first == second
+    assert hash(first) == hash(second)
+    assert isinstance(first, Entity)
