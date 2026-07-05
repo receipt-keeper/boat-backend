@@ -2,8 +2,12 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import Depends
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.application.event_publisher import EventPublisher
 from app.core.application.unit_of_work import UnitOfWork
+from app.core.db.outbox.publisher import OutboxEventPublisher
+from app.core.db.outbox.serialization import EventTypeRegistry
 from app.core.db.session import AsyncSessionDep
 from app.core.db.unit_of_work import SqlAlchemyUnitOfWork
 from app.modules.credits.application.commands.grant_credit.command import GrantCreditCommand
@@ -35,9 +39,20 @@ from app.modules.promotions.application.ports.promotion_repository import Promot
 from app.modules.promotions.application.queries.get_current_ocr_credit_promotion.use_case import (
     GetCurrentOcrCreditPromotionQueryUseCase,
 )
+from app.modules.promotions.domain.events import PromotionRedemptionGranted
 from app.modules.promotions.infrastructure.persistence.repository import (
     SqlAlchemyPromotionRepository,
 )
+
+
+def build_promotions_event_registry() -> EventTypeRegistry:
+    registry = EventTypeRegistry()
+    registry.register(PromotionRedemptionGranted)
+    return registry
+
+
+def _build_outbox_event_publisher(session: AsyncSession) -> EventPublisher:
+    return OutboxEventPublisher(session=session, registry=build_promotions_event_registry())
 
 
 class CreditsPromotionCreditGrantPort(PromotionCreditGrantPort):
@@ -114,6 +129,10 @@ async def get_current_ocr_credit_promotion_query_use_case(
     return GetCurrentOcrCreditPromotionQueryUseCase(promotion_repository=promotion_repository)
 
 
+async def get_promotion_event_publisher(session: AsyncSessionDep) -> EventPublisher:
+    return _build_outbox_event_publisher(session)
+
+
 async def get_create_promotion_redemption_command_use_case(
     promotion_repository: Annotated[PromotionRepository, Depends(get_promotion_repository)],
     credit_grant_port: Annotated[
@@ -121,11 +140,13 @@ async def get_create_promotion_redemption_command_use_case(
         Depends(get_promotion_credit_grant_port),
     ],
     unit_of_work: Annotated[UnitOfWork, Depends(get_promotion_unit_of_work)],
+    event_publisher: Annotated[EventPublisher, Depends(get_promotion_event_publisher)],
 ) -> CreatePromotionRedemptionCommandUseCase:
     return CreatePromotionRedemptionCommandUseCase(
         promotion_repository=promotion_repository,
         credit_grant_port=credit_grant_port,
         unit_of_work=unit_of_work,
+        event_publisher=event_publisher,
     )
 
 
@@ -136,11 +157,13 @@ async def get_create_promotion_code_redemption_command_use_case(
         Depends(get_promotion_credit_grant_port),
     ],
     unit_of_work: Annotated[UnitOfWork, Depends(get_promotion_unit_of_work)],
+    event_publisher: Annotated[EventPublisher, Depends(get_promotion_event_publisher)],
 ) -> CreatePromotionCodeRedemptionCommandUseCase:
     return CreatePromotionCodeRedemptionCommandUseCase(
         promotion_repository=promotion_repository,
         credit_grant_port=credit_grant_port,
         unit_of_work=unit_of_work,
+        event_publisher=event_publisher,
     )
 
 

@@ -39,6 +39,7 @@ from app.modules.ocr.api import exception_handlers as ocr_exception_handlers
 from app.modules.ocr.api.router import router as ocr_router
 from app.modules.ocr.domain.exceptions import ReceiptOcrProviderUnavailableError
 from app.modules.promotions.api.router import router as promotions_router
+from app.modules.promotions.dependencies import build_promotions_event_registry
 from app.modules.receipts.api.router import router as receipts_router
 from app.modules.usage.api.router import router as usage_router
 from app.modules.users.api.router import router as users_router
@@ -52,6 +53,7 @@ logger = logging.getLogger(__name__)
 _EVENT_REGISTRY_BUILDERS = [
     build_notification_event_registry,
     build_credits_event_registry,
+    build_promotions_event_registry,
 ]
 
 

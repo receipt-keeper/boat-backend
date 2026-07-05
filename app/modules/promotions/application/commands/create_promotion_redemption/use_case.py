@@ -1,6 +1,7 @@
 from collections.abc import Callable
 from datetime import UTC, datetime
 
+from app.core.application.event_publisher import EventPublisher
 from app.core.application.unit_of_work import UnitOfWork
 from app.modules.promotions.application.commands.create_promotion_redemption.command import (
     CreatePromotionRedemptionCommand,
@@ -31,6 +32,7 @@ class CreatePromotionRedemptionCommandUseCase:
         promotion_repository: PromotionRepository,
         credit_grant_port: PromotionCreditGrantPort,
         unit_of_work: UnitOfWork,
+        event_publisher: EventPublisher,
         clock: Callable[[], datetime] = _utc_now,
     ) -> None:
         self._promotion_repository = promotion_repository
@@ -38,6 +40,7 @@ class CreatePromotionRedemptionCommandUseCase:
             promotion_repository=promotion_repository,
             credit_grant_port=credit_grant_port,
             unit_of_work=unit_of_work,
+            event_publisher=event_publisher,
             clock=clock,
         )
 

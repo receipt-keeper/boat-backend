@@ -4,6 +4,7 @@ from fastapi import FastAPI, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core.db.outbox.orm import OutboxEvent
 from app.core.http.auth import set_current_principal
 from app.core.security.principal import AuthenticatedPrincipal
 from app.main import create_app
@@ -72,6 +73,7 @@ async def test_no_code_promotion_redemption_grants_credit_once_through_real_wiri
             credits_orm.UserCredit,
             {"user_id": USER_ID, "feature_key": "ocr"},
         )
+        outbox_events = tuple(await session.scalars(select(OutboxEvent).order_by(OutboxEvent.id)))
 
     assert promotion is not None
     assert promotion.times_redeemed == 1
@@ -83,6 +85,13 @@ async def test_no_code_promotion_redemption_grants_credit_once_through_real_wiri
     assert user_credit is not None
     assert user_credit.total_granted_count == 3
     assert user_credit.remaining_count == 3
+    # 신규 리딤션 1회 = PromotionRedemptionGranted 1건 + CreditGranted 1건이 같은 트랜잭션의
+    # outbox row로 남는다(멱등 재시도는 두 번째 요청이므로 신규 row를 만들지 않는다).
+    assert {event.event_type for event in outbox_events} == {
+        "PromotionRedemptionGranted",
+        "CreditGranted",
+    }
+    assert len(outbox_events) == 2
 
 
 async def test_code_promotion_redemption_grants_credit_once_through_real_wiring(
@@ -132,6 +141,7 @@ async def test_code_promotion_redemption_grants_credit_once_through_real_wiring(
             credits_orm.UserCredit,
             {"user_id": USER_ID, "feature_key": "ocr"},
         )
+        outbox_events = tuple(await session.scalars(select(OutboxEvent).order_by(OutboxEvent.id)))
 
     assert promotion is not None
     assert promotion.times_redeemed == 1
@@ -145,6 +155,11 @@ async def test_code_promotion_redemption_grants_credit_once_through_real_wiring(
     assert user_credit is not None
     assert user_credit.total_granted_count == 3
     assert user_credit.remaining_count == 3
+    assert {event.event_type for event in outbox_events} == {
+        "PromotionRedemptionGranted",
+        "CreditGranted",
+    }
+    assert len(outbox_events) == 2
 
 
 def _promotion_integration_app(
