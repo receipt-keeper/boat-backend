@@ -29,7 +29,8 @@ RENAME_TOKEN_MIGRATION_PATH = (
 
 _PRE_MIGRATION_REVISION = "20260704_0012"
 _GENERALIZE_REVISION = "20260705_0013"
-_HEAD_REVISION = "20260705_0014"
+_FID_RENAME_REVISION = "20260705_0014"
+_HEAD_REVISION = "20260705_0015"
 
 
 def test_generalize_notifications_migration_revision_is_linear() -> None:
@@ -58,7 +59,7 @@ def test_generalize_notifications_migration_revision_is_linear() -> None:
     assert f'revision: str = "{_PRE_MIGRATION_REVISION}"' in push_tokens_migration_source
 
     rename_token_migration_source = RENAME_TOKEN_MIGRATION_PATH.read_text(encoding="utf-8")
-    assert f'revision: str = "{_HEAD_REVISION}"' in rename_token_migration_source
+    assert f'revision: str = "{_FID_RENAME_REVISION}"' in rename_token_migration_source
     assert (
         f'down_revision: str | Sequence[str] | None = "{_GENERALIZE_REVISION}"'
         in rename_token_migration_source
@@ -81,7 +82,7 @@ def test_generalize_notifications_migration_backfills_legacy_rows(
         upgraded = True
         row_ids = anyio.run(_insert_legacy_rows, postgres_async_database_url)
 
-        # And: head(20260705_0014)로 upgrade한다.
+        # And: head로 upgrade한다.
         command.upgrade(config, "head")
 
         # Then: message_type/title/resource backfill과 제약조건이 계약과 일치한다.

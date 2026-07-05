@@ -1,8 +1,8 @@
 """create outbox events
 
-Revision ID: 20260705_0014
-Revises: 20260705_0013
-Create Date: 2026-07-05 00:14:00.000000
+Revision ID: 20260705_0015
+Revises: 20260705_0014
+Create Date: 2026-07-05 00:15:00.000000
 
 트랜잭셔널 아웃박스 테이블을 생성한다. 도메인 이벤트는 원 트랜잭션과 같은 세션에서
 이 테이블에 insert되고(commit 전), 커밋 후 즉시 발행 경로 또는 폴러가 읽어 발행한 뒤
@@ -20,8 +20,8 @@ from sqlalchemy.dialects import postgresql
 
 from alembic import op
 
-revision: str = "20260705_0014"
-down_revision: str | Sequence[str] | None = "20260705_0013"
+revision: str = "20260705_0015"
+down_revision: str | Sequence[str] | None = "20260705_0014"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
