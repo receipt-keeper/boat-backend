@@ -28,10 +28,14 @@ def test_promotion_orm_declares_exact_tables_and_columns() -> None:
     tables = promotion_metadata.tables
 
     # Then: T1 승인 테이블만 Promotion persistence surface에 추가된다.
-    assert {"promotions", "promotion_codes", "promotion_redemptions"} <= set(tables)
+    assert {
+        "promotions",
+        "promotion_codes",
+        "promotion_redemptions",
+        "promotion_contents",
+    } <= set(tables)
     assert "credit_grants" not in tables
     assert "credit_accounts" not in tables
-    assert "promotion_contents" not in tables
     assert set(tables["promotions"].c.keys()) == {
         "id",
         "name",
@@ -70,6 +74,15 @@ def test_promotion_orm_declares_exact_tables_and_columns() -> None:
         "created_at",
         "updated_at",
     }
+    assert set(tables["promotion_contents"].c.keys()) == {
+        "id",
+        "promotion_id",
+        "banner_image_url",
+        "created_at",
+        "updated_at",
+    }
+    assert "banner_image_file_id" not in tables["promotion_contents"].c
+    assert "image_url" not in tables["promotion_contents"].c
 
 
 def test_promotion_orm_declares_constraints_and_unique_guards() -> None:
@@ -77,6 +90,7 @@ def test_promotion_orm_declares_constraints_and_unique_guards() -> None:
     promotions = orm.Promotion.metadata.tables["promotions"]
     promotion_codes = orm.Promotion.metadata.tables["promotion_codes"]
     redemptions = orm.Promotion.metadata.tables["promotion_redemptions"]
+    promotion_contents = orm.Promotion.metadata.tables["promotion_contents"]
 
     # When: check/unique/index constraints를 읽는다.
     promotion_checks = _check_constraints(promotions)
@@ -88,6 +102,11 @@ def test_promotion_orm_declares_constraints_and_unique_guards() -> None:
     redemption_uniques = {
         constraint.name
         for constraint in redemptions.constraints
+        if isinstance(constraint, UniqueConstraint)
+    }
+    content_uniques = {
+        constraint.name
+        for constraint in promotion_contents.constraints
         if isinstance(constraint, UniqueConstraint)
     }
 
@@ -103,12 +122,15 @@ def test_promotion_orm_declares_constraints_and_unique_guards() -> None:
         "uq_promotion_redemptions_idempotency_key",
         "uq_promotion_redemptions_user_id_promotion_id",
     }
+    assert content_uniques == {"uq_promotion_contents_promotion_id"}
+    assert promotion_contents.c.banner_image_url.nullable is True
 
 
 def test_promotion_orm_declares_only_same_bc_foreign_keys() -> None:
     # Given: Promotion persistence ORM tables가 있다.
     promotion_codes = orm.Promotion.metadata.tables["promotion_codes"]
     redemptions = orm.Promotion.metadata.tables["promotion_redemptions"]
+    promotion_contents = orm.Promotion.metadata.tables["promotion_contents"]
 
     # When: FK surface를 확인한다.
     foreign_keys = {
@@ -117,18 +139,20 @@ def test_promotion_orm_declares_only_same_bc_foreign_keys() -> None:
             tuple(column.name for column in constraint.columns),
             constraint.referred_table.name,
         )
-        for table in (promotion_codes, redemptions)
+        for table in (promotion_codes, redemptions, promotion_contents)
         for constraint in table.constraints
         if isinstance(constraint, ForeignKeyConstraint)
     }
 
-    # Then: promotions 내부 FK만 존재하고 user_id는 value reference로 남는다.
+    # Then: promotions 내부 FK만 존재하고 user/file 계열은 value reference로 남는다.
     assert foreign_keys == {
         ("promotion_codes", ("promotion_id",), "promotions"),
+        ("promotion_contents", ("promotion_id",), "promotions"),
         ("promotion_redemptions", ("promotion_id",), "promotions"),
         ("promotion_redemptions", ("promotion_code_id",), "promotion_codes"),
     }
     assert not redemptions.c.user_id.foreign_keys
+    assert not promotion_contents.c.banner_image_url.foreign_keys
     assert redemptions.c.promotion_code_id.nullable is True
 
 

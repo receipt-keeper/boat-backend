@@ -4,9 +4,12 @@ import anyio
 import pytest
 from alembic.config import Config
 from alembic.script import ScriptDirectory
+from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError
 
 from alembic import command
 from app.core.config.settings import get_settings
+from app.core.db.session import build_engine
 from app.modules.promotions.tests.migration_promotion_table_contract import (
     assert_promotion_tables_are_constrained,
 )
@@ -18,26 +21,33 @@ PROMOTION_MIGRATION_PATH = (
 CREDIT_SOURCE_MIGRATION_PATH = (
     PROJECT_ROOT / "alembic" / "versions" / "20260703_0013_extend_credit_source_metadata.py"
 )
+PROMOTION_CONTENT_MIGRATION_PATH = (
+    PROJECT_ROOT / "alembic" / "versions" / "20260705_0014_create_promotion_contents.py"
+)
 
 
-def test_promotion_migration_revision_is_linear_before_credit_source_extension() -> None:
-    # Given: Promotion persistence migration 뒤에 credit source metadata migration이 이어진다.
+def test_promotion_migration_revision_is_linear_through_content_extension() -> None:
+    # Given: Promotion persistence migration 뒤에 credit source와 content migration이 이어진다.
     config = _alembic_config()
     script_directory = ScriptDirectory.from_config(config)
 
-    # When: Alembic revision graph와 Promotion migration 파일을 확인한다.
+    # When: Alembic revision graph와 Promotion 관련 migration 파일을 확인한다.
     heads = script_directory.get_heads()
 
-    # Then: 단일 head는 최신 credit source migration이고 Promotion migration은 직전 revision이다.
-    assert heads == ["20260703_0013"]
+    # Then: 단일 head는 content migration이고 down_revision은 credit source migration이다.
+    assert heads == ["20260705_0014"]
     assert PROMOTION_MIGRATION_PATH.is_file()
     assert CREDIT_SOURCE_MIGRATION_PATH.is_file()
+    assert PROMOTION_CONTENT_MIGRATION_PATH.is_file()
 
     migration_source = PROMOTION_MIGRATION_PATH.read_text(encoding="utf-8")
     assert 'revision: str = "20260703_0012"' in migration_source
     assert 'down_revision: str | Sequence[str] | None = "20260702_0011"' in migration_source
     credit_source = CREDIT_SOURCE_MIGRATION_PATH.read_text(encoding="utf-8")
     assert 'down_revision: str | Sequence[str] | None = "20260703_0012"' in credit_source
+    promotion_content = PROMOTION_CONTENT_MIGRATION_PATH.read_text(encoding="utf-8")
+    assert 'revision: str = "20260705_0014"' in promotion_content
+    assert 'down_revision: str | Sequence[str] | None = "20260703_0013"' in promotion_content
 
 
 def test_promotion_migration_creates_constrained_tables(
@@ -91,6 +101,98 @@ def test_promotion_migration_rejects_invalid_schema_inputs(
         if upgraded:
             command.downgrade(config, "base")
         get_settings.cache_clear()
+
+
+def test_promotion_contents_reject_duplicate_promotion_content(
+    postgres_async_database_url: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given: 최신 migration이 적용된 테스트 DB와 기존 프로모션이 있다.
+    monkeypatch.setenv("DATABASE_URL", postgres_async_database_url)
+    get_settings.cache_clear()
+    config = _alembic_config()
+
+    upgraded = False
+    try:
+        command.upgrade(config, "head")
+        upgraded = True
+
+        # When: 같은 promotion_id로 content row를 두 번 저장한다.
+        failure = anyio.run(
+            _duplicate_promotion_content_failure,
+            postgres_async_database_url,
+        )
+
+        # Then: DB unique constraint가 실제 중복 저장을 거절한다.
+        assert "uq_promotion_contents_promotion_id" in failure
+    finally:
+        if upgraded:
+            command.downgrade(config, "base")
+        get_settings.cache_clear()
+
+
+async def _duplicate_promotion_content_failure(database_url: str) -> str:
+    engine = build_engine(database_url)
+    try:
+        async with engine.connect() as connection:
+            await connection.execute(
+                text(
+                    """
+                    INSERT INTO promotions (
+                        id,
+                        name,
+                        active,
+                        starts_at,
+                        benefit_feature_key,
+                        benefit_amount
+                    )
+                    VALUES (
+                        '00000000-0000-0000-0000-000000000401',
+                        'content duplicate target',
+                        true,
+                        now(),
+                        'ocr',
+                        10
+                    )
+                    """
+                )
+            )
+            await connection.execute(
+                text(
+                    """
+                    INSERT INTO promotion_contents (
+                        id,
+                        promotion_id,
+                        banner_image_url
+                    )
+                    VALUES (
+                        '00000000-0000-0000-0000-000000000501',
+                        '00000000-0000-0000-0000-000000000401',
+                        '/files/00000000-0000-0000-0000-000000000901/content'
+                    )
+                    """
+                )
+            )
+            with pytest.raises(DBAPIError) as exc_info:
+                await connection.execute(
+                    text(
+                        """
+                        INSERT INTO promotion_contents (
+                            id,
+                            promotion_id,
+                            banner_image_url
+                        )
+                        VALUES (
+                            '00000000-0000-0000-0000-000000000502',
+                            '00000000-0000-0000-0000-000000000401',
+                            '/files/00000000-0000-0000-0000-000000000902/content'
+                        )
+                        """
+                    )
+                )
+            return str(exc_info.value.orig)
+    finally:
+        await engine.dispose()
 
 
 def _alembic_config() -> Config:

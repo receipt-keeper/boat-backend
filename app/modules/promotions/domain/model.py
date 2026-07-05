@@ -90,6 +90,12 @@ class Promotion(Entity[UUID]):
 
 
 @dataclass(eq=False, slots=True)  # noqa: RUF100  # noqa: MUTABLE_OK
+class PromotionContent(Entity[UUID]):
+    promotion_id: UUID
+    banner_image_url: str | None
+
+
+@dataclass(eq=False, slots=True)  # noqa: RUF100  # noqa: MUTABLE_OK
 class PromotionCode(Entity[UUID]):
     promotion_id: UUID
     code: str

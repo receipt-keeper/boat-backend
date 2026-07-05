@@ -5,6 +5,7 @@ from uuid import UUID
 from app.modules.promotions.domain.model import (
     Promotion,
     PromotionCode,
+    PromotionContent,
     PromotionRedemption,
 )
 
@@ -12,6 +13,10 @@ from app.modules.promotions.domain.model import (
 class PromotionRepository(ABC):
     @abstractmethod
     async def find_current_ocr_credit_promotion(self, *, at: datetime) -> Promotion | None:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def find_content_by_promotion_id(self, *, promotion_id: UUID) -> PromotionContent | None:
         raise NotImplementedError
 
     @abstractmethod

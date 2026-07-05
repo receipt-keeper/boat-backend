@@ -11,6 +11,7 @@ from app.modules.promotions.domain.model import (
     Promotion,
     PromotionBenefitFeatureKey,
     PromotionCode,
+    PromotionContent,
     PromotionRedemption,
     PromotionRedemptionStatus,
 )
@@ -40,6 +41,16 @@ class SqlAlchemyPromotionRepository(PromotionRepository):
         if record is None:
             return None
         return mapper.promotion_to_domain(record)
+
+    async def find_content_by_promotion_id(self, *, promotion_id: UUID) -> PromotionContent | None:
+        record = await self._session.scalar(
+            select(orm.PromotionContent)
+            .where(orm.PromotionContent.promotion_id == promotion_id)
+            .limit(1)
+        )
+        if record is None:
+            return None
+        return mapper.promotion_content_to_domain(record)
 
     async def find_promotion_for_update(self, *, promotion_id: UUID) -> Promotion | None:
         record = await self._session.scalar(

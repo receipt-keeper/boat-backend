@@ -22,6 +22,7 @@ async def postgres_session_factory(
     from app.modules.promotions.infrastructure.persistence import orm as promotions_orm
 
     _ = promotions_orm.Promotion
+    _ = promotions_orm.PromotionContent
     _ = promotions_orm.PromotionCode
     _ = promotions_orm.PromotionRedemption
     engine = build_engine(postgres_async_database_url)

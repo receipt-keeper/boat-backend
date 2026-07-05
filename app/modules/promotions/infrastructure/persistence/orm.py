@@ -89,6 +89,39 @@ class Promotion(Base):
     )
 
 
+class PromotionContent(Base):
+    __tablename__ = "promotion_contents"
+    __table_args__ = (
+        UniqueConstraint(
+            "promotion_id",
+            name=conv("uq_promotion_contents_promotion_id"),
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        type_=PostgreSQLUUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+    )
+    promotion_id: Mapped[UUID] = mapped_column(
+        ForeignKey("promotions.id"),
+        type_=PostgreSQLUUID(as_uuid=True),
+        nullable=False,
+    )
+    banner_image_url: Mapped[str | None] = mapped_column(type_=String(2048), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        type_=DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        type_=DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
 class PromotionCode(Base):
     __tablename__ = "promotion_codes"
     __table_args__ = (

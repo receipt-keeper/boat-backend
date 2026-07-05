@@ -2,6 +2,7 @@ from app.modules.promotions.domain.model import (
     Promotion,
     PromotionBenefitFeatureKey,
     PromotionCode,
+    PromotionContent,
     PromotionRedemption,
     PromotionRedemptionStatus,
 )
@@ -20,6 +21,14 @@ def promotion_to_domain(record: orm.Promotion) -> Promotion:
         max_redemptions_per_user=record.max_redemptions_per_user,
         benefit_feature_key=PromotionBenefitFeatureKey(record.benefit_feature_key),
         benefit_amount=record.benefit_amount,
+    )
+
+
+def promotion_content_to_domain(record: orm.PromotionContent) -> PromotionContent:
+    return PromotionContent(
+        id=record.id,
+        promotion_id=record.promotion_id,
+        banner_image_url=record.banner_image_url,
     )
 
 

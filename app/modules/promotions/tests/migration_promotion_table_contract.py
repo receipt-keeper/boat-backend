@@ -5,6 +5,9 @@ from app.core.db.session import build_engine
 from app.modules.promotions.tests.migration_insert_probes import (
     assert_invalid_promotion_insert_probes,
 )
+from app.modules.promotions.tests.migration_promotion_content_table_contract import (
+    assert_promotion_content_table_is_constrained,
+)
 
 EXPECTED_PROMOTION_CHECKS = {
     "ck_promotions_benefit_feature_key_allowed",
@@ -76,9 +79,9 @@ async def assert_promotion_tables_are_constrained(database_url: str) -> list[str
                     "updated_at",
                 },
             )
+            await assert_promotion_content_table_is_constrained(connection)
             await _assert_check_constraint_names(connection)
             await _assert_same_bc_foreign_keys(connection)
-            await _assert_user_id_has_no_foreign_key(connection)
             await _assert_unique_indexes(connection)
             await _assert_nullable_columns(connection)
             return await assert_invalid_promotion_insert_probes(connection)
@@ -175,25 +178,6 @@ async def _assert_same_bc_foreign_keys(connection: AsyncConnection) -> None:
     ]
 
 
-async def _assert_user_id_has_no_foreign_key(connection: AsyncConnection) -> None:
-    user_id_foreign_keys = await connection.scalar(
-        text(
-            """
-            SELECT COUNT(*)
-            FROM information_schema.table_constraints AS constraints
-            JOIN information_schema.key_column_usage AS key_usage
-              ON constraints.constraint_name = key_usage.constraint_name
-             AND constraints.table_schema = key_usage.table_schema
-            WHERE constraints.constraint_type = 'FOREIGN KEY'
-              AND constraints.table_schema = 'public'
-              AND constraints.table_name = 'promotion_redemptions'
-              AND key_usage.column_name = 'user_id'
-            """
-        )
-    )
-    assert user_id_foreign_keys == 0
-
-
 async def _assert_unique_indexes(connection: AsyncConnection) -> None:
     result = await connection.execute(
         text(
@@ -210,7 +194,10 @@ async def _assert_unique_indexes(connection: AsyncConnection) -> None:
             JOIN pg_class AS index_class
               ON index_class.oid = index_info.indexrelid
             WHERE namespace.nspname = 'public'
-              AND table_class.relname IN ('promotion_codes', 'promotion_redemptions')
+              AND table_class.relname IN (
+                  'promotion_codes',
+                  'promotion_redemptions'
+              )
               AND index_class.relname IN (
                   'ix_promotion_codes_code_unique',
                   'uq_promotion_redemptions_idempotency_key',
