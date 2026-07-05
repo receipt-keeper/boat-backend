@@ -18,20 +18,28 @@ CREDIT_MIGRATION_PATH = (
 RECEIPT_SERIAL_MIGRATION_PATH = (
     PROJECT_ROOT / "alembic" / "versions" / "20260702_0011_add_receipt_serial_number.py"
 )
+PROMOTION_MIGRATION_PATH = (
+    PROJECT_ROOT / "alembic" / "versions" / "20260705_0016_create_promotion_tables.py"
+)
+CREDIT_SOURCE_MIGRATION_PATH = (
+    PROJECT_ROOT / "alembic" / "versions" / "20260705_0017_extend_credit_source_metadata.py"
+)
 
 
-def test_credit_migration_revision_is_linear_after_receipt_sub_category() -> None:
-    # Given: OCR credit ledger migration은 receipt sub-category migration 뒤에 온다.
+def test_credit_source_migration_revision_is_linear_after_promotion_tables() -> None:
+    # Given: T3 credit source migration은 T1 promotion persistence migration 뒤에 온다.
     config = _alembic_config()
     script_directory = ScriptDirectory.from_config(config)
 
-    # When: Alembic revision graph와 credit migration 파일을 확인한다.
+    # When: Alembic revision graph와 T3 migration 파일을 확인한다.
     heads = script_directory.get_heads()
 
     # Then: revision graph는 단일 head를 유지하고 credit migration 체인은 그대로 남는다.
     assert len(heads) == 1
     assert CREDIT_MIGRATION_PATH.is_file()
     assert RECEIPT_SERIAL_MIGRATION_PATH.is_file()
+    assert PROMOTION_MIGRATION_PATH.is_file()
+    assert CREDIT_SOURCE_MIGRATION_PATH.is_file()
 
     migration_source = CREDIT_MIGRATION_PATH.read_text(encoding="utf-8")
     assert 'revision: str = "20260701_0011"' in migration_source
@@ -42,6 +50,18 @@ def test_credit_migration_revision_is_linear_after_receipt_sub_category() -> Non
     assert (
         'down_revision: str | Sequence[str] | None = "20260701_0011"'
         in receipt_serial_migration_source
+    )
+
+    promotion_migration_source = PROMOTION_MIGRATION_PATH.read_text(encoding="utf-8")
+    assert 'revision: str = "20260705_0016"' in promotion_migration_source
+    assert 'down_revision: str | Sequence[str] | None = "20260705_0015"' in (
+        promotion_migration_source
+    )
+
+    credit_source_migration_source = CREDIT_SOURCE_MIGRATION_PATH.read_text(encoding="utf-8")
+    assert 'revision: str = "20260705_0017"' in credit_source_migration_source
+    assert 'down_revision: str | Sequence[str] | None = "20260705_0016"' in (
+        credit_source_migration_source
     )
 
 

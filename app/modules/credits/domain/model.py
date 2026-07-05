@@ -27,6 +27,12 @@ class CreditAction(StrEnum):
     USE = "use"
 
 
+class CreditSourceType(StrEnum):
+    PROMOTION_REDEMPTION = "promotionRedemption"
+    MONTHLY_ALLOWANCE = "monthlyAllowance"
+    OCR_ANALYSIS = "ocrAnalysis"
+
+
 @dataclass(frozen=True, slots=True)
 class CreditCount:
     value: int
@@ -118,7 +124,7 @@ class CreditTransaction:
     created_at: datetime
 
 
-@dataclass(eq=False)
+@dataclass(eq=False, slots=True)  # noqa: RUF100  # noqa: MUTABLE_OK
 class UserCredit(Entity[UUID]):
     feature_key: FeatureKey
     balance: CreditBalance

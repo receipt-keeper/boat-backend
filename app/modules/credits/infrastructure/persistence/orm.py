@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import CheckConstraint, DateTime, Index, Integer, String, func
+from sqlalchemy import CheckConstraint, DateTime, Index, Integer, String, func, text
 from sqlalchemy.dialects.postgresql import UUID as PostgreSQLUUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.schema import conv
@@ -42,6 +42,7 @@ class UserCredit(Base):
         type_=String(50),
         primary_key=True,
     )
+    current_period: Mapped[str | None] = mapped_column(type_=String(7), nullable=True)
     total_granted_count: Mapped[int] = mapped_column(
         type_=Integer,
         nullable=False,
@@ -97,12 +98,38 @@ class CreditTransaction(Base):
             "amount > 0",
             name=conv("ck_credit_transactions_amount_positive"),
         ),
+        CheckConstraint(
+            "source_type IS NULL "
+            "OR source_type IN ('promotionRedemption', 'monthlyAllowance', 'ocrAnalysis')",
+            name=conv("ck_credit_transactions_source_type_allowed"),
+        ),
+        CheckConstraint(
+            "(source_type IS NULL AND source_id IS NULL) "
+            "OR (source_type IS NOT NULL AND source_id IS NOT NULL)",
+            name=conv("ck_credit_transactions_source_pair_complete"),
+        ),
         Index(
             "ix_credit_transactions_user_id_feature_key_created_at_id",
             "user_id",
             "feature_key",
             "created_at",
             "id",
+        ),
+        Index(
+            "ix_credit_transactions_idempotency_key_unique",
+            "idempotency_key",
+            unique=True,
+            postgresql_where=text("idempotency_key IS NOT NULL"),
+        ),
+        Index(
+            "ix_credit_transactions_source_unique",
+            "source_type",
+            "source_id",
+            "user_id",
+            "feature_key",
+            "action",
+            unique=True,
+            postgresql_where=text("source_type IS NOT NULL AND source_id IS NOT NULL"),
         ),
     )
 
@@ -119,6 +146,12 @@ class CreditTransaction(Base):
     reason: Mapped[str] = mapped_column(type_=String(50), nullable=False)
     action: Mapped[str] = mapped_column(type_=String(20), nullable=False)
     amount: Mapped[int] = mapped_column(type_=Integer, nullable=False)
+    source_type: Mapped[str | None] = mapped_column(type_=String(50), nullable=True)
+    source_id: Mapped[UUID | None] = mapped_column(
+        type_=PostgreSQLUUID(as_uuid=True),
+        nullable=True,
+    )
+    idempotency_key: Mapped[str | None] = mapped_column(type_=String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         type_=DateTime(timezone=True),
         nullable=False,

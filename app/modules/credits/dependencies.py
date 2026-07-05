@@ -3,7 +3,7 @@ from typing import Annotated
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.application.unit_of_work import UnitOfWork
+from app.core.application.unit_of_work import DeferredCommitUnitOfWork, UnitOfWork
 from app.core.db.session import AsyncSessionDep
 from app.core.db.unit_of_work import SqlAlchemyUnitOfWork
 from app.modules.credits.application.commands.delete_user_credits.use_case import (
@@ -94,6 +94,16 @@ async def get_grant_credit_command_use_case(
     return GrantCreditCommandUseCase(
         credit_repository=credit_repository,
         unit_of_work=unit_of_work,
+    )
+
+
+async def get_deferred_grant_credit_command_use_case(
+    credit_repository: Annotated[CreditRepository, Depends(get_credit_repository)],
+    session: AsyncSessionDep,
+) -> GrantCreditCommandUseCase:
+    return GrantCreditCommandUseCase(
+        credit_repository=credit_repository,
+        unit_of_work=DeferredCommitUnitOfWork(rollback=session.rollback),
     )
 
 

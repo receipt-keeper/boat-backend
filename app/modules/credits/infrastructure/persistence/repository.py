@@ -1,22 +1,31 @@
 from uuid import UUID
 
 from sqlalchemy import and_, delete, func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.credits.application.ports.credit_repository import (
     CreditRepository,
+    CreditTransactionAppend,
     CreditTransactionCursor,
     CreditTransactionListResult,
+    CreditTransactionSourceKey,
+    CreditTransactionWriteConflictError,
 )
 from app.modules.credits.domain import (
-    CreditAction,
-    CreditAmount,
     CreditBalance,
-    CreditReason,
     FeatureKey,
     UserCredit,
 )
 from app.modules.credits.infrastructure.persistence import mapper, orm
+
+_IDEMPOTENT_CREDIT_TRANSACTION_CONSTRAINTS = frozenset(
+    {
+        "ix_credit_transactions_idempotency_key_unique",
+        "ix_credit_transactions_source_unique",
+        "pk_user_credits",
+    }
+)
 
 
 class SqlAlchemyCreditRepository(CreditRepository):
@@ -65,20 +74,60 @@ class SqlAlchemyCreditRepository(CreditRepository):
     async def append_transaction(
         self,
         *,
-        user_id: UUID,
-        reason: CreditReason,
-        action: CreditAction,
-        amount: CreditAmount,
+        transaction: CreditTransactionAppend,
     ) -> None:
         self._session.add(
             orm.CreditTransaction(
-                user_id=user_id,
+                user_id=transaction.user_id,
                 feature_key=FeatureKey.OCR.value,
-                reason=reason.value,
-                action=action.value,
-                amount=amount.value,
+                reason=transaction.reason.value,
+                action=transaction.action.value,
+                amount=transaction.amount.value,
+                source_type=(
+                    transaction.source_type.value if transaction.source_type is not None else None
+                ),
+                source_id=transaction.source_id,
+                idempotency_key=transaction.idempotency_key,
             )
         )
+
+    async def flush_pending_writes(self) -> None:
+        try:
+            await self._session.flush()
+        except IntegrityError as exc:
+            if _integrity_constraint_name(exc) in _IDEMPOTENT_CREDIT_TRANSACTION_CONSTRAINTS:
+                raise CreditTransactionWriteConflictError from exc
+            raise
+
+    async def exists_transaction_with_idempotency_key(
+        self,
+        *,
+        idempotency_key: str,
+    ) -> bool:
+        exists = await self._session.scalar(
+            select(orm.CreditTransaction.id)
+            .where(orm.CreditTransaction.idempotency_key == idempotency_key)
+            .limit(1)
+        )
+        return exists is not None
+
+    async def exists_transaction_with_source(
+        self,
+        *,
+        source: CreditTransactionSourceKey,
+    ) -> bool:
+        exists = await self._session.scalar(
+            select(orm.CreditTransaction.id)
+            .where(
+                orm.CreditTransaction.source_type == source.source_type.value,
+                orm.CreditTransaction.source_id == source.source_id,
+                orm.CreditTransaction.user_id == source.user_id,
+                orm.CreditTransaction.feature_key == FeatureKey.OCR.value,
+                orm.CreditTransaction.action == source.action.value,
+            )
+            .limit(1)
+        )
+        return exists is not None
 
     async def delete_by_user_id(self, *, user_id: UUID) -> None:
         await self._session.execute(
@@ -134,3 +183,11 @@ class SqlAlchemyCreditRepository(CreditRepository):
             has_next=len(records) > limit,
             total_count=total_count,
         )
+
+
+def _integrity_constraint_name(exc: IntegrityError) -> str | None:
+    for candidate in (exc.orig, getattr(exc.orig, "__cause__", None)):
+        constraint_name = getattr(candidate, "constraint_name", None)
+        if isinstance(constraint_name, str):
+            return constraint_name
+    return None

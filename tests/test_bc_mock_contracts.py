@@ -14,6 +14,9 @@ from tests.support.credits_usage_contract import (
     create_credits_usage_contract_app,
 )
 
+type JsonObject = dict[str, JsonValue]
+type JsonValue = JsonObject | list[JsonValue] | str | int | float | bool | None
+
 
 async def test_app_facing_bc_routes_are_published_in_openapi() -> None:
     # Given: 앱 공개 계약을 설명하는 OpenAPI 문서가 있다.
@@ -53,6 +56,29 @@ async def test_receipt_and_product_leaking_routes_are_absent_from_openapi() -> N
     assert not still_present_paths, (
         f"forbidden public paths still present: {sorted(still_present_paths)}"
     )
+
+
+async def test_promotion_content_and_code_resources_are_absent_from_openapi() -> None:
+    # Given: 앱 공개 계약을 설명하는 OpenAPI 문서가 있다.
+    test_app = create_app(TEST_SETTINGS)
+
+    # When: 현재 앱의 OpenAPI path 목록을 조회한다.
+    async with AsyncClient(
+        transport=ASGITransport(app=test_app),
+        base_url="http://test",
+    ) as test_client:
+        response = await test_client.get("/openapi.json")
+
+    paths = set(response.json()["paths"])
+
+    # Then: 프로모션은 기존 app-facing route만 공개하고 content/code resource는 공개하지 않는다.
+    assert response.status_code == 200
+    assert not {
+        path
+        for path in paths
+        if path.startswith("/api/v1/promotion-contents")
+        or path.startswith("/api/v1/promotion-codes")
+    }
 
 
 def test_public_openapi_does_not_leak_retired_bc_terms() -> None:
@@ -255,8 +281,8 @@ async def test_receipts_match_app_contract() -> None:
 
 
 def _assert_common_response_schema(
-    openapi_schema: dict[str, object],
-    operation: dict[str, object],
+    openapi_schema: JsonObject,
+    operation: JsonObject,
     status_code: int,
 ) -> None:
     responses = operation["responses"]
@@ -265,7 +291,11 @@ def _assert_common_response_schema(
     assert isinstance(response, dict)
     content = response["content"]
     assert isinstance(content, dict)
-    schema_ref = content["application/json"]["schema"]["$ref"]
+    media_type = content["application/json"]
+    assert isinstance(media_type, dict)
+    media_schema = media_type["schema"]
+    assert isinstance(media_schema, dict)
+    schema_ref = media_schema["$ref"]
     assert isinstance(schema_ref, str)
     assert schema_ref.startswith("#/components/schemas/CommonResponse")
 

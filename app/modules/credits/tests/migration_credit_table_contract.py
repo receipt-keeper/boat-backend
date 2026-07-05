@@ -2,8 +2,13 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from app.core.db.session import build_engine
+from app.modules.credits.tests.migration_credit_source_probes import (
+    assert_credit_source_insert_probes,
+)
 from app.modules.credits.tests.migration_insert_probes import (
     assert_credit_transaction_insert_probes,
+)
+from app.modules.credits.tests.migration_user_credit_probes import (
     assert_user_credit_insert_probes,
 )
 
@@ -20,6 +25,8 @@ EXPECTED_TRANSACTION_CHECKS = {
     "ck_credit_transactions_action_allowed",
     "ck_credit_transactions_reason_action_pair",
     "ck_credit_transactions_amount_positive",
+    "ck_credit_transactions_source_type_allowed",
+    "ck_credit_transactions_source_pair_complete",
 }
 
 
@@ -32,10 +39,12 @@ async def assert_credit_tables_are_constrained(database_url: str) -> None:
             await _assert_table_is_absent(connection, "credit_accounts")
             await _assert_user_id_has_no_foreign_key(connection)
             await _assert_user_credits_primary_key(connection)
+            await _assert_credit_source_columns(connection)
             await _assert_transaction_index_exists(connection)
             await _assert_credit_tables_have_no_comments(connection)
             await _assert_check_constraint_names(connection)
             await assert_credit_transaction_insert_probes(connection)
+            await assert_credit_source_insert_probes(connection)
             await assert_user_credit_insert_probes(connection)
     finally:
         await engine.dispose()
@@ -140,6 +149,69 @@ async def _assert_transaction_index_exists(connection: AsyncConnection) -> None:
         "created_at",
         "id",
     )
+    assert indexes["ix_credit_transactions_idempotency_key_unique"] == ("idempotency_key",)
+    assert indexes["ix_credit_transactions_source_unique"] == (
+        "source_type",
+        "source_id",
+        "user_id",
+        "feature_key",
+        "action",
+    )
+
+    predicates = await _index_predicates(connection)
+    assert predicates["ix_credit_transactions_idempotency_key_unique"] == (
+        "(idempotency_key IS NOT NULL)"
+    )
+    assert predicates["ix_credit_transactions_source_unique"] == (
+        "((source_type IS NOT NULL) AND (source_id IS NOT NULL))"
+    )
+
+
+async def _assert_credit_source_columns(connection: AsyncConnection) -> None:
+    columns = await connection.execute(
+        text(
+            """
+            SELECT table_name, column_name, data_type, character_maximum_length, is_nullable
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name IN ('user_credits', 'credit_transactions')
+              AND column_name IN (
+                  'current_period',
+                  'source_type',
+                  'source_id',
+                  'idempotency_key'
+              )
+            """
+        )
+    )
+    column_contract = {(row[0], row[1]): (row[2], row[3], row[4]) for row in columns.tuples()}
+    assert column_contract == {
+        ("user_credits", "current_period"): ("character varying", 7, "YES"),
+        ("credit_transactions", "source_type"): ("character varying", 50, "YES"),
+        ("credit_transactions", "source_id"): ("uuid", None, "YES"),
+        ("credit_transactions", "idempotency_key"): ("character varying", 255, "YES"),
+    }
+
+
+async def _index_predicates(connection: AsyncConnection) -> dict[str, str]:
+    predicate_rows = await connection.execute(
+        text(
+            """
+            SELECT index_class.relname, pg_get_expr(index_info.indpred, index_info.indrelid)
+            FROM pg_index AS index_info
+            JOIN pg_class AS table_class
+              ON table_class.oid = index_info.indrelid
+            JOIN pg_namespace AS namespace
+              ON namespace.oid = table_class.relnamespace
+            JOIN pg_class AS index_class
+              ON index_class.oid = index_info.indexrelid
+            WHERE namespace.nspname = 'public'
+              AND table_class.relname = 'credit_transactions'
+              AND index_info.indpred IS NOT NULL
+            """
+        )
+    )
+    return {row[0]: row[1] for row in predicate_rows.tuples()}
 
 
 async def _assert_credit_tables_have_no_comments(connection: AsyncConnection) -> None:

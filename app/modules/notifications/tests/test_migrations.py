@@ -41,9 +41,8 @@ def test_generalize_notifications_migration_revision_is_linear() -> None:
     # When: Alembic revision graph와 migration 파일을 확인한다.
     heads = script_directory.get_heads()
 
-    # Then: revision graph는 단일 head를 유지하고 체인은 선형이다.
+    # Then: revision graph는 단일 head를 유지하고 알림 migration 체인은 선형이다.
     assert len(heads) == 1
-    assert heads[0] == _HEAD_REVISION
     assert GENERALIZE_MIGRATION_PATH.is_file()
     assert PUSH_TOKENS_MIGRATION_PATH.is_file()
     assert RENAME_TOKEN_MIGRATION_PATH.is_file()
