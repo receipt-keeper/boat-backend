@@ -41,7 +41,7 @@ class CreatePromotionRedemptionCommandUseCase:
         self,
         command: CreatePromotionRedemptionCommand,
     ) -> CreatePromotionRedemptionResult:
-        idempotency_key = f"promotionRedemption:{command.promotion_id}:{command.user_id}"
+        idempotency_key = _idempotency_key(command)
         existing = await self._promotion_repository.find_redemption_by_idempotency_key(
             idempotency_key=idempotency_key
         )
@@ -72,27 +72,6 @@ class CreatePromotionRedemptionCommandUseCase:
         )
         if promotion is None:
             raise PromotionNotFoundError()
-
-        already_redeemed = await self._promotion_repository.find_redemption_by_user_and_promotion(
-            user_id=command.user_id,
-            promotion_id=command.promotion_id,
-        )
-        if already_redeemed is not None:
-            balance = await self._credit_grant_port.get_ocr_credit_balance(
-                user_id=command.user_id,
-            )
-            content = await self._promotion_repository.find_content_by_promotion_id(
-                promotion_id=promotion.id,
-            )
-            return _result(
-                redemption=already_redeemed,
-                promotion=promotion,
-                banner_image_url=_banner_image_url(content),
-                already_redeemed=True,
-                credit_granted=False,
-                credit_balance_after=balance.total_granted_count,
-                credit_remaining_after=balance.remaining_count,
-            )
 
         return await self._redeem(
             command=command,
@@ -159,6 +138,12 @@ def _credit_grant(
         redemption_id=redemption.id,
         idempotency_key=idempotency_key,
     )
+
+
+def _idempotency_key(command: CreatePromotionRedemptionCommand) -> str:
+    if command.idempotency_key is None:
+        return f"promotionRedemption:{command.promotion_id}:{command.user_id}"
+    return f"promotionRedemption:{command.promotion_id}:{command.user_id}:{command.idempotency_key}"
 
 
 def _result(

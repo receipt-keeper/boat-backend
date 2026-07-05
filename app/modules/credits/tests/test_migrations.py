@@ -19,10 +19,10 @@ RECEIPT_SERIAL_MIGRATION_PATH = (
     PROJECT_ROOT / "alembic" / "versions" / "20260702_0011_add_receipt_serial_number.py"
 )
 PROMOTION_MIGRATION_PATH = (
-    PROJECT_ROOT / "alembic" / "versions" / "20260703_0012_create_promotion_tables.py"
+    PROJECT_ROOT / "alembic" / "versions" / "20260705_0016_create_promotion_tables.py"
 )
 CREDIT_SOURCE_MIGRATION_PATH = (
-    PROJECT_ROOT / "alembic" / "versions" / "20260703_0013_extend_credit_source_metadata.py"
+    PROJECT_ROOT / "alembic" / "versions" / "20260705_0017_extend_credit_source_metadata.py"
 )
 
 
@@ -53,14 +53,14 @@ def test_credit_source_migration_revision_is_linear_after_promotion_tables() -> 
     )
 
     promotion_migration_source = PROMOTION_MIGRATION_PATH.read_text(encoding="utf-8")
-    assert 'revision: str = "20260703_0012"' in promotion_migration_source
-    assert 'down_revision: str | Sequence[str] | None = "20260705_0013"' in (
+    assert 'revision: str = "20260705_0016"' in promotion_migration_source
+    assert 'down_revision: str | Sequence[str] | None = "20260705_0015"' in (
         promotion_migration_source
     )
 
     credit_source_migration_source = CREDIT_SOURCE_MIGRATION_PATH.read_text(encoding="utf-8")
-    assert 'revision: str = "20260703_0013"' in credit_source_migration_source
-    assert 'down_revision: str | Sequence[str] | None = "20260703_0012"' in (
+    assert 'revision: str = "20260705_0017"' in credit_source_migration_source
+    assert 'down_revision: str | Sequence[str] | None = "20260705_0016"' in (
         credit_source_migration_source
     )
 

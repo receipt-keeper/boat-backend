@@ -6,3 +6,4 @@ from uuid import UUID
 class CreatePromotionRedemptionCommand:
     user_id: UUID
     promotion_id: UUID
+    idempotency_key: str | None = None

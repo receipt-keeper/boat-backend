@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import assert_never
@@ -94,22 +94,26 @@ class CurrentPromotionQueryUseCaseStub:
 @dataclass(frozen=True, slots=True)
 class PromotionRedemptionCommandUseCaseStub:
     outcome: RedemptionOutcome
+    commands: list[CreatePromotionRedemptionCommand] = field(default_factory=list)
 
     async def execute(
         self,
         command: CreatePromotionRedemptionCommand,
     ) -> CreatePromotionRedemptionResult:
+        self.commands.append(command)
         return _redemption_result_for(self.outcome)
 
 
 @dataclass(frozen=True, slots=True)
 class PromotionCodeRedemptionCommandUseCaseStub:
     outcome: RedemptionOutcome
+    commands: list[CreatePromotionCodeRedemptionCommand] = field(default_factory=list)
 
     async def execute(
         self,
         command: CreatePromotionCodeRedemptionCommand,
     ) -> CreatePromotionRedemptionResult:
+        self.commands.append(command)
         return _redemption_result_for(self.outcome)
 
 
@@ -118,17 +122,25 @@ def promotion_api_app(
     current_outcome: CurrentPromotionOutcome = CurrentPromotionOutcome.REDEEMABLE,
     redemption_outcome: RedemptionOutcome = RedemptionOutcome.GRANTED,
     code_outcome: RedemptionOutcome = RedemptionOutcome.GRANTED,
+    redemption_use_case: PromotionRedemptionCommandUseCaseStub | None = None,
+    code_use_case: PromotionCodeRedemptionCommandUseCaseStub | None = None,
 ) -> FastAPI:
     test_app = create_app(TEST_SETTINGS)
+    resolved_redemption_use_case = redemption_use_case or PromotionRedemptionCommandUseCaseStub(
+        redemption_outcome
+    )
+    resolved_code_use_case = code_use_case or PromotionCodeRedemptionCommandUseCaseStub(
+        code_outcome
+    )
     test_app.dependency_overrides[authenticate_current_principal] = _authenticate_test_principal
     test_app.dependency_overrides[get_current_ocr_credit_promotion_query_use_case] = lambda: (
         CurrentPromotionQueryUseCaseStub(current_outcome)
     )
     test_app.dependency_overrides[get_create_promotion_redemption_command_use_case] = lambda: (
-        PromotionRedemptionCommandUseCaseStub(redemption_outcome)
+        resolved_redemption_use_case
     )
     test_app.dependency_overrides[get_create_promotion_code_redemption_command_use_case] = lambda: (
-        PromotionCodeRedemptionCommandUseCaseStub(code_outcome)
+        resolved_code_use_case
     )
     return test_app
 

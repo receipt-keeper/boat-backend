@@ -3,6 +3,8 @@ import pytest
 from app.modules.promotions.tests.api_helpers import (
     PROMOTION_ID,
     PUBLIC_BANNER_IMAGE_URL,
+    PromotionCodeRedemptionCommandUseCaseStub,
+    PromotionRedemptionCommandUseCaseStub,
     RedemptionOutcome,
     api_client,
     promotion_api_app,
@@ -47,6 +49,37 @@ async def test_create_promotion_code_redemption_uses_static_route() -> None:
     assert data["promotionId"] == str(PROMOTION_ID)
     assert data["redemption"] == {"remainingRedemptions": 7}
     assert data["bannerImage"] == {"imageUrl": PUBLIC_BANNER_IMAGE_URL}
+
+
+async def test_create_promotion_redemption_forwards_idempotency_key_header() -> None:
+    use_case = PromotionRedemptionCommandUseCaseStub(RedemptionOutcome.GRANTED)
+    test_app = promotion_api_app(redemption_use_case=use_case)
+
+    async with api_client(test_app) as test_client:
+        response = await test_client.post(
+            f"/api/v1/promotions/{PROMOTION_ID}/redemptions",
+            headers={"Idempotency-Key": "attempt-1"},
+        )
+
+    assert response.status_code == 200
+    assert len(use_case.commands) == 1
+    assert use_case.commands[0].idempotency_key == "attempt-1"
+
+
+async def test_create_promotion_code_redemption_forwards_idempotency_key_header() -> None:
+    use_case = PromotionCodeRedemptionCommandUseCaseStub(RedemptionOutcome.GRANTED)
+    test_app = promotion_api_app(code_use_case=use_case)
+
+    async with api_client(test_app) as test_client:
+        response = await test_client.post(
+            "/api/v1/promotions/redemptions",
+            json={"code": "WELCOME2026"},
+            headers={"Idempotency-Key": "code-attempt-1"},
+        )
+
+    assert response.status_code == 200
+    assert len(use_case.commands) == 1
+    assert use_case.commands[0].idempotency_key == "code-attempt-1"
 
 
 async def test_repeat_redemption_returns_already_redeemed_with_unchanged_balance() -> None:

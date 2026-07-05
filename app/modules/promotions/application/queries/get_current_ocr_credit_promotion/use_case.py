@@ -34,9 +34,18 @@ class GetCurrentOcrCreditPromotionQueryUseCase:
         if promotion is None:
             return None
         promotion.ensure_redeemable(at=now)
-        redemption = await self._promotion_repository.find_redemption_by_user_and_promotion(
+        user_redemption_count = await self._promotion_repository.count_user_redemptions(
             user_id=query.user_id,
             promotion_id=promotion.id,
+        )
+        already_redeemed = user_redemption_count >= promotion.max_redemptions_per_user
+        redemption = (
+            await self._promotion_repository.find_redemption_by_user_and_promotion(
+                user_id=query.user_id,
+                promotion_id=promotion.id,
+            )
+            if already_redeemed
+            else None
         )
         content = await self._promotion_repository.find_content_by_promotion_id(
             promotion_id=promotion.id,
@@ -48,7 +57,7 @@ class GetCurrentOcrCreditPromotionQueryUseCase:
             remaining_redemptions=_remaining_redemptions(promotion),
             starts_at=promotion.starts_at,
             expires_at=promotion.expires_at,
-            already_redeemed=redemption is not None,
+            already_redeemed=already_redeemed,
             redemption_status=redemption.status if redemption is not None else None,
             banner_image_url=content.banner_image_url if content is not None else None,
         )

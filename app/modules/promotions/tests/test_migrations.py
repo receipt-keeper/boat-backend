@@ -16,13 +16,13 @@ from app.modules.promotions.tests.migration_promotion_table_contract import (
 
 PROJECT_ROOT = Path(__file__).parents[4]
 PROMOTION_MIGRATION_PATH = (
-    PROJECT_ROOT / "alembic" / "versions" / "20260703_0012_create_promotion_tables.py"
+    PROJECT_ROOT / "alembic" / "versions" / "20260705_0016_create_promotion_tables.py"
 )
 CREDIT_SOURCE_MIGRATION_PATH = (
-    PROJECT_ROOT / "alembic" / "versions" / "20260703_0013_extend_credit_source_metadata.py"
+    PROJECT_ROOT / "alembic" / "versions" / "20260705_0017_extend_credit_source_metadata.py"
 )
 PROMOTION_CONTENT_MIGRATION_PATH = (
-    PROJECT_ROOT / "alembic" / "versions" / "20260705_0014_create_promotion_contents.py"
+    PROJECT_ROOT / "alembic" / "versions" / "20260705_0018_create_promotion_contents.py"
 )
 
 
@@ -35,19 +35,19 @@ def test_promotion_migration_revision_is_linear_through_content_extension() -> N
     heads = script_directory.get_heads()
 
     # Then: 단일 head는 content migration이고 down_revision은 credit source migration이다.
-    assert heads == ["20260705_0014"]
+    assert heads == ["20260705_0018"]
     assert PROMOTION_MIGRATION_PATH.is_file()
     assert CREDIT_SOURCE_MIGRATION_PATH.is_file()
     assert PROMOTION_CONTENT_MIGRATION_PATH.is_file()
 
     migration_source = PROMOTION_MIGRATION_PATH.read_text(encoding="utf-8")
-    assert 'revision: str = "20260703_0012"' in migration_source
-    assert 'down_revision: str | Sequence[str] | None = "20260705_0013"' in migration_source
+    assert 'revision: str = "20260705_0016"' in migration_source
+    assert 'down_revision: str | Sequence[str] | None = "20260705_0015"' in migration_source
     credit_source = CREDIT_SOURCE_MIGRATION_PATH.read_text(encoding="utf-8")
-    assert 'down_revision: str | Sequence[str] | None = "20260703_0012"' in credit_source
+    assert 'down_revision: str | Sequence[str] | None = "20260705_0016"' in credit_source
     promotion_content = PROMOTION_CONTENT_MIGRATION_PATH.read_text(encoding="utf-8")
-    assert 'revision: str = "20260705_0014"' in promotion_content
-    assert 'down_revision: str | Sequence[str] | None = "20260703_0013"' in promotion_content
+    assert 'revision: str = "20260705_0018"' in promotion_content
+    assert 'down_revision: str | Sequence[str] | None = "20260705_0017"' in promotion_content
 
 
 def test_promotion_migration_creates_constrained_tables(

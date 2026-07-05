@@ -104,13 +104,15 @@ class NotificationMetadata(ValueObject[Mapping[str, str]]):
 
 
 @dataclass(frozen=True, slots=True)
-class Fid(ValueObject[str]):
-    MAX_LENGTH: ClassVar[int] = 255
+class RegistrationToken(ValueObject[str]):
+    MAX_LENGTH: ClassVar[int] = 512
 
     def validate(self) -> None:
         if not self.value or self.value.strip() != self.value or len(self.value) > self.MAX_LENGTH:
-            raise ValidationError([ErrorDetail(field="fid", message="FID가 올바르지 않습니다.")])
+            raise ValidationError(
+                [ErrorDetail(field="token", message="FCM 등록 토큰이 올바르지 않습니다.")]
+            )
 
     def __repr__(self) -> str:
         # 로그/예외에 발송 식별자 원문이 노출되지 않도록 마스킹한다.
-        return f"Fid(****{len(self.value)})"
+        return f"RegistrationToken(****{len(self.value)})"

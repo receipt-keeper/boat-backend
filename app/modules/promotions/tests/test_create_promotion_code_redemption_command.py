@@ -127,6 +127,29 @@ async def test_create_promotion_code_redemption_returns_banner_image_url(
     assert result.banner_image_url == BANNER_IMAGE_URL
 
 
+async def test_create_promotion_code_redemption_allows_distinct_attempts_within_user_limit(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with postgres_session_factory() as session:
+        await seed_promotion(session, max_redemptions_per_user=2)
+        await seed_code(session)
+        grant_port = FakePromotionCreditGrantPort()
+        use_case = code_use_case(session, grant_port)
+
+        first = await use_case.execute(code_command(idempotency_key="code-attempt-1"))
+        second = await use_case.execute(code_command(idempotency_key="code-attempt-2"))
+
+    assert first.already_redeemed is False
+    assert second.already_redeemed is False
+    assert first.credit_granted is True
+    assert second.credit_granted is True
+    assert len(grant_port.grants) == 2
+    assert [grant.idempotency_key for grant in grant_port.grants] == [
+        f"promotionCodeRedemption:{CODE_ID}:{USER_ID}:code-attempt-1",
+        f"promotionCodeRedemption:{CODE_ID}:{USER_ID}:code-attempt-2",
+    ]
+
+
 async def test_create_promotion_code_redemption_raises_not_found_for_invalid_code(
     postgres_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:

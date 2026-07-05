@@ -81,3 +81,24 @@ async def test_get_current_ocr_credit_promotion_marks_already_redeemed_for_user(
     assert result.banner_image_url is None
     assert result.already_redeemed is True
     assert result.redemption_status == PromotionRedemptionStatus.GRANTED
+
+
+async def test_get_current_ocr_credit_promotion_stays_redeemable_until_user_limit(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with postgres_session_factory() as session:
+        await seed_promotion(session, max_redemptions_per_user=2)
+        await promotion_use_case(session, FakePromotionCreditGrantPort()).execute(
+            promotion_command(idempotency_key="attempt-1")
+        )
+        use_case = GetCurrentOcrCreditPromotionQueryUseCase(
+            promotion_repository=SqlAlchemyPromotionRepository(session),
+            clock=lambda: NOW,
+        )
+
+        result = await use_case.execute(GetCurrentOcrCreditPromotionQuery(user_id=USER_ID))
+
+    assert result is not None
+    assert result.promotion_id == PROMOTION_ID
+    assert result.already_redeemed is False
+    assert result.redemption_status is None

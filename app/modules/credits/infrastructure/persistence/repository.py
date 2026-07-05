@@ -23,6 +23,7 @@ _IDEMPOTENT_CREDIT_TRANSACTION_CONSTRAINTS = frozenset(
     {
         "ix_credit_transactions_idempotency_key_unique",
         "ix_credit_transactions_source_unique",
+        "pk_user_credits",
     }
 )
 

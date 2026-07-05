@@ -1,7 +1,7 @@
 """create promotion tables
 
-Revision ID: 20260703_0012
-Revises: 20260705_0013
+Revision ID: 20260705_0016
+Revises: 20260705_0015
 Create Date: 2026-07-03 00:12:00.000000
 """
 
@@ -12,8 +12,8 @@ from sqlalchemy.dialects import postgresql
 
 from alembic import op
 
-revision: str = "20260703_0012"
-down_revision: str | Sequence[str] | None = "20260705_0013"
+revision: str = "20260705_0016"
+down_revision: str | Sequence[str] | None = "20260705_0015"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

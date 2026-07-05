@@ -122,6 +122,28 @@ async def test_create_promotion_redemption_returns_banner_image_url(
     assert result.banner_image_url == BANNER_IMAGE_URL
 
 
+async def test_create_promotion_redemption_allows_distinct_attempts_within_user_limit(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with postgres_session_factory() as session:
+        await seed_promotion(session, max_redemptions_per_user=2)
+        grant_port = FakePromotionCreditGrantPort()
+        use_case = promotion_use_case(session, grant_port)
+
+        first = await use_case.execute(promotion_command(idempotency_key="attempt-1"))
+        second = await use_case.execute(promotion_command(idempotency_key="attempt-2"))
+
+    assert first.already_redeemed is False
+    assert second.already_redeemed is False
+    assert first.credit_granted is True
+    assert second.credit_granted is True
+    assert len(grant_port.grants) == 2
+    assert [grant.idempotency_key for grant in grant_port.grants] == [
+        f"promotionRedemption:{PROMOTION_ID}:{USER_ID}:attempt-1",
+        f"promotionRedemption:{PROMOTION_ID}:{USER_ID}:attempt-2",
+    ]
+
+
 @pytest.mark.parametrize(
     ("active", "starts_offset", "expires_offset", "max_redemptions", "times_redeemed"),
     [

@@ -95,20 +95,24 @@ def code_use_case(
 def promotion_command(
     *,
     promotion_id: UUID = PROMOTION_ID,
+    idempotency_key: str | None = None,
 ) -> CreatePromotionRedemptionCommand:
     return CreatePromotionRedemptionCommand(
         user_id=USER_ID,
         promotion_id=promotion_id,
+        idempotency_key=idempotency_key,
     )
 
 
 def code_command(
     *,
     code: str = "WELCOME2026",
+    idempotency_key: str | None = None,
 ) -> CreatePromotionCodeRedemptionCommand:
     return CreatePromotionCodeRedemptionCommand(
         user_id=USER_ID,
         code=code,
+        idempotency_key=idempotency_key,
     )
 
 
@@ -121,6 +125,7 @@ async def seed_promotion(
     expires_at: datetime | None = NOW + timedelta(days=1),
     max_redemptions: int | None = 10,
     times_redeemed: int = 0,
+    max_redemptions_per_user: int = 1,
 ) -> None:
     session.add(
         orm.Promotion(
@@ -131,7 +136,7 @@ async def seed_promotion(
             expires_at=expires_at,
             max_redemptions=max_redemptions,
             times_redeemed=times_redeemed,
-            max_redemptions_per_user=1,
+            max_redemptions_per_user=max_redemptions_per_user,
             benefit_feature_key="ocr",
             benefit_amount=3,
         )

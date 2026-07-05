@@ -170,17 +170,17 @@ class SqlAlchemyPushTokenRepository(PushTokenRepository):
         self,
         *,
         user_id: UUID,
-        fid: str,
+        token: str,
         platform: DevicePlatform,
     ) -> UserPushToken:
         insert_statement = postgresql_insert(orm.UserPushToken).values(
             user_id=user_id,
-            fid=fid,
+            token=token,
             platform=platform.value,
         )
         await self._session.execute(
             insert_statement.on_conflict_do_update(
-                index_elements=[orm.UserPushToken.fid],
+                index_elements=[orm.UserPushToken.token],
                 set_={
                     "user_id": user_id,
                     "platform": platform.value,
@@ -192,18 +192,18 @@ class SqlAlchemyPushTokenRepository(PushTokenRepository):
 
         record = await self._session.scalar(
             select(orm.UserPushToken)
-            .where(orm.UserPushToken.fid == fid)
+            .where(orm.UserPushToken.token == token)
             .execution_options(populate_existing=True)
         )
         if record is None:
             raise RuntimeError("push token upsert 이후 레코드를 찾을 수 없습니다.")
         return mapper.push_token_to_domain(record)
 
-    async def unregister(self, *, user_id: UUID, fid: str) -> None:
+    async def unregister(self, *, user_id: UUID, token: str) -> None:
         await self._session.execute(
             delete(orm.UserPushToken).where(
                 orm.UserPushToken.user_id == user_id,
-                orm.UserPushToken.fid == fid,
+                orm.UserPushToken.token == token,
             )
         )
         await self._session.flush()
@@ -216,11 +216,11 @@ class SqlAlchemyPushTokenRepository(PushTokenRepository):
         )
         return tuple(mapper.push_token_to_domain(record) for record in records)
 
-    async def delete_by_fids(self, *, fids: Sequence[str]) -> None:
-        if not fids:
+    async def delete_by_tokens(self, *, tokens: Sequence[str]) -> None:
+        if not tokens:
             return
         await self._session.execute(
-            delete(orm.UserPushToken).where(orm.UserPushToken.fid.in_(list(fids)))
+            delete(orm.UserPushToken).where(orm.UserPushToken.token.in_(list(tokens)))
         )
         await self._session.flush()
 

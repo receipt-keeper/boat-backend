@@ -31,7 +31,7 @@ class RegisterDeviceTokenCommandUseCase:
         now = self._clock()
         UserPushToken.create(
             user_id=command.user_id,
-            fid=command.fid,
+            token=command.token,
             platform=command.platform,
             created_at=now,
             updated_at=now,
@@ -39,7 +39,7 @@ class RegisterDeviceTokenCommandUseCase:
 
         saved = await self._push_token_repository.register(
             user_id=command.user_id,
-            fid=command.fid,
+            token=command.token,
             platform=command.platform,
         )
         await self._unit_of_work.commit()

@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Header, Query, status
 
 from app.core.config.dependencies import get_request_settings
 from app.core.config.settings import Settings
@@ -114,11 +114,13 @@ async def create_promotion_code_redemption(
     payload: PromotionCodeRedemptionRequest,
     context: PromotionApiContextDep,
     command_use_case: CreatePromotionCodeRedemptionCommandUseCaseDep,
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ) -> CommonResponse[PromotionResponse]:
     result = await command_use_case.execute(
         CreatePromotionCodeRedemptionCommand(
             user_id=context.user_id,
             code=payload.code,
+            idempotency_key=idempotency_key,
         )
     )
     return CommonResponse(
@@ -141,11 +143,13 @@ async def create_promotion_redemption(
     promotion_id: UUID,
     context: PromotionApiContextDep,
     command_use_case: CreatePromotionRedemptionCommandUseCaseDep,
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ) -> CommonResponse[PromotionResponse]:
     result = await command_use_case.execute(
         CreatePromotionRedemptionCommand(
             user_id=context.user_id,
             promotion_id=promotion_id,
+            idempotency_key=idempotency_key,
         )
     )
     return CommonResponse(

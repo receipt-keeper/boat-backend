@@ -1,7 +1,7 @@
 """extend credit source metadata
 
-Revision ID: 20260703_0013
-Revises: 20260703_0012
+Revision ID: 20260705_0017
+Revises: 20260705_0016
 Create Date: 2026-07-03 00:13:00.000000
 """
 
@@ -12,8 +12,8 @@ from sqlalchemy.dialects import postgresql
 
 from alembic import op
 
-revision: str = "20260703_0013"
-down_revision: str | Sequence[str] | None = "20260703_0012"
+revision: str = "20260705_0017"
+down_revision: str | Sequence[str] | None = "20260705_0016"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

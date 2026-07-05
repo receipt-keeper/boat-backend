@@ -110,11 +110,36 @@ def _send_push_command(
     )
 
 
+class _RecordingUnitOfWork(FakeUnitOfWork):
+    """commit 호출을 공유 call_order 리스트에 기록하는 UnitOfWork."""
+
+    def __init__(self, call_order: list[str]) -> None:
+        super().__init__()
+        self._call_order = call_order
+
+    async def commit(self) -> None:
+        self._call_order.append("commit")
+        await super().commit()
+
+
+class _RecordingEventPublisher(FakeEventPublisher):
+    """publish 호출을 공유 call_order 리스트에 기록하는 EventPublisher."""
+
+    def __init__(self, call_order: list[str]) -> None:
+        super().__init__()
+        self._call_order = call_order
+
+    async def publish(self, events: object) -> None:
+        self._call_order.append("publish")
+        await super().publish(events)  # type: ignore[arg-type]
+
+
 async def test_create_notification_commits_once_and_returns_expected_result() -> None:
     # Given: 알림 생성 use case와 in-memory repository가 준비되어 있다.
     repository = InMemoryNotificationRepository()
-    unit_of_work = FakeUnitOfWork()
-    event_publisher = FakeEventPublisher()
+    call_order: list[str] = []
+    unit_of_work = _RecordingUnitOfWork(call_order)
+    event_publisher = _RecordingEventPublisher(call_order)
     use_case = CreateNotificationCommandUseCase(
         notification_repository=repository,
         unit_of_work=unit_of_work,
@@ -150,6 +175,9 @@ async def test_create_notification_commits_once_and_returns_expected_result() ->
     assert result.resource_id == receipt_id
     assert result.metadata == {"subCategory": "receiptUpload"}
     assert result.read_at is None
+
+    # And: publish가 commit보다 먼저 호출된다(outbox insert가 같은 트랜잭션에 포함).
+    assert call_order == ["publish", "commit"]
 
     # And: NotificationCreated 이벤트가 정확한 payload로 정확히 한 번 발행된다.
     assert len(event_publisher.published) == 1
@@ -187,7 +215,7 @@ def test_restore_does_not_record_creation_event() -> None:
     assert restored.metadata.value == {"subCategory": "warranty"}
 
 
-async def test_create_notification_succeeds_when_event_publish_fails() -> None:
+async def test_create_notification_propagates_publish_failure_without_commit() -> None:
     # Given: publish가 항상 실패하는 event publisher가 주입되어 있다.
     class FailingEventPublisher(FakeEventPublisher):
         async def publish(self, events: object) -> None:
@@ -203,19 +231,20 @@ async def test_create_notification_succeeds_when_event_publish_fails() -> None:
     )
 
     # When: 알림을 생성한다.
-    result = await use_case.execute(
-        CreateNotificationCommand(
-            user_id=TEST_USER_ID,
-            message_type=NotificationMessageType.TRANSACTIONAL,
-            kind="warranty_risk",
-            title="보증 만료 임박",
-            message="냉장고 보증이 30일 뒤 만료돼요.",
+    with pytest.raises(RuntimeError, match="publish 실패"):
+        await use_case.execute(
+            CreateNotificationCommand(
+                user_id=TEST_USER_ID,
+                message_type=NotificationMessageType.TRANSACTIONAL,
+                kind="warranty_risk",
+                title="보증 만료 임박",
+                message="냉장고 보증이 30일 뒤 만료돼요.",
+            )
         )
-    )
 
-    # Then: 알림은 이미 커밋됐으므로 발행 실패가 생성 결과를 깨지 않는다(best-effort).
-    assert unit_of_work.commit_count == 1
-    assert result.notification_id in repository.notifications
+    # Then: outbox insert가 같은 트랜잭션이므로 발행 실패는 커맨드 실패로 전파되고
+    # commit은 수행되지 않는다(저장된 알림도 롤백 대상이 된다).
+    assert unit_of_work.commit_count == 0
 
 
 async def test_create_notification_propagates_validation_without_commit() -> None:
@@ -340,17 +369,17 @@ async def test_send_notification_push_sends_to_registered_devices() -> None:
     push_token_repository = InMemoryPushTokenRepository()
     await push_token_repository.register(
         user_id=TEST_USER_ID,
-        fid="fid-1",
+        token="token-1",
         platform=DevicePlatform.ANDROID,
     )
     await push_token_repository.register(
         user_id=TEST_USER_ID,
-        fid="fid-2",
+        token="token-2",
         platform=DevicePlatform.IOS,
     )
     await push_token_repository.register(
         user_id=OTHER_USER_ID,
-        fid="fid-9",
+        token="token-9",
         platform=DevicePlatform.IOS,
     )
     push_sender = FakePushSender()
@@ -373,7 +402,7 @@ async def test_send_notification_push_sends_to_registered_devices() -> None:
     # Then: 현재 사용자의 등록에만 제목/본문/데이터가 채워진 푸시가 한 번 발송된다.
     assert len(push_sender.calls) == 1
     sent_tokens, sent_message = push_sender.calls[0]
-    assert {token.fid.value for token in sent_tokens} == {"fid-1", "fid-2"}
+    assert {token.token.value for token in sent_tokens} == {"token-1", "token-2"}
     assert sent_message.title == "보증 만료 임박"
     assert sent_message.body == "보증 만료가 임박했습니다."
     assert sent_message.data == {
@@ -390,7 +419,7 @@ async def test_send_notification_push_includes_resource_fields_when_present() ->
     push_token_repository = InMemoryPushTokenRepository()
     await push_token_repository.register(
         user_id=TEST_USER_ID,
-        fid="fid-1",
+        token="token-1",
         platform=DevicePlatform.ANDROID,
     )
     push_sender = FakePushSender()
@@ -437,7 +466,7 @@ async def test_send_notification_push_skips_when_push_disabled() -> None:
     push_token_repository = InMemoryPushTokenRepository()
     await push_token_repository.register(
         user_id=TEST_USER_ID,
-        fid="fid-1",
+        token="token-1",
         platform=DevicePlatform.ANDROID,
     )
     push_sender = FakePushSender()
@@ -468,15 +497,15 @@ async def test_send_notification_push_deletes_invalid_registrations_and_commits(
     push_token_repository = InMemoryPushTokenRepository()
     await push_token_repository.register(
         user_id=TEST_USER_ID,
-        fid="fid-dead",
+        token="token-dead",
         platform=DevicePlatform.ANDROID,
     )
     await push_token_repository.register(
         user_id=TEST_USER_ID,
-        fid="fid-live",
+        token="token-live",
         platform=DevicePlatform.IOS,
     )
-    push_sender = FakePushSender(report=PushSendReport(invalid_fids=("fid-dead",)))
+    push_sender = FakePushSender(report=PushSendReport(invalid_tokens=("token-dead",)))
     unit_of_work = FakeUnitOfWork()
     use_case = _send_push_use_case(
         repository=repository,
@@ -495,9 +524,9 @@ async def test_send_notification_push_deletes_invalid_registrations_and_commits(
     )
 
     # Then: 무효 등록만 삭제되고 정리를 위한 commit이 수행된다.
-    assert push_token_repository.delete_by_fids_count == 1
-    assert "fid-dead" not in push_token_repository.tokens
-    assert "fid-live" in push_token_repository.tokens
+    assert push_token_repository.delete_by_tokens_count == 1
+    assert "token-dead" not in push_token_repository.tokens
+    assert "token-live" in push_token_repository.tokens
     assert unit_of_work.commit_count == 1
 
 
@@ -507,7 +536,7 @@ async def test_send_notification_push_swallows_any_send_failure() -> None:
     push_token_repository = InMemoryPushTokenRepository()
     await push_token_repository.register(
         user_id=TEST_USER_ID,
-        fid="fid-1",
+        token="token-1",
         platform=DevicePlatform.ANDROID,
     )
     push_sender = FakePushSender(error=RuntimeError("예상하지 못한 발송 실패"))
@@ -529,7 +558,7 @@ async def test_send_notification_push_swallows_any_send_failure() -> None:
 
     # Then: 예외는 전파되지 않고 등록은 유지된다.
     assert len(push_sender.calls) == 1
-    assert "fid-1" in push_token_repository.tokens
+    assert "token-1" in push_token_repository.tokens
 
 
 async def test_send_marketing_push_skips_without_marketing_consent() -> None:
@@ -538,7 +567,7 @@ async def test_send_marketing_push_skips_without_marketing_consent() -> None:
     push_token_repository = InMemoryPushTokenRepository()
     await push_token_repository.register(
         user_id=TEST_USER_ID,
-        fid="fid-1",
+        token="token-1",
         platform=DevicePlatform.ANDROID,
     )
     push_sender = FakePushSender()
@@ -569,7 +598,7 @@ async def test_send_service_push_sends_without_marketing_consent() -> None:
     push_token_repository = InMemoryPushTokenRepository()
     await push_token_repository.register(
         user_id=TEST_USER_ID,
-        fid="fid-1",
+        token="token-1",
         platform=DevicePlatform.ANDROID,
     )
     push_sender = FakePushSender()
@@ -605,7 +634,7 @@ async def test_send_marketing_push_sends_with_marketing_consent() -> None:
     push_token_repository = InMemoryPushTokenRepository()
     await push_token_repository.register(
         user_id=TEST_USER_ID,
-        fid="fid-1",
+        token="token-1",
         platform=DevicePlatform.ANDROID,
     )
     push_sender = FakePushSender()
@@ -766,11 +795,11 @@ async def test_register_device_token_commits_once_and_returns_saved_token() -> N
         unit_of_work=unit_of_work,
     )
 
-    # When: 유효한 FID를 등록한다.
+    # When: 유효한 토큰을 등록한다.
     saved = await use_case.execute(
         RegisterDeviceTokenCommand(
             user_id=TEST_USER_ID,
-            fid="fid-1",
+            token="token-1",
             platform=DevicePlatform.ANDROID,
         )
     )
@@ -779,11 +808,11 @@ async def test_register_device_token_commits_once_and_returns_saved_token() -> N
     assert repository.register_count == 1
     assert unit_of_work.commit_count == 1
     assert saved.user_id == TEST_USER_ID
-    assert saved.fid.value == "fid-1"
+    assert saved.token.value == "token-1"
     assert saved.platform == DevicePlatform.ANDROID
 
 
-async def test_register_device_token_with_oversized_fid_raises_without_commit() -> None:
+async def test_register_device_token_with_oversized_token_raises_without_commit() -> None:
     # Given: push token 등록 use case가 준비되어 있다.
     repository = InMemoryPushTokenRepository()
     unit_of_work = FakeUnitOfWork()
@@ -792,18 +821,18 @@ async def test_register_device_token_with_oversized_fid_raises_without_commit() 
         unit_of_work=unit_of_work,
     )
 
-    # When: 256자 fid로 등록을 시도한다.
+    # When: 513자 token으로 등록을 시도한다.
     with pytest.raises(ValidationError) as error:
         await use_case.execute(
             RegisterDeviceTokenCommand(
                 user_id=TEST_USER_ID,
-                fid="a" * 256,
+                token="a" * 513,
                 platform=DevicePlatform.IOS,
             )
         )
 
     # Then: DB에 닿기 전에 검증에서 거부되고 commit은 수행되지 않는다.
-    assert [detail.field for detail in error.value.details] == ["fid"]
+    assert [detail.field for detail in error.value.details] == ["token"]
     assert repository.register_count == 0
     assert unit_of_work.commit_count == 0
 
@@ -813,7 +842,7 @@ async def test_unregister_device_token_commits_once() -> None:
     repository = InMemoryPushTokenRepository()
     await repository.register(
         user_id=TEST_USER_ID,
-        fid="fid-1",
+        token="token-1",
         platform=DevicePlatform.ANDROID,
     )
     unit_of_work = FakeUnitOfWork()
@@ -823,12 +852,12 @@ async def test_unregister_device_token_commits_once() -> None:
     )
 
     # When: 등록된 디바이스를 해제한다.
-    await use_case.execute(UnregisterDeviceTokenCommand(user_id=TEST_USER_ID, fid="fid-1"))
+    await use_case.execute(UnregisterDeviceTokenCommand(user_id=TEST_USER_ID, token="token-1"))
 
     # Then: repository에 위임되고 commit은 한 번만 수행된다.
     assert repository.unregister_count == 1
     assert unit_of_work.commit_count == 1
-    assert "fid-1" not in repository.tokens
+    assert "token-1" not in repository.tokens
 
 
 async def test_delete_stale_push_tokens_removes_only_tokens_older_than_cutoff() -> None:
@@ -836,20 +865,20 @@ async def test_delete_stale_push_tokens_removes_only_tokens_older_than_cutoff() 
     repository = InMemoryPushTokenRepository()
     stale_token = UserPushToken.create(
         user_id=TEST_USER_ID,
-        fid="fid-stale",
+        token="token-stale",
         platform=DevicePlatform.ANDROID,
         created_at=CREATED_AT,
         updated_at=CREATED_AT,
     )
     fresh_token = UserPushToken.create(
         user_id=TEST_USER_ID,
-        fid="fid-fresh",
+        token="token-fresh",
         platform=DevicePlatform.IOS,
         created_at=READ_AT,
         updated_at=READ_AT,
     )
-    repository.tokens["fid-stale"] = stale_token
-    repository.tokens["fid-fresh"] = fresh_token
+    repository.tokens["token-stale"] = stale_token
+    repository.tokens["token-fresh"] = fresh_token
     unit_of_work = FakeUnitOfWork()
     use_case = DeleteStalePushTokensCommandUseCase(
         push_token_repository=repository,
@@ -864,7 +893,7 @@ async def test_delete_stale_push_tokens_removes_only_tokens_older_than_cutoff() 
     # Then: 기준보다 오래된 등록만 삭제되고 삭제 건수가 보고되며 commit은 한 번 수행된다.
     assert result.deleted_count == 1
     assert repository.delete_stale_count == 1
-    assert set(repository.tokens) == {"fid-fresh"}
+    assert set(repository.tokens) == {"token-fresh"}
     assert unit_of_work.commit_count == 1
 
 
@@ -892,17 +921,17 @@ async def test_delete_user_push_tokens_removes_only_target_user_tokens() -> None
     repository = InMemoryPushTokenRepository()
     await repository.register(
         user_id=TEST_USER_ID,
-        fid="fid-1",
+        token="token-1",
         platform=DevicePlatform.ANDROID,
     )
     await repository.register(
         user_id=TEST_USER_ID,
-        fid="fid-2",
+        token="token-2",
         platform=DevicePlatform.IOS,
     )
     await repository.register(
         user_id=OTHER_USER_ID,
-        fid="fid-9",
+        token="token-9",
         platform=DevicePlatform.IOS,
     )
     unit_of_work = FakeUnitOfWork()
@@ -917,7 +946,7 @@ async def test_delete_user_push_tokens_removes_only_target_user_tokens() -> None
     # Then: 해당 사용자 등록만 사라지고 commit은 한 번만 수행된다.
     assert repository.delete_by_user_id_count == 1
     assert unit_of_work.commit_count == 1
-    assert set(repository.tokens) == {"fid-9"}
+    assert set(repository.tokens) == {"token-9"}
 
 
 async def test_delete_user_push_tokens_without_tokens_still_commits_idempotently() -> None:
@@ -946,8 +975,10 @@ async def test_unregister_missing_device_token_still_commits_idempotently() -> N
         unit_of_work=unit_of_work,
     )
 
-    # When: 존재하지 않는 fid를 해제한다.
-    await use_case.execute(UnregisterDeviceTokenCommand(user_id=TEST_USER_ID, fid="missing-fid"))
+    # When: 존재하지 않는 token을 해제한다.
+    await use_case.execute(
+        UnregisterDeviceTokenCommand(user_id=TEST_USER_ID, token="missing-token")
+    )
 
     # Then: 예외 없이 멱등하게 commit이 한 번 수행된다.
     assert repository.unregister_count == 1

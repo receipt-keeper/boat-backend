@@ -104,7 +104,7 @@ boat-backend/
 - domain rule을 request schema validation에 넣지 않는다.
 - Cross-BC database foreign key를 추가하지 않는다. cross-BC reference는 UUID value다.
 - persistence 역할 설명만을 위해 `Record` 같은 suffix를 붙이지 않는다. 역할은 package path가 설명한다.
-- command bus/query bus, event sourcing, outbox, external message bus, Kafka/RabbitMQ/Celery, separate read DB, read-store, projection worker, materialized view는 명시 승인 전까지 도입하지 않는다.
+- command bus/query bus, event sourcing, external message bus, Kafka/RabbitMQ/Celery, separate read DB, read-store, projection worker, materialized view는 명시 승인 전까지 도입하지 않는다. transactional outbox는 `app/core/db/outbox`(ORM·직렬화·publisher·relay)로 도입되었다 — 목적지는 in-process `EventDispatcher`뿐이며 외부 message bus/Kafka 연동은 여전히 금지다.
 
 ## COMMANDS
 
