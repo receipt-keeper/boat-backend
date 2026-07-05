@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from uuid import UUID
 
 import pytest
@@ -8,8 +9,16 @@ from app.core.db.outbox.serialization import (
     deserialize_event,
     serialize_event,
 )
+from app.core.domain.events import DomainEvent
 from app.modules.notifications.domain.events import NotificationCreated
 from app.modules.notifications.domain.value_objects import NotificationMessageType
+
+
+@dataclass(frozen=True, kw_only=True)
+class _OtherModuleEvent(DomainEvent):
+    """다른 모듈의 registry를 흉내 낸 테스트 전용 이벤트 타입."""
+
+    payload_id: UUID
 
 
 def _sample_event() -> NotificationCreated:
@@ -105,3 +114,37 @@ def test_registry_lookup_of_unregistered_type_raises_explicit_error() -> None:
 
     with pytest.raises(UnregisteredEventTypeError):
         registry.resolve("SomethingNotRegistered")
+
+
+def test_merge_absorbs_other_registrys_types_and_resolves_both() -> None:
+    """두 모듈 registry를 병합하면 양쪽 이벤트 타입 모두 resolve된다 (main.py 병합 지점 계약)."""
+    notifications_registry = _registry()
+    other_module_registry = EventTypeRegistry()
+    other_module_registry.register(_OtherModuleEvent)
+
+    merged = EventTypeRegistry()
+    merged.merge(notifications_registry)
+    merged.merge(other_module_registry)
+
+    assert merged.resolve("NotificationCreated") is NotificationCreated
+    assert merged.resolve("_OtherModuleEvent") is _OtherModuleEvent
+
+
+def test_merge_does_not_mutate_the_registry_being_merged_in() -> None:
+    source = EventTypeRegistry()
+    source.register(_OtherModuleEvent)
+
+    merged = EventTypeRegistry()
+    merged.merge(source)
+    merged.register(NotificationCreated)
+
+    with pytest.raises(UnregisteredEventTypeError):
+        source.resolve("NotificationCreated")
+
+
+def test_merge_still_raises_for_types_registered_in_neither_source() -> None:
+    merged = EventTypeRegistry()
+    merged.merge(_registry())
+
+    with pytest.raises(UnregisteredEventTypeError):
+        merged.resolve("SomethingNeverRegisteredAnywhere")

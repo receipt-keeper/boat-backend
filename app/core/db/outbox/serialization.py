@@ -28,6 +28,15 @@ class EventTypeRegistry:
     def register(self, event_class: type[DomainEvent]) -> None:
         self._types[event_class.__name__] = event_class
 
+    def merge(self, other: "EventTypeRegistry") -> None:
+        """다른 레지스트리에 등록된 타입을 이 레지스트리로 흡수한다.
+
+        여러 모듈의 `build_<module>_event_registry()` 결과를 단일 레지스트리로
+        합성할 때 쓴다(예: main.py의 outbox relay 조립 지점). 동일한 클래스명이
+        이미 등록되어 있으면 `other`의 등록으로 덮어쓴다.
+        """
+        self._types.update(other._types)
+
     def resolve(self, event_type: str) -> type[DomainEvent]:
         try:
             return self._types[event_type]

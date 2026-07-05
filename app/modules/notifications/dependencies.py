@@ -165,12 +165,18 @@ def build_notification_outbox_relay(
     *,
     session_factory: async_sessionmaker[AsyncSession],
     settings: Settings,
+    registry: EventTypeRegistry,
 ) -> OutboxRelay:
     """lifespan 폴러가 쓰는 relay를 조립한다.
 
     request가 없는 lifespan 컨텍스트이므로 `NotificationPushDispatcher`에는
     `session_factory`를 직접 주입한다. push sender는 요청 경로의
     `get_push_sender`와 동일한 규칙(`settings.push_send_enabled`)을 따른다.
+
+    `registry`는 이 모듈만의 이벤트 타입이 아니라, main.py 조립 지점에서
+    전 모듈 `build_<module>_event_registry()` 결과를 합성한 단일 레지스트리다.
+    notifications는 dispatcher(push 발송 핸들러 연결)만 소유하고, relay가
+    역직렬화할 수 있는 이벤트 타입의 범위는 호출자가 결정한다.
     """
     push_sender: PushSender = (
         FcmPushSender.from_settings(settings)
@@ -181,7 +187,6 @@ def build_notification_outbox_relay(
         session_factory=session_factory,
         push_sender=push_sender,
     )
-    registry = build_notification_event_registry()
     dispatcher = build_notification_event_dispatcher(push_dispatcher=push_dispatcher)
     return OutboxRelay(
         registry=registry,

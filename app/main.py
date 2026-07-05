@@ -9,6 +9,8 @@ from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core.config.settings import Settings
+from app.core.db.outbox.relay import OutboxRelay
+from app.core.db.outbox.serialization import EventTypeRegistry
 from app.core.db.session import build_engine, build_session_factory
 from app.core.domain.exceptions import (
     ConflictError,
@@ -28,7 +30,10 @@ from app.modules.example.api.router import router as example_router
 from app.modules.files.api.router import router as files_router
 from app.modules.files.dependencies import get_file_reference_guard
 from app.modules.notifications.api.router import router as notifications_router
-from app.modules.notifications.dependencies import build_notification_outbox_relay
+from app.modules.notifications.dependencies import (
+    build_notification_event_registry,
+    build_notification_outbox_relay,
+)
 from app.modules.ocr.api import exception_handlers as ocr_exception_handlers
 from app.modules.ocr.api.router import router as ocr_router
 from app.modules.ocr.domain.exceptions import ReceiptOcrProviderUnavailableError
@@ -39,6 +44,20 @@ from app.modules.users.api.router import router as users_router
 from app.modules.users.dependencies import get_profile_image_file_reference_guard
 
 logger = logging.getLogger(__name__)
+
+# outbox relay가 역직렬화할 수 있는 이벤트 타입의 전 모듈 병합 지점이다.
+# 새 모듈이 outbox 이벤트를 발행하게 되면, 그 모듈의 `dependencies.py`가 소유하는
+# `build_<module>_event_registry()`를 이 리스트에 한 줄 추가한다.
+_EVENT_REGISTRY_BUILDERS = [
+    build_notification_event_registry,
+]
+
+
+def _build_merged_event_registry() -> EventTypeRegistry:
+    registry = EventTypeRegistry()
+    for build_registry in _EVENT_REGISTRY_BUILDERS:
+        registry.merge(build_registry())
+    return registry
 
 
 def _register_exception_handlers(app: FastAPI) -> None:
@@ -86,9 +105,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
         poller_task: asyncio.Task[None] | None = None
         if resolved_settings.outbox_poller_enabled:
-            relay = build_notification_outbox_relay(
+            merged_registry = _build_merged_event_registry()
+            relay: OutboxRelay = build_notification_outbox_relay(
                 session_factory=session_factory,
                 settings=resolved_settings,
+                registry=merged_registry,
             )
             poller_task = asyncio.create_task(
                 relay.run_forever(
