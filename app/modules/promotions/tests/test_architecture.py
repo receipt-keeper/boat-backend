@@ -53,7 +53,6 @@ FORBIDDEN_RELATIVE_IMPORT_PREFIXES = ("infrastructure",)
 FORBIDDEN_PRODUCTION_SCHEMA_API_TERMS = (
     "credit_grants",
     "credit_accounts",
-    "promotion_contents",
     "event_offers",
     "event_redemptions",
     "event_campaigns",
@@ -61,10 +60,10 @@ FORBIDDEN_PRODUCTION_SCHEMA_API_TERMS = (
     "body",
     "cta_label",
     "ctalabel",
-    "image_url",
-    "imageurl",
     "surface",
-    "banner",
+    "placement",
+    "priority",
+    "banner_image_file_id",
     "outbox",
     "broker",
     "scheduler",
@@ -167,7 +166,9 @@ def test_promotions_public_openapi_paths_are_exact() -> None:
     promotion_paths = {
         path
         for path in paths
-        if path.startswith("/api/v1/promotions") or path.startswith("/api/v1/promotion-codes")
+        if path.startswith("/api/v1/promotions")
+        or path.startswith("/api/v1/promotion-codes")
+        or path.startswith("/api/v1/promotion-contents")
     }
 
     assert promotion_paths == EXPECTED_PROMOTION_PUBLIC_PATHS

@@ -58,6 +58,29 @@ async def test_receipt_and_product_leaking_routes_are_absent_from_openapi() -> N
     )
 
 
+async def test_promotion_content_and_code_resources_are_absent_from_openapi() -> None:
+    # Given: 앱 공개 계약을 설명하는 OpenAPI 문서가 있다.
+    test_app = create_app(TEST_SETTINGS)
+
+    # When: 현재 앱의 OpenAPI path 목록을 조회한다.
+    async with AsyncClient(
+        transport=ASGITransport(app=test_app),
+        base_url="http://test",
+    ) as test_client:
+        response = await test_client.get("/openapi.json")
+
+    paths = set(response.json()["paths"])
+
+    # Then: 프로모션은 기존 app-facing route만 공개하고 content/code resource는 공개하지 않는다.
+    assert response.status_code == 200
+    assert not {
+        path
+        for path in paths
+        if path.startswith("/api/v1/promotion-contents")
+        or path.startswith("/api/v1/promotion-codes")
+    }
+
+
 def test_public_openapi_does_not_leak_retired_bc_terms() -> None:
     # Given: 앱 공개 계약을 설명하는 OpenAPI 문서가 있다.
     schema = create_app(TEST_SETTINGS).openapi()
