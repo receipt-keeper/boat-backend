@@ -10,14 +10,26 @@ from tests.support.notifications_contract import (
 )
 
 NOTIFICATION_RESPONSE_FIELDS: Final[frozenset[str]] = frozenset(
-    {"notificationId", "kind", "message", "targetType", "targetId", "createdAt", "readAt"}
+    {
+        "notificationId",
+        "messageType",
+        "kind",
+        "title",
+        "message",
+        "resourceType",
+        "resourceId",
+        "metadata",
+        "createdAt",
+        "readAt",
+    }
 )
 NOTIFICATION_SETTINGS_FIELDS: Final[frozenset[str]] = frozenset({"pushEnabled", "marketingConsent"})
 NOTIFICATION_SNAKE_CASE_FIELDS: Final[frozenset[str]] = frozenset(
     {
         "notification_id",
-        "target_type",
-        "target_id",
+        "message_type",
+        "resource_type",
+        "resource_id",
         "created_at",
         "read_at",
         "push_enabled",
@@ -38,16 +50,25 @@ async def test_notifications_match_cursor_paging_contract() -> None:
     test_app = create_notifications_contract_app()
     payloads = [
         {
+            "messageType": "transactional",
             "kind": "registration_prompt",
+            "title": "영수증 등록 안내",
             "message": "영수증을 등록하면 보증 만료 알림을 받을 수 있어요.",
-            "targetType": "receiptUpload",
-            "targetId": None,
+            "resourceType": None,
+            "resourceId": None,
+            "metadata": {"subCategory": "receiptUpload"},
         },
-        {"kind": "benefit", "message": "이번 달 혜택을 확인해 보세요.", "targetType": "none"},
         {
+            "messageType": "marketing",
+            "kind": "benefit",
+            "title": "혜택 안내",
+            "message": "이번 달 혜택을 확인해 보세요.",
+        },
+        {
+            "messageType": "transactional",
             "kind": "credit_prompt",
+            "title": "크레딧 안내",
             "message": "분석 가능 횟수를 확인해 보세요.",
-            "targetType": "none",
         },
     ]
 
@@ -133,7 +154,15 @@ def test_notifications_openapi_uses_camel_case_contract() -> None:
     update_settings_fields = set(schemas["UpdateNotificationSettingsRequest"]["properties"])
 
     assert notification_fields == NOTIFICATION_RESPONSE_FIELDS
-    assert create_fields == {"kind", "message", "targetType", "targetId"}
+    assert create_fields == {
+        "messageType",
+        "kind",
+        "title",
+        "message",
+        "resourceType",
+        "resourceId",
+        "metadata",
+    }
     assert settings_fields == NOTIFICATION_SETTINGS_FIELDS
     assert update_settings_fields == NOTIFICATION_SETTINGS_FIELDS
     assert {"userId", "createdAt", "readAt"}.isdisjoint(create_fields)

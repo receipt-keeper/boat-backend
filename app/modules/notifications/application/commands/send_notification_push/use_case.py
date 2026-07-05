@@ -1,5 +1,4 @@
 import logging
-from typing import Final
 
 from app.core.application.unit_of_work import UnitOfWork
 from app.modules.notifications.application.commands.send_notification_push.command import (
@@ -15,22 +14,9 @@ from app.modules.notifications.application.ports.push_sender import (
 from app.modules.notifications.application.ports.push_token_repository import (
     PushTokenRepository,
 )
-from app.modules.notifications.domain.value_objects import NotificationKind
+from app.modules.notifications.domain.value_objects import NotificationMessageType
 
 logger = logging.getLogger(__name__)
-
-PUSH_TITLES: Final[dict[NotificationKind, str]] = {
-    NotificationKind.WARRANTY_NOTICE: "보증 기간 안내",
-    NotificationKind.WARRANTY_WARNING: "보증 만료 주의",
-    NotificationKind.WARRANTY_RISK: "보증 만료 임박",
-    NotificationKind.WARRANTY_EXPIRED: "보증 만료",
-    NotificationKind.REGISTRATION_PROMPT: "영수증 등록 안내",
-    NotificationKind.CREDIT_PROMPT: "크레딧 안내",
-    NotificationKind.BENEFIT: "혜택 안내",
-}
-
-# 마케팅성 알림은 push 수신 동의에 더해 마케팅 수신 동의까지 있어야 발송한다.
-MARKETING_KINDS: Final[frozenset[NotificationKind]] = frozenset({NotificationKind.BENEFIT})
 
 
 class SendNotificationPushCommandUseCase:
@@ -53,14 +39,18 @@ class SendNotificationPushCommandUseCase:
             settings = await self._notification_repository.get_settings(user_id=command.user_id)
             if not settings.push_enabled:
                 return
-            if command.kind in MARKETING_KINDS and not settings.marketing_consent:
+            is_unconsented_marketing = (
+                command.message_type == NotificationMessageType.MARKETING
+                and not settings.marketing_consent
+            )
+            if is_unconsented_marketing:
                 return
             tokens = await self._push_token_repository.list_by_user(user_id=command.user_id)
             if not tokens:
                 return
 
             message = PushMessage(
-                title=PUSH_TITLES[command.kind],
+                title=command.title,
                 body=command.message,
                 data=_push_data(command),
             )
@@ -79,9 +69,11 @@ class SendNotificationPushCommandUseCase:
 def _push_data(command: SendNotificationPushCommand) -> dict[str, str]:
     data = {
         "notificationId": str(command.notification_id),
-        "kind": command.kind.value,
-        "targetType": command.target_type.value,
+        "messageType": command.message_type.value,
+        "kind": command.kind,
     }
-    if command.target_id is not None:
-        data["targetId"] = str(command.target_id)
+    if command.resource_type is not None:
+        data["resourceType"] = command.resource_type
+    if command.resource_id is not None:
+        data["resourceId"] = str(command.resource_id)
     return data

@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Annotated, Protocol
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Query, Response, status
+from fastapi import APIRouter, Query, Response, status
 
 from app.core.http.auth import CurrentPrincipalDep
 from app.core.http.responses import ApiErrorData, CommonResponse, CursorPaginationResponse
@@ -24,9 +24,6 @@ from app.modules.notifications.application.commands.mark_notification_read.comma
 from app.modules.notifications.application.commands.register_device_token.command import (
     RegisterDeviceTokenCommand,
 )
-from app.modules.notifications.application.commands.send_notification_push.command import (
-    SendNotificationPushCommand,
-)
 from app.modules.notifications.application.commands.unregister_device_token.command import (
     UnregisterDeviceTokenCommand,
 )
@@ -44,15 +41,11 @@ from app.modules.notifications.dependencies import (
     GetNotificationSettingsQueryUseCaseDep,
     ListNotificationsQueryUseCaseDep,
     MarkNotificationReadCommandUseCaseDep,
-    NotificationPushDispatcherDep,
     RegisterDeviceTokenCommandUseCaseDep,
     UnregisterDeviceTokenCommandUseCaseDep,
     UpdateNotificationSettingsCommandUseCaseDep,
 )
-from app.modules.notifications.domain.value_objects import (
-    NotificationKind,
-    NotificationTargetType,
-)
+from app.modules.notifications.domain.value_objects import NotificationMessageType
 
 
 class _NotificationResult(Protocol):
@@ -60,16 +53,25 @@ class _NotificationResult(Protocol):
     def notification_id(self) -> UUID: ...
 
     @property
-    def kind(self) -> NotificationKind: ...
+    def message_type(self) -> NotificationMessageType: ...
+
+    @property
+    def kind(self) -> str: ...
+
+    @property
+    def title(self) -> str: ...
 
     @property
     def message(self) -> str: ...
 
     @property
-    def target_type(self) -> NotificationTargetType: ...
+    def resource_type(self) -> str | None: ...
 
     @property
-    def target_id(self) -> UUID | None: ...
+    def resource_id(self) -> UUID | None: ...
+
+    @property
+    def metadata(self) -> dict[str, str]: ...
 
     @property
     def created_at(self) -> datetime: ...
@@ -100,7 +102,7 @@ router = APIRouter(
     "/notifications",
     response_model=CommonResponse[NotificationListResponse],
     summary="알림 목록 조회",
-    description="보증 만료, 영수증 등록 안내, 혜택 안내 등 앱 알림을 반환한다.",
+    description="현재 사용자에게 생성된 앱 알림 목록을 최신순으로 반환한다.",
 )
 async def list_notifications(
     query: Annotated[NotificationListQuery, Query()],
@@ -137,36 +139,30 @@ async def list_notifications(
     response_model=CommonResponse[NotificationResponse],
     summary="알림 생성",
     description=(
-        "현재 사용자에게 표시할 앱 알림을 생성한다. 등록된 디바이스로의 푸시 발송은 "
-        "응답 반환 이후 백그라운드에서 진행된다."
+        "현재 사용자에게 표시할 앱 알림을 생성한다. resourceType과 resourceId는 "
+        "함께 있거나 함께 없어야 하며, messageType이 marketing인 알림은 사용자가 마케팅 "
+        "수신에 동의한 경우에만 발송된다(transactional=거래성, marketing=광고성). "
+        "metadata는 발신자 소유 부가 정보이며 서버는 "
+        "형식만 검증하고 내용은 해석하지 않는다. 등록된 디바이스로의 푸시 발송은 응답 반환 "
+        "이후 백그라운드에서 진행된다."
     ),
 )
 async def create_notification(
     request: CreateNotificationRequest,
     principal: CurrentPrincipalDep,
     command_use_case: CreateNotificationCommandUseCaseDep,
-    push_dispatcher: NotificationPushDispatcherDep,
-    background_tasks: BackgroundTasks,
 ) -> CommonResponse[NotificationResponse]:
     result = await command_use_case.execute(
         CreateNotificationCommand(
             user_id=principal.user_id,
+            message_type=request.message_type,
             kind=request.kind,
+            title=request.title,
             message=request.message,
-            target_type=request.target_type,
-            target_id=request.target_id,
+            resource_type=request.resource_type,
+            resource_id=request.resource_id,
+            metadata=request.metadata,
         )
-    )
-    background_tasks.add_task(
-        push_dispatcher.dispatch,
-        SendNotificationPushCommand(
-            user_id=principal.user_id,
-            notification_id=result.notification_id,
-            kind=result.kind,
-            message=result.message,
-            target_type=result.target_type,
-            target_id=result.target_id,
-        ),
     )
     return CommonResponse(
         success=True,
@@ -306,10 +302,13 @@ async def unregister_device(
 def _notification_response(notification: _NotificationResult) -> NotificationResponse:
     return NotificationResponse(
         notificationId=notification.notification_id,
+        messageType=notification.message_type,
         kind=notification.kind,
+        title=notification.title,
         message=notification.message,
-        targetType=notification.target_type,
-        targetId=notification.target_id,
+        resourceType=notification.resource_type,
+        resourceId=notification.resource_id,
+        metadata=notification.metadata,
         createdAt=notification.created_at,
         readAt=notification.read_at,
     )

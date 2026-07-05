@@ -2,7 +2,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from typing import Final
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from fastapi import FastAPI, Request
 
@@ -49,10 +49,8 @@ from app.modules.notifications.dependencies import (
     get_notification_settings_query_use_case,
     get_update_notification_settings_command_use_case,
 )
-from app.modules.notifications.domain.value_objects import (
-    NotificationKind,
-    NotificationTargetType,
-)
+from app.modules.notifications.domain.model import UserNotification
+from app.modules.notifications.domain.value_objects import NotificationMessageType
 
 TEST_USER_ID: Final = UUID("00000000-0000-0000-0000-000000000101")
 TEST_CREDENTIALS_ID: Final = UUID("00000000-0000-0000-0000-000000000102")
@@ -64,10 +62,13 @@ TEST_SETTINGS: Final = Settings(app_name="Boat Backend")
 class StoredNotification:
     notification_id: UUID
     user_id: UUID
-    kind: NotificationKind
+    message_type: NotificationMessageType
+    kind: str
+    title: str
     message: str
-    target_type: NotificationTargetType
-    target_id: UUID | None
+    resource_type: str | None
+    resource_id: UUID | None
+    metadata: dict[str, str]
     created_at: datetime
     read_at: datetime | None = None
 
@@ -87,23 +88,45 @@ class NotificationsContractStore:
         self._marketing_consent = False
 
     def create(self, command: CreateNotificationCommand) -> CreateNotificationResult:
-        notification = StoredNotification(
-            notification_id=uuid4(),
+        # 프로덕션과 동일한 도메인 검증을 거쳐 계약 앱이 실제 API와 갈라지지 않게 한다.
+        domain_notification = UserNotification.create(
             user_id=command.user_id,
+            message_type=command.message_type,
             kind=command.kind,
+            title=command.title,
             message=command.message,
-            target_type=command.target_type,
-            target_id=command.target_id,
+            resource_type=command.resource_type,
+            resource_id=command.resource_id,
+            metadata=command.metadata,
             created_at=datetime(2026, 6, 28, 9, 0, tzinfo=UTC)
             + timedelta(seconds=len(self._notifications)),
+        )
+        notification = StoredNotification(
+            notification_id=domain_notification.id,
+            user_id=domain_notification.user_id,
+            message_type=domain_notification.message_type,
+            kind=domain_notification.kind.value,
+            title=domain_notification.title.value,
+            message=domain_notification.message.value,
+            resource_type=(
+                domain_notification.resource_type.value
+                if domain_notification.resource_type is not None
+                else None
+            ),
+            resource_id=domain_notification.resource_id,
+            metadata=dict(domain_notification.metadata.value),
+            created_at=domain_notification.created_at,
         )
         self._notifications.append(notification)
         return CreateNotificationResult(
             notification_id=notification.notification_id,
+            message_type=notification.message_type,
             kind=notification.kind,
+            title=notification.title,
             message=notification.message,
-            target_type=notification.target_type,
-            target_id=notification.target_id,
+            resource_type=notification.resource_type,
+            resource_id=notification.resource_id,
+            metadata=notification.metadata,
             created_at=notification.created_at,
             read_at=notification.read_at,
         )
@@ -149,10 +172,13 @@ class NotificationsContractStore:
                 self._notifications[index] = read_notification
                 return MarkNotificationReadResult(
                     notification_id=read_notification.notification_id,
+                    message_type=read_notification.message_type,
                     kind=read_notification.kind,
+                    title=read_notification.title,
                     message=read_notification.message,
-                    target_type=read_notification.target_type,
-                    target_id=read_notification.target_id,
+                    resource_type=read_notification.resource_type,
+                    resource_id=read_notification.resource_id,
+                    metadata=read_notification.metadata,
                     created_at=read_notification.created_at,
                     read_at=read_notification.read_at,
                 )
@@ -196,10 +222,13 @@ def _format_contract_cursor(notification: StoredNotification) -> str:
 def _list_item(notification: StoredNotification) -> NotificationListItemResult:
     return NotificationListItemResult(
         notification_id=notification.notification_id,
+        message_type=notification.message_type,
         kind=notification.kind,
+        title=notification.title,
         message=notification.message,
-        target_type=notification.target_type,
-        target_id=notification.target_id,
+        resource_type=notification.resource_type,
+        resource_id=notification.resource_id,
+        metadata=notification.metadata,
         created_at=notification.created_at,
         read_at=notification.read_at,
     )

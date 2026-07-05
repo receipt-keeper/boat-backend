@@ -9,20 +9,22 @@ from app.modules.notifications.domain.model import (
 )
 from app.modules.notifications.domain.value_objects import (
     DevicePlatform,
-    NotificationKind,
-    NotificationTargetType,
+    NotificationMessageType,
 )
 from app.modules.notifications.infrastructure.persistence import orm
 
 
 def notification_to_domain(record: orm.UserNotification) -> DomainUserNotification:
-    return DomainUserNotification.create(
+    return DomainUserNotification.restore(
         notification_id=record.id,
         user_id=record.user_id,
-        kind=NotificationKind(record.kind),
+        message_type=NotificationMessageType(record.message_type),
+        kind=record.kind,
+        title=record.title,
         message=record.message,
-        target_type=NotificationTargetType(record.target_type),
-        target_id=record.target_id,
+        resource_type=record.resource_type,
+        resource_id=record.resource_id,
+        metadata=dict(record.metadata_),
         created_at=record.created_at,
         read_at=record.read_at,
     )
@@ -34,10 +36,15 @@ def notification_to_record(
     return orm.UserNotification(
         id=notification.id,
         user_id=notification.user_id,
+        message_type=notification.message_type.value,
         kind=notification.kind.value,
+        title=notification.title.value,
         message=notification.message.value,
-        target_type=notification.target_type.value,
-        target_id=notification.target_id,
+        resource_type=(
+            notification.resource_type.value if notification.resource_type is not None else None
+        ),
+        resource_id=notification.resource_id,
+        metadata_=dict(notification.metadata.value),
         created_at=notification.created_at,
         read_at=notification.read_at,
     )

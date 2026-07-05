@@ -27,30 +27,36 @@ async def test_list_notifications_returns_persisted_current_user_notifications(
                 orm.UserNotification(
                     id=newer_notification_id,
                     user_id=TEST_USER_ID,
+                    message_type="transactional",
                     kind="registration_prompt",
+                    title="영수증 등록 안내",
                     message="영수증을 등록해 보세요.",
-                    target_type="receiptUpload",
-                    target_id=None,
+                    resource_type=None,
+                    resource_id=None,
                     created_at=datetime(2026, 6, 28, 10, 0, tzinfo=UTC),
                     read_at=None,
                 ),
                 orm.UserNotification(
                     id=older_notification_id,
                     user_id=TEST_USER_ID,
+                    message_type="transactional",
                     kind="registration_prompt",
+                    title="영수증 등록 안내",
                     message="이전 알림입니다.",
-                    target_type="none",
-                    target_id=None,
+                    resource_type=None,
+                    resource_id=None,
                     created_at=datetime(2026, 6, 28, 9, 0, tzinfo=UTC),
                     read_at=None,
                 ),
                 orm.UserNotification(
                     id=other_notification_id,
                     user_id=UUID("00000000-0000-0000-0000-000000000201"),
+                    message_type="marketing",
                     kind="benefit",
+                    title="혜택 안내",
                     message="다른 사용자 알림입니다.",
-                    target_type="none",
-                    target_id=None,
+                    resource_type=None,
+                    resource_id=None,
                     created_at=datetime(2026, 6, 28, 10, 0, tzinfo=UTC),
                     read_at=None,
                 ),
@@ -68,10 +74,13 @@ async def test_list_notifications_returns_persisted_current_user_notifications(
     assert first_body["data"]["notifications"] == [
         {
             "notificationId": str(newer_notification_id),
+            "messageType": "transactional",
             "kind": "registration_prompt",
+            "title": "영수증 등록 안내",
             "message": "영수증을 등록해 보세요.",
-            "targetType": "receiptUpload",
-            "targetId": None,
+            "resourceType": None,
+            "resourceId": None,
+            "metadata": {},
             "createdAt": "2026-06-28T10:00:00Z",
             "readAt": None,
         }
@@ -89,10 +98,12 @@ async def test_list_notifications_returns_persisted_current_user_notifications(
             orm.UserNotification(
                 id=inserted_notification_id,
                 user_id=TEST_USER_ID,
+                message_type="marketing",
                 kind="benefit",
+                title="혜택 안내",
                 message="새로 도착한 알림입니다.",
-                target_type="none",
-                target_id=None,
+                resource_type=None,
+                resource_id=None,
                 created_at=datetime(2026, 6, 28, 11, 0, tzinfo=UTC),
                 read_at=None,
             )
@@ -128,30 +139,36 @@ async def test_list_notifications_uses_id_tiebreaker_for_same_created_at_cursor(
                 orm.UserNotification(
                     id=higher_notification_id,
                     user_id=TEST_USER_ID,
+                    message_type="transactional",
                     kind="registration_prompt",
+                    title="영수증 등록 안내",
                     message="같은 시각의 최신 알림입니다.",
-                    target_type="none",
-                    target_id=None,
+                    resource_type=None,
+                    resource_id=None,
                     created_at=datetime(2026, 6, 28, 10, 0, tzinfo=UTC),
                     read_at=None,
                 ),
                 orm.UserNotification(
                     id=lower_notification_id,
                     user_id=TEST_USER_ID,
+                    message_type="transactional",
                     kind="registration_prompt",
+                    title="영수증 등록 안내",
                     message="같은 시각의 다음 알림입니다.",
-                    target_type="none",
-                    target_id=None,
+                    resource_type=None,
+                    resource_id=None,
                     created_at=datetime(2026, 6, 28, 10, 0, tzinfo=UTC),
                     read_at=None,
                 ),
                 orm.UserNotification(
                     id=older_notification_id,
                     user_id=TEST_USER_ID,
+                    message_type="marketing",
                     kind="benefit",
+                    title="혜택 안내",
                     message="이전 시각의 알림입니다.",
-                    target_type="none",
-                    target_id=None,
+                    resource_type=None,
+                    resource_id=None,
                     created_at=datetime(2026, 6, 28, 9, 0, tzinfo=UTC),
                     read_at=None,
                 ),
@@ -284,10 +301,13 @@ async def test_mark_notification_read_persists_for_current_user(
 ) -> None:
     # Given: 현재 사용자의 읽지 않은 알림이 생성되어 있다.
     payload = {
+        "messageType": "transactional",
         "kind": "registration_prompt",
+        "title": "영수증 등록 안내",
         "message": "보증 관리를 위해 영수증을 등록해 주세요.",
-        "targetType": "receiptUpload",
-        "targetId": None,
+        "resourceType": None,
+        "resourceId": None,
+        "metadata": {"subCategory": "receiptUpload"},
     }
 
     # When: 읽음 처리 후 목록을 다시 조회한다.
@@ -298,7 +318,7 @@ async def test_mark_notification_read_persists_for_current_user(
         read_response = await client.patch(f"/api/v1/notifications/{notification_id}")
         list_response = await client.get("/api/v1/notifications?limit=10")
 
-    # Then: 읽음 응답과 목록의 같은 알림 모두 readAt을 가진다.
+    # Then: 읽음 응답과 목록의 같은 알림 모두 readAt과 metadata를 가진다.
     read_body = read_response.json()
     notifications = list_response.json()["data"]["notifications"]
     persisted = next(
@@ -310,7 +330,9 @@ async def test_mark_notification_read_persists_for_current_user(
     assert read_response.status_code == 200
     assert read_body["data"]["notificationId"] == notification_id
     assert read_body["data"]["readAt"] is not None
+    assert read_body["data"]["metadata"] == {"subCategory": "receiptUpload"}
     assert persisted["readAt"] == read_body["data"]["readAt"]
+    assert persisted["metadata"] == {"subCategory": "receiptUpload"}
 
 
 async def test_mark_missing_notification_returns_not_found_envelope(
@@ -334,10 +356,12 @@ async def test_mark_foreign_notification_returns_not_found_envelope(
 ) -> None:
     # Given: 다른 사용자에게 알림이 생성되어 있다.
     payload = {
+        "messageType": "marketing",
         "kind": "benefit",
+        "title": "혜택 안내",
         "message": "다른 사용자에게만 보이는 알림입니다.",
-        "targetType": "none",
-        "targetId": None,
+        "resourceType": None,
+        "resourceId": None,
     }
 
     async with notification_api_client(
