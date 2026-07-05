@@ -66,6 +66,27 @@ class Settings(BaseSettings):
         description="이 일수 이상 갱신되지 않은 푸시 토큰을 정리 배치의 삭제 대상으로 본다.",
     )
 
+    outbox_poller_enabled: bool = Field(
+        default=True,
+        description="lifespan에서 outbox 재발행 폴러(OutboxRelay.run_forever)를 시작할지 여부.",
+    )
+    outbox_poll_interval_seconds: float = Field(
+        default=2.0,
+        description="outbox 폴러가 재발행 대상을 조회하는 주기(초).",
+    )
+    outbox_batch_size: int = Field(
+        default=100,
+        description="outbox 폴러가 한 번에 조회·재발행하는 최대 row 수.",
+    )
+    outbox_redeliver_after_seconds: int = Field(
+        default=30,
+        description="즉시 발행 경로와 경합을 피해 폴러가 재발행 대상으로 삼는 최소 경과 시간(초).",
+    )
+    outbox_max_retry: int = Field(
+        default=10,
+        description="이 횟수 이상 실패한 row는 폴러 조회 대상에서 제외한다(잔존 row=dead letter).",
+    )
+
     jwt_secret_key: str = Field(
         default=DEFAULT_JWT_SECRET_KEY,
         description="Symmetric key for service access JWT signing.",

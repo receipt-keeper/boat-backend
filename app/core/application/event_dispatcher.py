@@ -8,8 +8,12 @@ type EventHandler = Callable[[DomainEvent], Awaitable[None]]
 class EventDispatcher:
     """Same-process application event dispatcher.
 
-    This dispatcher has no outbox, retry, replay, broker, or cross-process delivery contract.
-    Handler failures are propagated to the caller.
+    This dispatcher itself still has no outbox, retry, replay, broker, or
+    cross-process delivery contract - it only invokes registered handlers
+    in-process and propagates handler failures to the caller. Outbox
+    persistence and retry are a separate concern owned by `app.core.db.outbox`
+    (`OutboxEventPublisher`, `OutboxRelay`), which call into this dispatcher
+    rather than replacing it.
     """
 
     def __init__(self) -> None:

@@ -110,11 +110,36 @@ def _send_push_command(
     )
 
 
+class _RecordingUnitOfWork(FakeUnitOfWork):
+    """commit 호출을 공유 call_order 리스트에 기록하는 UnitOfWork."""
+
+    def __init__(self, call_order: list[str]) -> None:
+        super().__init__()
+        self._call_order = call_order
+
+    async def commit(self) -> None:
+        self._call_order.append("commit")
+        await super().commit()
+
+
+class _RecordingEventPublisher(FakeEventPublisher):
+    """publish 호출을 공유 call_order 리스트에 기록하는 EventPublisher."""
+
+    def __init__(self, call_order: list[str]) -> None:
+        super().__init__()
+        self._call_order = call_order
+
+    async def publish(self, events: object) -> None:
+        self._call_order.append("publish")
+        await super().publish(events)  # type: ignore[arg-type]
+
+
 async def test_create_notification_commits_once_and_returns_expected_result() -> None:
     # Given: 알림 생성 use case와 in-memory repository가 준비되어 있다.
     repository = InMemoryNotificationRepository()
-    unit_of_work = FakeUnitOfWork()
-    event_publisher = FakeEventPublisher()
+    call_order: list[str] = []
+    unit_of_work = _RecordingUnitOfWork(call_order)
+    event_publisher = _RecordingEventPublisher(call_order)
     use_case = CreateNotificationCommandUseCase(
         notification_repository=repository,
         unit_of_work=unit_of_work,
@@ -150,6 +175,9 @@ async def test_create_notification_commits_once_and_returns_expected_result() ->
     assert result.resource_id == receipt_id
     assert result.metadata == {"subCategory": "receiptUpload"}
     assert result.read_at is None
+
+    # And: publish가 commit보다 먼저 호출된다(outbox insert가 같은 트랜잭션에 포함).
+    assert call_order == ["publish", "commit"]
 
     # And: NotificationCreated 이벤트가 정확한 payload로 정확히 한 번 발행된다.
     assert len(event_publisher.published) == 1
@@ -187,7 +215,7 @@ def test_restore_does_not_record_creation_event() -> None:
     assert restored.metadata.value == {"subCategory": "warranty"}
 
 
-async def test_create_notification_succeeds_when_event_publish_fails() -> None:
+async def test_create_notification_propagates_publish_failure_without_commit() -> None:
     # Given: publish가 항상 실패하는 event publisher가 주입되어 있다.
     class FailingEventPublisher(FakeEventPublisher):
         async def publish(self, events: object) -> None:
@@ -203,19 +231,20 @@ async def test_create_notification_succeeds_when_event_publish_fails() -> None:
     )
 
     # When: 알림을 생성한다.
-    result = await use_case.execute(
-        CreateNotificationCommand(
-            user_id=TEST_USER_ID,
-            message_type=NotificationMessageType.TRANSACTIONAL,
-            kind="warranty_risk",
-            title="보증 만료 임박",
-            message="냉장고 보증이 30일 뒤 만료돼요.",
+    with pytest.raises(RuntimeError, match="publish 실패"):
+        await use_case.execute(
+            CreateNotificationCommand(
+                user_id=TEST_USER_ID,
+                message_type=NotificationMessageType.TRANSACTIONAL,
+                kind="warranty_risk",
+                title="보증 만료 임박",
+                message="냉장고 보증이 30일 뒤 만료돼요.",
+            )
         )
-    )
 
-    # Then: 알림은 이미 커밋됐으므로 발행 실패가 생성 결과를 깨지 않는다(best-effort).
-    assert unit_of_work.commit_count == 1
-    assert result.notification_id in repository.notifications
+    # Then: outbox insert가 같은 트랜잭션이므로 발행 실패는 커맨드 실패로 전파되고
+    # commit은 수행되지 않는다(저장된 알림도 롤백 대상이 된다).
+    assert unit_of_work.commit_count == 0
 
 
 async def test_create_notification_propagates_validation_without_commit() -> None:

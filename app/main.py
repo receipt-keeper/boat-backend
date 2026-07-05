@@ -1,3 +1,6 @@
+import asyncio
+import contextlib
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -25,6 +28,7 @@ from app.modules.example.api.router import router as example_router
 from app.modules.files.api.router import router as files_router
 from app.modules.files.dependencies import get_file_reference_guard
 from app.modules.notifications.api.router import router as notifications_router
+from app.modules.notifications.dependencies import build_notification_outbox_relay
 from app.modules.ocr.api import exception_handlers as ocr_exception_handlers
 from app.modules.ocr.api.router import router as ocr_router
 from app.modules.ocr.domain.exceptions import ReceiptOcrProviderUnavailableError
@@ -32,6 +36,8 @@ from app.modules.receipts.api.router import router as receipts_router
 from app.modules.usage.api.router import router as usage_router
 from app.modules.users.api.router import router as users_router
 from app.modules.users.dependencies import get_profile_image_file_reference_guard
+
+logger = logging.getLogger(__name__)
 
 
 def _register_exception_handlers(app: FastAPI) -> None:
@@ -74,10 +80,29 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         engine = build_engine(resolved_settings.database_url)
         _app.state.engine = engine
-        _app.state.session_factory = build_session_factory(engine)
+        session_factory = build_session_factory(engine)
+        _app.state.session_factory = session_factory
+
+        poller_task: asyncio.Task[None] | None = None
+        if resolved_settings.outbox_poller_enabled:
+            relay = build_notification_outbox_relay(
+                session_factory=session_factory,
+                settings=resolved_settings,
+            )
+            poller_task = asyncio.create_task(
+                relay.run_forever(
+                    session_factory,
+                    interval_seconds=resolved_settings.outbox_poll_interval_seconds,
+                )
+            )
+
         try:
             yield
         finally:
+            if poller_task is not None:
+                poller_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await poller_task
             await engine.dispose()
 
     app = FastAPI(
