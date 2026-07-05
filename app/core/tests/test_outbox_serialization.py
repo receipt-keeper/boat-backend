@@ -58,6 +58,7 @@ def test_serialize_and_deserialize_round_trips_none_resource_fields() -> None:
     restored = deserialize_event(registry, event_type, payload)
 
     assert restored == event
+    assert isinstance(restored, NotificationCreated)
     assert restored.resource_type is None
     assert restored.resource_id is None
 
@@ -81,6 +82,7 @@ def test_deserialize_restores_str_enum_member_not_plain_string() -> None:
     event_type, payload = serialize_event(event)
     restored = deserialize_event(registry, event_type, payload)
 
+    assert isinstance(restored, NotificationCreated)
     assert isinstance(restored.message_type, NotificationMessageType)
     assert restored.message_type is NotificationMessageType.TRANSACTIONAL
 
