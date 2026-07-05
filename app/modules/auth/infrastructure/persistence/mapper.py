@@ -16,7 +16,7 @@ from app.modules.auth.infrastructure.persistence import orm
 
 
 def user_credential_to_domain(record: orm.UserCredential) -> DomainUserCredential:
-    return DomainUserCredential.create(
+    return DomainUserCredential.restore(
         credentials_id=record.id,
         user_id=record.user_id,
         role=record.role,

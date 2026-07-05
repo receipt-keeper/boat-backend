@@ -24,6 +24,7 @@ from app.core.observability.health import router as observability_router
 from app.modules.auth.api import exception_handlers as auth_exception_handlers
 from app.modules.auth.api.router import router as auth_router
 from app.modules.auth.api.security import authenticate_current_principal
+from app.modules.auth.dependencies import build_auth_event_registry
 from app.modules.auth.domain.exceptions import AuthenticationError, AuthorizationError
 from app.modules.credits.api.router import router as credits_router
 from app.modules.credits.dependencies import build_credits_event_registry
@@ -58,6 +59,7 @@ _EVENT_REGISTRY_BUILDERS = [
     build_credits_event_registry,
     build_promotions_event_registry,
     build_users_event_registry,
+    build_auth_event_registry,
 ]
 
 

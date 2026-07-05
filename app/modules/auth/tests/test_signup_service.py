@@ -1,8 +1,11 @@
+from collections.abc import Sequence
 from dataclasses import dataclass
 from uuid import UUID, uuid4
 
 import pytest
 
+from app.core.application.event_publisher import EventPublisher
+from app.core.domain.events import DomainEvent
 from app.core.domain.exceptions import ValidationError
 from app.modules.auth.application.commands.signup.command import SignupCommand
 from app.modules.auth.application.commands.signup.use_case import SignupCommandUseCase
@@ -18,6 +21,7 @@ from app.modules.auth.application.ports.user_provisioner import (
     UserProvisioner,
     UserProvisioningRequest,
 )
+from app.modules.auth.domain.events import UserCredentialCreated
 from app.modules.auth.domain.exceptions import UserAlreadyExistsError
 from app.modules.auth.domain.model import ExternalIdentity, UserCredential
 from app.modules.auth.tests.service_fakes import (
@@ -27,6 +31,14 @@ from app.modules.auth.tests.service_fakes import (
     build_refresh_token_service,
 )
 from tests.support.unit_of_work import FakeUnitOfWork
+
+
+class RecordingEventPublisher(EventPublisher):
+    def __init__(self) -> None:
+        self.published: list[DomainEvent] = []
+
+    async def publish(self, events: Sequence[DomainEvent]) -> None:
+        self.published.extend(events)
 
 
 @dataclass(frozen=True, slots=True)
@@ -88,6 +100,7 @@ class SignupUseCaseFixture:
     credit_initializer: FakeCreditInitializer
     identity_synchronizer: RecordingExternalIdentityLoginSynchronizer
     unit_of_work: FakeUnitOfWork
+    event_publisher: RecordingEventPublisher
 
 
 def _new_identity() -> ExternalIdentity:
@@ -109,6 +122,7 @@ def _build_signup_use_case(identity: ExternalIdentity) -> SignupUseCaseFixture:
     identity_synchronizer = RecordingExternalIdentityLoginSynchronizer()
     unit_of_work = FakeUnitOfWork()
     refresh_token_service = build_refresh_token_service()
+    event_publisher = RecordingEventPublisher()
     return SignupUseCaseFixture(
         use_case=SignupCommandUseCase(
             identity_verifier=FakeExternalIdentityVerifier(identity),
@@ -120,6 +134,7 @@ def _build_signup_use_case(identity: ExternalIdentity) -> SignupUseCaseFixture:
             access_token_issuer=build_access_token_issuer(),
             refresh_token_issuer=refresh_token_service,
             unit_of_work=unit_of_work,
+            event_publisher=event_publisher,
         ),
         repository=repository,
         provisioner=provisioner,
@@ -127,6 +142,7 @@ def _build_signup_use_case(identity: ExternalIdentity) -> SignupUseCaseFixture:
         credit_initializer=credit_initializer,
         identity_synchronizer=identity_synchronizer,
         unit_of_work=unit_of_work,
+        event_publisher=event_publisher,
     )
 
 
@@ -178,6 +194,25 @@ async def test_signup_creates_new_credentials_tokens_and_marketing_settings() ->
     assert len(fixture.repository.credentials_by_identity) == 1
     assert len(fixture.repository.refresh_token_hashes) == 1
     assert fixture.unit_of_work.commit_count == 1
+
+    created_credentials = next(iter(fixture.repository.credentials_by_identity.values()))
+    assert len(fixture.event_publisher.published) == 1
+    published_event = fixture.event_publisher.published[0]
+    assert isinstance(published_event, UserCredentialCreated)
+    assert published_event.credentials_id == created_credentials.credentials_id
+    assert published_event.user_id == created_credentials.user_id
+    assert published_event.role == created_credentials.role.value
+
+
+async def test_signup_rejects_existing_external_identity_publishes_no_events() -> None:
+    identity = _new_identity()
+    fixture = _build_signup_use_case(identity)
+    fixture.repository.seed_existing_external_identity(identity=identity)
+
+    with pytest.raises(UserAlreadyExistsError):
+        await fixture.use_case.execute(_signup_command())
+
+    assert fixture.event_publisher.published == []
 
 
 async def test_signup_defaults_marketing_settings_to_false() -> None:
