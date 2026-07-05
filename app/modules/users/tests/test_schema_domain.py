@@ -82,6 +82,69 @@ def test_user_domain_rejects_invalid_email() -> None:
     assert [detail.field for detail in error.value.details] == ["email"]
 
 
+def test_user_create_records_user_registered_event() -> None:
+    user = user_model.User.create(name="이벤트 사용자", email="event@example.com")
+
+    events = user.pull_events()
+
+    assert len(events) == 1
+    assert isinstance(events[0], user_model.UserRegistered)
+    assert events[0].user_id == user.id
+    assert events[0].email == "event@example.com"
+    assert events[0].name == "이벤트 사용자"
+    # pull_events()는 소진형이다 — 재호출은 빈 리스트를 반환한다.
+    assert user.pull_events() == []
+
+
+def test_user_restore_does_not_record_user_registered_event() -> None:
+    # DB rehydration 경로(mapper.user_to_domain)는 restore()를 사용해야 하며,
+    # 저장된 레코드를 다시 읽을 때마다 UserRegistered가 재발행되면 안 된다.
+    restored = user_model.User.restore(
+        user_id=user_model.uuid4(),
+        name="복원된 사용자",
+        email="restored@example.com",
+    )
+
+    assert restored.pull_events() == []
+
+
+def test_user_update_profile_image_url_records_change_event_with_previous_url() -> None:
+    user = user_model.User.create(
+        name="이미지 사용자",
+        email="image@example.com",
+        profile_image_url="/files/old/content",
+    )
+    user.pull_events()  # UserRegistered는 이 테스트의 관심사가 아니다.
+
+    updated = user.update_profile_image_url(profile_image_url="/files/new/content")
+    events = updated.pull_events()
+
+    assert len(events) == 1
+    assert isinstance(events[0], user_model.UserProfileImageChanged)
+    assert events[0].user_id == user.id
+    assert events[0].previous_image_url == "/files/old/content"
+    assert events[0].new_image_url == "/files/new/content"
+    assert updated.profile_image_url == "/files/new/content"
+
+
+def test_user_update_profile_image_url_records_clear_with_none_new_url() -> None:
+    user = user_model.User.create(
+        name="이미지 해제 사용자",
+        email="clear-image@example.com",
+        profile_image_url="/files/old/content",
+    )
+    user.pull_events()
+
+    updated = user.update_profile_image_url(profile_image_url=None)
+    events = updated.pull_events()
+
+    assert len(events) == 1
+    assert isinstance(events[0], user_model.UserProfileImageChanged)
+    assert events[0].previous_image_url == "/files/old/content"
+    assert events[0].new_image_url is None
+    assert updated.profile_image_url is None
+
+
 def _is_partial_unique_normalized_email_index(index: Index) -> bool:
     dialect_options = index.dialect_options["postgresql"]
     return (

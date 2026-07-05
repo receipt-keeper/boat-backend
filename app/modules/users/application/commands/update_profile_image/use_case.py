@@ -1,5 +1,6 @@
 from uuid import UUID
 
+from app.core.application.event_publisher import EventPublisher
 from app.core.application.unit_of_work import UnitOfWork
 from app.modules.users.application.commands.update_profile_image.command import (
     ClearProfileImageCommand,
@@ -21,10 +22,12 @@ class UpdateProfileImageCommandUseCase:
         user_repository: UserRepository,
         profile_image_file_validator: ProfileImageFileValidator,
         unit_of_work: UnitOfWork,
+        event_publisher: EventPublisher,
     ) -> None:
         self._user_repository = user_repository
         self._profile_image_file_validator = profile_image_file_validator
         self._unit_of_work = unit_of_work
+        self._event_publisher = event_publisher
 
     async def set_profile_image(
         self,
@@ -35,10 +38,11 @@ class UpdateProfileImageCommandUseCase:
             file_id=command.file_id,
         )
         profile_image_url = _profile_image_path(file_id=command.file_id)
-        await self._user_repository.update_profile_image_url(
+        updated = await self._user_repository.update_profile_image_url(
             user_id=command.user_id,
             profile_image_url=profile_image_url,
         )
+        await self._event_publisher.publish(updated.pull_events())
         await self._unit_of_work.commit()
         return UpdateProfileImageResult(
             profile_image_url=profile_image_url,
@@ -48,10 +52,11 @@ class UpdateProfileImageCommandUseCase:
         self,
         command: ClearProfileImageCommand,
     ) -> None:
-        await self._user_repository.update_profile_image_url(
+        updated = await self._user_repository.update_profile_image_url(
             user_id=command.user_id,
             profile_image_url=None,
         )
+        await self._event_publisher.publish(updated.pull_events())
         await self._unit_of_work.commit()
 
 

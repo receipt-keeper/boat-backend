@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 from typing import Final
 
+from app.core.application.event_publisher import EventPublisher
 from app.core.application.unit_of_work import UnitOfWork
 from app.core.domain.exceptions import ErrorDetail, ValidationError
 from app.modules.users.application.commands.resolve_user_for_login.command import (
@@ -19,9 +20,16 @@ MAX_CONSENT_VERSION_LENGTH: Final = 50
 
 
 class ResolveUserForLoginCommandUseCase:
-    def __init__(self, *, user_repository: UserRepository, unit_of_work: UnitOfWork) -> None:
+    def __init__(
+        self,
+        *,
+        user_repository: UserRepository,
+        unit_of_work: UnitOfWork,
+        event_publisher: EventPublisher,
+    ) -> None:
         self._user_repository = user_repository
         self._unit_of_work = unit_of_work
+        self._event_publisher = event_publisher
 
     async def execute(self, command: ResolveUserForLoginCommand) -> ResolveUserForLoginResult:
         terms_version = _normalized_consent_version(command.terms_version)
@@ -37,6 +45,7 @@ class ResolveUserForLoginCommandUseCase:
             email=command.email,
             profile_image_url=command.profile_image_url,
         )
+        events = user.pull_events()
         state = await self._user_repository.create_account_state(
             state=CreateUserAccountState(
                 user=user,
@@ -49,6 +58,7 @@ class ResolveUserForLoginCommandUseCase:
                 ),
             )
         )
+        await self._event_publisher.publish(events)
         await self._unit_of_work.commit()
         return ResolveUserForLoginResult(user_id=state.user.id)
 

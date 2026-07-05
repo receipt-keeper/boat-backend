@@ -43,7 +43,10 @@ from app.modules.promotions.dependencies import build_promotions_event_registry
 from app.modules.receipts.api.router import router as receipts_router
 from app.modules.usage.api.router import router as usage_router
 from app.modules.users.api.router import router as users_router
-from app.modules.users.dependencies import get_profile_image_file_reference_guard
+from app.modules.users.dependencies import (
+    build_users_event_registry,
+    get_profile_image_file_reference_guard,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +57,7 @@ _EVENT_REGISTRY_BUILDERS = [
     build_notification_event_registry,
     build_credits_event_registry,
     build_promotions_event_registry,
+    build_users_event_registry,
 ]
 
 

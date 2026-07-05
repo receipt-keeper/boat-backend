@@ -5,7 +5,10 @@ from fastapi import Depends
 from sqlalchemy import column, select, table
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.application.event_publisher import EventPublisher
 from app.core.application.unit_of_work import UnitOfWork
+from app.core.db.outbox.publisher import OutboxEventPublisher
+from app.core.db.outbox.serialization import EventTypeRegistry
 from app.core.db.session import AsyncSessionDep
 from app.core.db.unit_of_work import SqlAlchemyUnitOfWork
 from app.core.domain.exceptions import ConflictError, NotFoundError
@@ -29,6 +32,11 @@ from app.modules.users.application.ports.profile_image_file_validator import (
 from app.modules.users.application.ports.user_repository import UserRepository
 from app.modules.users.application.queries.current_user_profile.use_case import (
     CurrentUserProfileQueryUseCase,
+)
+from app.modules.users.domain.events import (
+    UserProfileImageChanged,
+    UserRegistered,
+    UserWithdrawn,
 )
 from app.modules.users.infrastructure.persistence.repository import SqlAlchemyUserRepository
 
@@ -58,6 +66,24 @@ class UserProfileImageFileReferenceGuard(FileReferenceGuard):
             raise ConflictError("프로필 이미지로 사용 중인 파일은 삭제할 수 없습니다.")
 
 
+def build_users_event_registry() -> EventTypeRegistry:
+    registry = EventTypeRegistry()
+    registry.register(UserRegistered)
+    registry.register(UserProfileImageChanged)
+    registry.register(UserWithdrawn)
+    return registry
+
+
+def _build_users_event_publisher(session: AsyncSession) -> EventPublisher:
+    """모듈 소유 registry로 조립한 plain OutboxEventPublisher.
+
+    users에는 아직 등록된 이벤트 핸들러가 없으므로 notifications의
+    즉시발행 스케줄링(_ImmediateDispatchSchedulingPublisher)은 적용하지 않는다.
+    outbox insert(같은 세션)만 수행하고, relay 폴러가 회수해 처리한다.
+    """
+    return OutboxEventPublisher(session=session, registry=build_users_event_registry())
+
+
 def build_provision_user_command_use_case(
     session: AsyncSession,
     unit_of_work: UnitOfWork,
@@ -65,6 +91,7 @@ def build_provision_user_command_use_case(
     return ProvisionUserCommandUseCase(
         user_repository=SqlAlchemyUserRepository(session),
         unit_of_work=unit_of_work,
+        event_publisher=_build_users_event_publisher(session),
     )
 
 
@@ -75,6 +102,7 @@ def build_delete_user_command_use_case(
     return DeleteUserCommandUseCase(
         user_repository=SqlAlchemyUserRepository(session),
         unit_of_work=unit_of_work,
+        event_publisher=_build_users_event_publisher(session),
     )
 
 
@@ -95,6 +123,7 @@ def build_update_profile_image_command_use_case(
         user_repository=SqlAlchemyUserRepository(session),
         profile_image_file_validator=profile_image_file_validator,
         unit_of_work=unit_of_work,
+        event_publisher=_build_users_event_publisher(session),
     )
 
 
@@ -105,6 +134,7 @@ def build_withdrawal_cleanup_command_use_case(
     return WithdrawalCleanupCommandUseCase(
         user_repository=SqlAlchemyUserRepository(session),
         unit_of_work=unit_of_work,
+        event_publisher=_build_users_event_publisher(session),
     )
 
 
@@ -115,6 +145,7 @@ def build_resolve_user_for_login_command_use_case(
     return ResolveUserForLoginCommandUseCase(
         user_repository=SqlAlchemyUserRepository(session),
         unit_of_work=unit_of_work,
+        event_publisher=_build_users_event_publisher(session),
     )
 
 
@@ -124,6 +155,10 @@ async def get_user_repository(session: AsyncSessionDep) -> UserRepository:
 
 async def get_unit_of_work(session: AsyncSessionDep) -> UnitOfWork:
     return SqlAlchemyUnitOfWork(session)
+
+
+async def get_users_event_publisher(session: AsyncSessionDep) -> EventPublisher:
+    return _build_users_event_publisher(session)
 
 
 async def get_profile_image_file_validator(
@@ -139,15 +174,25 @@ async def get_profile_image_file_reference_guard(session: AsyncSessionDep) -> Fi
 async def get_provision_user_command_use_case(
     user_repository: Annotated[UserRepository, Depends(get_user_repository)],
     unit_of_work: Annotated[UnitOfWork, Depends(get_unit_of_work)],
+    event_publisher: Annotated[EventPublisher, Depends(get_users_event_publisher)],
 ) -> ProvisionUserCommandUseCase:
-    return ProvisionUserCommandUseCase(user_repository=user_repository, unit_of_work=unit_of_work)
+    return ProvisionUserCommandUseCase(
+        user_repository=user_repository,
+        unit_of_work=unit_of_work,
+        event_publisher=event_publisher,
+    )
 
 
 async def get_delete_user_command_use_case(
     user_repository: Annotated[UserRepository, Depends(get_user_repository)],
     unit_of_work: Annotated[UnitOfWork, Depends(get_unit_of_work)],
+    event_publisher: Annotated[EventPublisher, Depends(get_users_event_publisher)],
 ) -> DeleteUserCommandUseCase:
-    return DeleteUserCommandUseCase(user_repository=user_repository, unit_of_work=unit_of_work)
+    return DeleteUserCommandUseCase(
+        user_repository=user_repository,
+        unit_of_work=unit_of_work,
+        event_publisher=event_publisher,
+    )
 
 
 async def get_current_user_profile_query_use_case(
@@ -163,31 +208,37 @@ async def get_update_profile_image_command_use_case(
         Depends(get_profile_image_file_validator),
     ],
     unit_of_work: Annotated[UnitOfWork, Depends(get_unit_of_work)],
+    event_publisher: Annotated[EventPublisher, Depends(get_users_event_publisher)],
 ) -> UpdateProfileImageCommandUseCase:
     return UpdateProfileImageCommandUseCase(
         user_repository=user_repository,
         profile_image_file_validator=profile_image_file_validator,
         unit_of_work=unit_of_work,
+        event_publisher=event_publisher,
     )
 
 
 async def get_withdrawal_cleanup_command_use_case(
     user_repository: Annotated[UserRepository, Depends(get_user_repository)],
     unit_of_work: Annotated[UnitOfWork, Depends(get_unit_of_work)],
+    event_publisher: Annotated[EventPublisher, Depends(get_users_event_publisher)],
 ) -> WithdrawalCleanupCommandUseCase:
     return WithdrawalCleanupCommandUseCase(
         user_repository=user_repository,
         unit_of_work=unit_of_work,
+        event_publisher=event_publisher,
     )
 
 
 async def get_resolve_user_for_login_command_use_case(
     user_repository: Annotated[UserRepository, Depends(get_user_repository)],
     unit_of_work: Annotated[UnitOfWork, Depends(get_unit_of_work)],
+    event_publisher: Annotated[EventPublisher, Depends(get_users_event_publisher)],
 ) -> ResolveUserForLoginCommandUseCase:
     return ResolveUserForLoginCommandUseCase(
         user_repository=user_repository,
         unit_of_work=unit_of_work,
+        event_publisher=event_publisher,
     )
 
 

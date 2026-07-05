@@ -36,11 +36,16 @@ FORBIDDEN_AUTH_APPLICATION_FILES = {
     "application/withdraw/use_case.py",
 }
 READ_MODEL_PACKAGE_NAMES = ("read_models",)
+# ("out", "box") 항목은 이 목록에서 제거되었다. transactional outbox는 CLAUDE.md
+# ANTI-PATTERNS에서 승인된 패턴이기 때문이다 — "transactional outbox는
+# `app/core/db/outbox`(ORM·직렬화·publisher·relay)로 도입되었다 — 목적지는 in-process
+# `EventDispatcher`뿐이며 외부 message bus/Kafka 연동은 여전히 금지다."
+# 승인 범위 밖의 자체 outbox 구현은 아래
+# test_outbox_references_go_through_approved_core_outbox_module이 계속 금지한다.
 GUARDED_TERM_FRAGMENTS: Final[tuple[tuple[str, ...], ...]] = (
     ("command", " ", "bus"),
     ("query", " ", "bus"),
     ("event", " ", "sourcing"),
-    ("out", "box"),
     ("external", " ", "message", " ", "bus"),
     ("ka", "fka"),
     ("rab", "bit", "mq"),
@@ -121,6 +126,24 @@ def test_auth_source_does_not_use_external_event_or_read_infrastructure() -> Non
         for path in _python_source_files()
         for term in guarded_terms
         if term in path.read_text().lower()
+    ]
+
+    assert offending_files == []
+
+
+def test_outbox_references_go_through_approved_core_outbox_module() -> None:
+    """outbox 참조는 승인된 core 모듈 경유만 허용한다.
+
+    CLAUDE.md ANTI-PATTERNS: "transactional outbox는 `app/core/db/outbox`(ORM·직렬화·
+    publisher·relay)로 도입되었다 — 목적지는 in-process `EventDispatcher`뿐이며 외부
+    message bus/Kafka 연동은 여전히 금지다." 따라서 auth/users 소스가 outbox를 언급하는
+    파일은 반드시 승인된 `app.core.db.outbox`를 import해야 하며, 모듈 자체의 outbox
+    구현(별도 outbox 테이블/relay/publisher 정의)은 금지한다.
+    """
+    offending_files = [
+        path.relative_to(PROJECT_ROOT).as_posix()
+        for path in _python_source_files()
+        if "outbox" in path.read_text().lower() and "app.core.db.outbox" not in path.read_text()
     ]
 
     assert offending_files == []
