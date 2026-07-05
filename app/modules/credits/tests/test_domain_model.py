@@ -8,12 +8,15 @@ from app.modules.credits.domain import (
     CreditBalance,
     CreditCount,
     CreditReason,
+    CreditSourceType,
     FeatureKey,
     InsufficientCreditError,
     UserCredit,
 )
+from app.modules.credits.domain.events import CreditGranted
 
 USER_ID = UUID("00000000-0000-0000-0000-000000000101")
+SOURCE_ID = UUID("00000000-0000-0000-0000-000000000901")
 EXPECTED_REASON_VALUES = {
     "monthlyOcrAllowance",
     "eventOcrAllowance",
@@ -134,13 +137,44 @@ def test_user_credit_use_rejects_insufficient_remaining_count() -> None:
 def test_user_credit_grant_increases_total_and_remaining_count() -> None:
     user_credit = _restore_user_credit(total_granted_count=12, used_count=5, remaining_count=7)
 
-    user_credit.grant(CreditAmount(value=5))
+    user_credit.grant(CreditAmount(value=5), reason=CreditReason.MONTHLY_OCR_ALLOWANCE)
 
     assert user_credit.balance == CreditBalance(
         total_granted_count=17,
         used_count=5,
         remaining_count=12,
     )
+
+
+def test_user_credit_grant_records_credit_granted_event() -> None:
+    user_credit = _restore_user_credit(total_granted_count=12, used_count=5, remaining_count=7)
+
+    user_credit.grant(
+        CreditAmount(value=5),
+        reason=CreditReason.EVENT_OCR_ALLOWANCE,
+        source_type=CreditSourceType.PROMOTION_REDEMPTION,
+        source_id=SOURCE_ID,
+        idempotency_key="idem-1",
+    )
+
+    events = user_credit.pull_events()
+    assert len(events) == 1
+    event = events[0]
+    assert isinstance(event, CreditGranted)
+    assert event.user_id == USER_ID
+    assert event.amount == 5
+    assert event.reason == CreditReason.EVENT_OCR_ALLOWANCE
+    assert event.source_type == CreditSourceType.PROMOTION_REDEMPTION
+    assert event.source_id == SOURCE_ID
+    assert event.idempotency_key == "idem-1"
+    # pull_events는 큐를 비운다.
+    assert user_credit.pull_events() == []
+
+
+def test_user_credit_restore_does_not_record_any_event() -> None:
+    user_credit = _restore_user_credit(total_granted_count=12, used_count=5, remaining_count=7)
+
+    assert user_credit.pull_events() == []
 
 
 def test_credit_amount_rejects_zero_value_with_field_message() -> None:

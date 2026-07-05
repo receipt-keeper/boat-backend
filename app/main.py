@@ -26,6 +26,7 @@ from app.modules.auth.api.router import router as auth_router
 from app.modules.auth.api.security import authenticate_current_principal
 from app.modules.auth.domain.exceptions import AuthenticationError, AuthorizationError
 from app.modules.credits.api.router import router as credits_router
+from app.modules.credits.dependencies import build_credits_event_registry
 from app.modules.example.api.router import router as example_router
 from app.modules.files.api.router import router as files_router
 from app.modules.files.dependencies import get_file_reference_guard
@@ -50,6 +51,7 @@ logger = logging.getLogger(__name__)
 # `build_<module>_event_registry()`를 이 리스트에 한 줄 추가한다.
 _EVENT_REGISTRY_BUILDERS = [
     build_notification_event_registry,
+    build_credits_event_registry,
 ]
 
 

@@ -1,36 +1,21 @@
 from dataclasses import InitVar, dataclass
 from datetime import datetime
-from enum import StrEnum
 from typing import assert_never
 from uuid import UUID
 
-from app.core.domain.entity import Entity
+from app.core.domain.entity import AggregateRoot
 from app.core.domain.exceptions import ErrorDetail, ValidationError
+from app.modules.credits.domain.events import CreditGranted
 from app.modules.credits.domain.exceptions import InsufficientCreditError
+from app.modules.credits.domain.value_objects import (
+    CreditAction,
+    CreditReason,
+    CreditSourceType,
+    FeatureKey,
+)
 
 _NON_NEGATIVE_COUNT_MESSAGE = "크레딧 횟수는 0 이상이어야 합니다."
 _POSITIVE_AMOUNT_MESSAGE = "크레딧 수량은 1 이상이어야 합니다."
-
-
-class CreditReason(StrEnum):
-    MONTHLY_OCR_ALLOWANCE = "monthlyOcrAllowance"
-    EVENT_OCR_ALLOWANCE = "eventOcrAllowance"
-    OCR_USAGE = "ocrUsage"
-
-
-class FeatureKey(StrEnum):
-    OCR = "ocr"
-
-
-class CreditAction(StrEnum):
-    GRANT = "grant"
-    USE = "use"
-
-
-class CreditSourceType(StrEnum):
-    PROMOTION_REDEMPTION = "promotionRedemption"
-    MONTHLY_ALLOWANCE = "monthlyAllowance"
-    OCR_ANALYSIS = "ocrAnalysis"
 
 
 @dataclass(frozen=True, slots=True)
@@ -125,7 +110,7 @@ class CreditTransaction:
 
 
 @dataclass(eq=False, slots=True)  # noqa: RUF100  # noqa: MUTABLE_OK
-class UserCredit(Entity[UUID]):
+class UserCredit(AggregateRoot[UUID]):
     feature_key: FeatureKey
     balance: CreditBalance
 
@@ -174,11 +159,29 @@ class UserCredit(Entity[UUID]):
             remaining_count=self.remaining_count - amount.value,
         )
 
-    def grant(self, amount: CreditAmount) -> None:
+    def grant(
+        self,
+        amount: CreditAmount,
+        *,
+        reason: CreditReason,
+        source_type: CreditSourceType | None = None,
+        source_id: UUID | None = None,
+        idempotency_key: str | None = None,
+    ) -> None:
         self.balance = CreditBalance(
             total_granted_count=self.total_granted_count + amount.value,
             used_count=self.used_count,
             remaining_count=self.remaining_count + amount.value,
+        )
+        self.record_event(
+            CreditGranted(
+                user_id=self.id,
+                amount=amount.value,
+                reason=reason,
+                source_type=source_type,
+                source_id=source_id,
+                idempotency_key=idempotency_key,
+            )
         )
 
 

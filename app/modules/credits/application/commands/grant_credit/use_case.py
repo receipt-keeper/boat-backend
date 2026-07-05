@@ -1,3 +1,4 @@
+from app.core.application.event_publisher import EventPublisher
 from app.core.application.unit_of_work import UnitOfWork
 from app.modules.credits.application.commands.grant_credit.command import GrantCreditCommand
 from app.modules.credits.application.commands.grant_credit.result import (
@@ -18,9 +19,11 @@ class GrantCreditCommandUseCase:
         *,
         credit_repository: CreditRepository,
         unit_of_work: UnitOfWork,
+        event_publisher: EventPublisher,
     ) -> None:
         self._credit_repository = credit_repository
         self._unit_of_work = unit_of_work
+        self._event_publisher = event_publisher
 
     async def execute(self, command: GrantCreditCommand) -> GrantCreditCommandResult:
         if await self._is_duplicate_grant(command):
@@ -32,7 +35,13 @@ class GrantCreditCommandUseCase:
         user_credit = await self._credit_repository.get_user_credit_for_update(
             user_id=command.user_id,
         )
-        user_credit.grant(command.amount)
+        user_credit.grant(
+            command.amount,
+            reason=command.reason,
+            source_type=command.source_type,
+            source_id=command.source_id,
+            idempotency_key=command.idempotency_key,
+        )
         await self._credit_repository.save(user_credit=user_credit)
         await self._credit_repository.append_transaction(
             transaction=CreditTransactionAppend(
@@ -45,6 +54,11 @@ class GrantCreditCommandUseCase:
                 idempotency_key=command.idempotency_key,
             )
         )
+        # 발행은 flush/commit 이전에 수행한다 - 같은 세션에 insert된 outbox row가
+        # 아래 CreditTransactionWriteConflictError 분기의 rollback()과 함께
+        # 원자적으로 소거되도록 하기 위함이다(멱등 replay에서 유령 이벤트 방지).
+        events = user_credit.pull_events()
+        await self._event_publisher.publish(events)
         try:
             await self._credit_repository.flush_pending_writes()
             await self._unit_of_work.commit()
