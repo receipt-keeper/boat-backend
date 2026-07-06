@@ -15,6 +15,24 @@ class UnregisteredEventTypeError(Exception):
         super().__init__(f"등록되지 않은 이벤트 타입입니다: {event_type!r}")
 
 
+class ConflictingEventTypeError(Exception):
+    """서로 다른 이벤트 클래스가 같은 클래스명으로 병합될 때 발생한다."""
+
+    def __init__(
+        self,
+        *,
+        event_type: str,
+        existing: type[DomainEvent],
+        incoming: type[DomainEvent],
+    ) -> None:
+        self.event_type = event_type
+        self.existing = existing
+        self.incoming = incoming
+        super().__init__(
+            f"이벤트 타입 이름이 충돌합니다: {event_type!r} ({existing!r} vs {incoming!r})"
+        )
+
+
 class EventTypeRegistry:
     """이벤트 클래스명 -> DomainEvent 서브클래스 명시 등록소.
 
@@ -27,6 +45,25 @@ class EventTypeRegistry:
 
     def register(self, event_class: type[DomainEvent]) -> None:
         self._types[event_class.__name__] = event_class
+
+    def merge(self, other: "EventTypeRegistry") -> None:
+        """다른 레지스트리에 등록된 타입을 이 레지스트리로 흡수한다.
+
+        여러 모듈의 `build_<module>_event_registry()` 결과를 단일 레지스트리로
+        합성할 때 쓴다(예: main.py의 outbox relay 조립 지점). 같은 클래스의
+        재등록은 멱등으로 허용하되, 서로 다른 클래스가 같은 이름으로 충돌하면
+        outbox row가 엉뚱한 타입으로 복원되는 정합성 사고이므로 조립 시점에
+        즉시 실패시킨다.
+        """
+        for name, event_class in other._types.items():
+            existing = self._types.get(name)
+            if existing is not None and existing is not event_class:
+                raise ConflictingEventTypeError(
+                    event_type=name,
+                    existing=existing,
+                    incoming=event_class,
+                )
+            self._types[name] = event_class
 
     def resolve(self, event_type: str) -> type[DomainEvent]:
         try:

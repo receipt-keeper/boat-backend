@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from app.core.domain.entity import Entity
+from app.core.domain.entity import AggregateRoot, Entity
 from app.core.domain.exceptions import ErrorDetail, ValidationError
 from app.core.domain.validation import Notification as ValidationNotification
 from app.modules.notifications.domain.events import NotificationCreated
@@ -32,7 +32,7 @@ def _validate_resource_pair(resource_type: str | None, resource_id: UUID | None)
 
 
 @dataclass(eq=False)
-class UserNotification(Entity[UUID]):
+class UserNotification(AggregateRoot[UUID]):
     user_id: UUID
     message_type: NotificationMessageType
     kind: NotificationKind

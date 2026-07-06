@@ -1,7 +1,10 @@
+import pytest
 from httpx import ASGITransport, AsyncClient
 
 from app.core.config.settings import Settings
-from app.main import create_app
+from app.core.db.outbox.serialization import UnregisteredEventTypeError
+from app.main import _build_merged_event_registry, create_app
+from app.modules.notifications.domain.events import NotificationCreated
 
 
 async def test_health_endpoint(client: AsyncClient) -> None:
@@ -75,6 +78,20 @@ def test_settings_can_override_database_url_without_import_global_session() -> N
     settings = Settings(database_url="postgresql+asyncpg://test:test@localhost:5432/test")
 
     assert settings.database_url.endswith("/test")
+
+
+def test_merged_event_registry_resolves_notification_module_event_types() -> None:
+    """lifespan이 조립하는 registry는 등록된 모든 모듈 registry 빌더를 합성한 것이어야 한다."""
+    registry = _build_merged_event_registry()
+
+    assert registry.resolve("NotificationCreated") is NotificationCreated
+
+
+def test_merged_event_registry_still_rejects_unregistered_event_types() -> None:
+    registry = _build_merged_event_registry()
+
+    with pytest.raises(UnregisteredEventTypeError):
+        registry.resolve("SomeEventNoModuleHasRegistered")
 
 
 async def test_database_state_is_created_by_lifespan_not_import() -> None:

@@ -1,15 +1,25 @@
+from dataclasses import dataclass
 from uuid import UUID
 
 import pytest
 
 from app.core.db.outbox.serialization import (
+    ConflictingEventTypeError,
     EventTypeRegistry,
     UnregisteredEventTypeError,
     deserialize_event,
     serialize_event,
 )
+from app.core.domain.events import DomainEvent
 from app.modules.notifications.domain.events import NotificationCreated
 from app.modules.notifications.domain.value_objects import NotificationMessageType
+
+
+@dataclass(frozen=True, kw_only=True)
+class _OtherModuleEvent(DomainEvent):
+    """다른 모듈의 registry를 흉내 낸 테스트 전용 이벤트 타입."""
+
+    payload_id: UUID
 
 
 def _sample_event() -> NotificationCreated:
@@ -105,3 +115,67 @@ def test_registry_lookup_of_unregistered_type_raises_explicit_error() -> None:
 
     with pytest.raises(UnregisteredEventTypeError):
         registry.resolve("SomethingNotRegistered")
+
+
+def test_merge_absorbs_other_registrys_types_and_resolves_both() -> None:
+    """두 모듈 registry를 병합하면 양쪽 이벤트 타입 모두 resolve된다 (main.py 병합 지점 계약)."""
+    notifications_registry = _registry()
+    other_module_registry = EventTypeRegistry()
+    other_module_registry.register(_OtherModuleEvent)
+
+    merged = EventTypeRegistry()
+    merged.merge(notifications_registry)
+    merged.merge(other_module_registry)
+
+    assert merged.resolve("NotificationCreated") is NotificationCreated
+    assert merged.resolve("_OtherModuleEvent") is _OtherModuleEvent
+
+
+def test_merge_does_not_mutate_the_registry_being_merged_in() -> None:
+    source = EventTypeRegistry()
+    source.register(_OtherModuleEvent)
+
+    merged = EventTypeRegistry()
+    merged.merge(source)
+    merged.register(NotificationCreated)
+
+    with pytest.raises(UnregisteredEventTypeError):
+        source.resolve("NotificationCreated")
+
+
+def test_merge_still_raises_for_types_registered_in_neither_source() -> None:
+    merged = EventTypeRegistry()
+    merged.merge(_registry())
+
+    with pytest.raises(UnregisteredEventTypeError):
+        merged.resolve("SomethingNeverRegisteredAnywhere")
+
+
+def test_merge_is_idempotent_for_the_same_event_class() -> None:
+    """같은 클래스의 재병합은 멱등으로 허용된다 (모듈 registry 중복 조립 허용)."""
+    merged = EventTypeRegistry()
+    merged.merge(_registry())
+    merged.merge(_registry())
+
+    assert merged.resolve("NotificationCreated") is NotificationCreated
+
+
+def test_merge_raises_when_different_classes_collide_on_the_same_name() -> None:
+    """서로 다른 클래스가 같은 이름으로 병합되면 조립 시점에 즉시 실패한다."""
+
+    conflicting = type("_OtherModuleEvent", (DomainEvent,), {})
+    conflicting = dataclass(frozen=True, kw_only=True)(conflicting)
+
+    source = EventTypeRegistry()
+    source.register(_OtherModuleEvent)
+    other = EventTypeRegistry()
+    other.register(conflicting)
+
+    merged = EventTypeRegistry()
+    merged.merge(source)
+    with pytest.raises(ConflictingEventTypeError) as exc_info:
+        merged.merge(other)
+
+    assert exc_info.value.event_type == "_OtherModuleEvent"
+    # 실패한 병합이 기존 등록을 훼손하지 않는다.
+    assert merged.resolve("_OtherModuleEvent") is _OtherModuleEvent
