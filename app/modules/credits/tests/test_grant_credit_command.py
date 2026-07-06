@@ -6,12 +6,15 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core.db.outbox.orm import OutboxEvent
+from app.core.db.outbox.publisher import OutboxEventPublisher
 from app.core.db.unit_of_work import SqlAlchemyUnitOfWork
 from app.core.domain.exceptions import ValidationError
 from app.modules.credits.application.commands.grant_credit.command import GrantCreditCommand
 from app.modules.credits.application.commands.grant_credit.use_case import (
     GrantCreditCommandUseCase,
 )
+from app.modules.credits.dependencies import build_credits_event_registry
 from app.modules.credits.domain import CreditAction, CreditAmount, CreditReason
 from app.modules.credits.infrastructure.persistence import orm
 from app.modules.credits.infrastructure.persistence.repository import (
@@ -32,6 +35,10 @@ async def test_grant_credit_command_creates_snapshot_and_appends_ledger(
         use_case = GrantCreditCommandUseCase(
             credit_repository=SqlAlchemyCreditRepository(session),
             unit_of_work=SqlAlchemyUnitOfWork(session),
+            event_publisher=OutboxEventPublisher(
+                session=session,
+                registry=build_credits_event_registry(),
+            ),
         )
 
         await use_case.execute(
@@ -52,6 +59,7 @@ async def test_grant_credit_command_creates_snapshot_and_appends_ledger(
                 select(orm.CreditTransaction).where(orm.CreditTransaction.user_id == USER_ID)
             )
         )
+        saved_outbox_events = tuple(await session.scalars(select(OutboxEvent)))
 
     assert saved_credit is not None
     assert saved_credit.total_granted_count == 5
@@ -64,6 +72,10 @@ async def test_grant_credit_command_creates_snapshot_and_appends_ledger(
     assert saved_transactions[0].source_type is None
     assert saved_transactions[0].source_id is None
     assert saved_transactions[0].idempotency_key is None
+    assert len(saved_outbox_events) == 1
+    assert saved_outbox_events[0].event_type == "CreditGranted"
+    assert saved_outbox_events[0].payload["user_id"] == str(USER_ID)
+    assert saved_outbox_events[0].payload["amount"] == 5
 
 
 async def test_grant_credit_command_records_source_metadata(
@@ -74,6 +86,10 @@ async def test_grant_credit_command_records_source_metadata(
         use_case = GrantCreditCommandUseCase(
             credit_repository=SqlAlchemyCreditRepository(session),
             unit_of_work=SqlAlchemyUnitOfWork(session),
+            event_publisher=OutboxEventPublisher(
+                session=session,
+                registry=build_credits_event_registry(),
+            ),
         )
 
         await use_case.execute(
@@ -150,9 +166,27 @@ async def test_grant_credit_command_ignores_duplicate_idempotency_key_without_in
         use_case = GrantCreditCommandUseCase(
             credit_repository=SqlAlchemyCreditRepository(session),
             unit_of_work=SqlAlchemyUnitOfWork(session),
+            event_publisher=OutboxEventPublisher(
+                session=session,
+                registry=build_credits_event_registry(),
+            ),
         )
 
         await use_case.execute(command)
+
+    # 두 번째 호출은 별도 세션에서 수행한다 - 동일 세션 재사용 시 첫 호출의
+    # `_is_duplicate_grant` 조회 결과가 세션 identity map에 캐시돼 replay 분기를
+    # 우회할 위험이 있다(멱등 replay는 신규 요청 세션에서 일어나는 것이 현실적 시나리오).
+    async with postgres_session_factory() as session:
+        use_case = GrantCreditCommandUseCase(
+            credit_repository=SqlAlchemyCreditRepository(session),
+            unit_of_work=SqlAlchemyUnitOfWork(session),
+            event_publisher=OutboxEventPublisher(
+                session=session,
+                registry=build_credits_event_registry(),
+            ),
+        )
+
         await use_case.execute(command)
 
     async with postgres_session_factory() as session:
@@ -165,12 +199,16 @@ async def test_grant_credit_command_ignores_duplicate_idempotency_key_without_in
                 select(orm.CreditTransaction).where(orm.CreditTransaction.user_id == USER_ID)
             )
         )
+        saved_outbox_events = tuple(await session.scalars(select(OutboxEvent)))
 
     assert saved_credit is not None
     assert saved_credit.total_granted_count == 5
     assert saved_credit.remaining_count == 5
     assert len(saved_transactions) == 1
     assert saved_transactions[0].idempotency_key == idempotency_key
+    # 멱등 replay 분기(신규 상태 변경 없음)에서 outbox 신규 row가 발생하지 않는다.
+    assert len(saved_outbox_events) == 1
+    assert saved_outbox_events[0].event_type == "CreditGranted"
 
 
 async def test_credit_transaction_source_guard_rejects_duplicate_source_tuple(

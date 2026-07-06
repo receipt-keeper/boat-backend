@@ -4,6 +4,8 @@ import anyio
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core.db.outbox.orm import OutboxEvent
+from app.core.db.outbox.publisher import OutboxEventPublisher
 from app.core.db.unit_of_work import SqlAlchemyUnitOfWork
 from app.modules.credits.application.commands.grant_credit.command import GrantCreditCommand
 from app.modules.credits.application.commands.grant_credit.result import (
@@ -12,6 +14,7 @@ from app.modules.credits.application.commands.grant_credit.result import (
 from app.modules.credits.application.commands.grant_credit.use_case import (
     GrantCreditCommandUseCase,
 )
+from app.modules.credits.dependencies import build_credits_event_registry
 from app.modules.credits.domain import CreditAmount, CreditReason, CreditSourceType
 from app.modules.credits.infrastructure.persistence import orm
 from app.modules.credits.infrastructure.persistence.repository import (
@@ -43,6 +46,10 @@ async def test_concurrent_same_idempotency_key_retry_returns_stable_result_witho
             use_case = GrantCreditCommandUseCase(
                 credit_repository=SqlAlchemyCreditRepository(session),
                 unit_of_work=SqlAlchemyUnitOfWork(session),
+                event_publisher=OutboxEventPublisher(
+                    session=session,
+                    registry=build_credits_event_registry(),
+                ),
             )
             results.append(await use_case.execute(command))
 
@@ -63,6 +70,7 @@ async def test_concurrent_same_idempotency_key_retry_returns_stable_result_witho
                 )
             )
         )
+        saved_outbox_events = tuple(await session.scalars(select(OutboxEvent)))
 
     assert [(result.total_granted_count, result.remaining_count) for result in results] == [
         (5, 5),
@@ -73,3 +81,7 @@ async def test_concurrent_same_idempotency_key_retry_returns_stable_result_witho
     assert saved_credit.remaining_count == 5
     assert len(saved_transactions) == 1
     assert saved_transactions[0].idempotency_key == IDEMPOTENCY_KEY
+    # 동시 충돌 replay 분기(CreditTransactionWriteConflictError -> rollback)는
+    # 패자 트랜잭션의 outbox insert를 함께 소거한다 - 승자 1건만 남는다.
+    assert len(saved_outbox_events) == 1
+    assert saved_outbox_events[0].event_type == "CreditGranted"

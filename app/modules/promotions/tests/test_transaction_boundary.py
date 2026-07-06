@@ -2,6 +2,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.application.unit_of_work import UnitOfWork
+from app.core.db.outbox.orm import OutboxEvent
 from app.core.db.session import AsyncSessionDep
 from app.core.db.unit_of_work import SqlAlchemyUnitOfWork
 from app.modules.credits.infrastructure.persistence import orm as credits_orm
@@ -33,12 +34,15 @@ async def test_promotion_redeem_rolls_back_credit_grant_when_outer_flow_fails_af
             credits_orm.UserCredit,
             {"user_id": USER_ID, "feature_key": "ocr"},
         )
+        outbox_events = tuple(await session.scalars(select(OutboxEvent)))
 
     assert promotion is not None
     assert promotion.times_redeemed == 0
     assert redemptions == ()
     assert transactions == ()
     assert user_credit is None
+    # commit 실패로 인한 rollback은 같은 세션에 insert된 outbox row도 원자적으로 소거한다.
+    assert outbox_events == ()
 
 
 async def _failing_unit_of_work(session: AsyncSessionDep) -> UnitOfWork:

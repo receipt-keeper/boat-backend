@@ -4,11 +4,14 @@ import pytest
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core.db.outbox.orm import OutboxEvent
+from app.core.db.outbox.publisher import OutboxEventPublisher
 from app.core.domain.exceptions import NotFoundError
 from app.modules.promotions.application.ports.credit_grant import (
     PromotionCreditGrant,
     PromotionCreditGrantResult,
 )
+from app.modules.promotions.dependencies import build_promotions_event_registry
 from app.modules.promotions.domain.exceptions import PromotionRedemptionConflictError
 from app.modules.promotions.domain.model import PromotionRedemptionStatus
 from app.modules.promotions.infrastructure.persistence import orm
@@ -106,6 +109,67 @@ async def test_create_promotion_redemption_idempotent_retry_uses_current_respons
     assert second.credit_remaining_after == first.credit_remaining_after
     assert len(grant_port.grants) == grant_call_count
     assert grant_port.grants[0].idempotency_key == PROMOTION_IDEMPOTENCY_KEY
+
+
+async def test_create_promotion_redemption_publishes_promotion_redemption_granted_once(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with postgres_session_factory() as session:
+        await seed_promotion(session)
+        grant_port = FakePromotionCreditGrantPort()
+        event_publisher = OutboxEventPublisher(
+            session=session,
+            registry=build_promotions_event_registry(),
+        )
+
+        await promotion_use_case(session, grant_port, event_publisher=event_publisher).execute(
+            promotion_command()
+        )
+
+    async with postgres_session_factory() as session:
+        saved_outbox_events = tuple(await session.scalars(select(OutboxEvent)))
+
+    assert len(saved_outbox_events) == 1
+    assert saved_outbox_events[0].event_type == "PromotionRedemptionGranted"
+    assert saved_outbox_events[0].payload["promotion_id"] == str(PROMOTION_ID)
+    assert saved_outbox_events[0].payload["user_id"] == str(USER_ID)
+
+
+async def test_create_promotion_redemption_replay_does_not_publish_new_outbox_row(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with postgres_session_factory() as session:
+        await seed_promotion(session)
+        grant_port = FakePromotionCreditGrantPort()
+        event_publisher = OutboxEventPublisher(
+            session=session,
+            registry=build_promotions_event_registry(),
+        )
+        use_case = promotion_use_case(session, grant_port, event_publisher=event_publisher)
+
+        # Given: 최초 redeem이 outbox row 1건을 남긴다.
+        await use_case.execute(promotion_command())
+
+    # 두 번째 호출은 별도 세션에서 수행한다 - replay_if_existing 분기가 신규
+    # 상태 변경·이벤트 기록 없이 기존 redemption을 그대로 반환하는지 확인한다.
+    async with postgres_session_factory() as session:
+        grant_port = FakePromotionCreditGrantPort()
+        event_publisher = OutboxEventPublisher(
+            session=session,
+            registry=build_promotions_event_registry(),
+        )
+        use_case = promotion_use_case(session, grant_port, event_publisher=event_publisher)
+
+        second = await use_case.execute(promotion_command())
+
+    async with postgres_session_factory() as session:
+        saved_outbox_events = tuple(await session.scalars(select(OutboxEvent)))
+
+    assert second.already_redeemed is True
+    assert second.credit_granted is False
+    # 멱등 replay 분기(신규 상태 변경 없음)에서 outbox 신규 row가 발생하지 않는다.
+    assert len(saved_outbox_events) == 1
+    assert saved_outbox_events[0].event_type == "PromotionRedemptionGranted"
 
 
 async def test_create_promotion_redemption_returns_banner_image_url(

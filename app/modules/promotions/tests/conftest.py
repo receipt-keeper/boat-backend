@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from testcontainers.postgres import PostgresContainer
 
 from app.core.db.base import Base
+from app.core.db.outbox import orm as outbox_orm
 from app.core.db.session import build_engine, build_session_factory
 
 
@@ -25,6 +26,7 @@ async def postgres_session_factory(
     _ = promotions_orm.PromotionContent
     _ = promotions_orm.PromotionCode
     _ = promotions_orm.PromotionRedemption
+    _ = outbox_orm.OutboxEvent
     engine = build_engine(postgres_async_database_url)
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)

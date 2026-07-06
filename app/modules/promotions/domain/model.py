@@ -4,8 +4,9 @@ from enum import StrEnum
 from typing import assert_never
 from uuid import UUID, uuid4
 
-from app.core.domain.entity import Entity
+from app.core.domain.entity import AggregateRoot, Entity
 from app.core.domain.exceptions import ErrorDetail, ValidationError
+from app.modules.promotions.domain.events import PromotionRedemptionGranted
 from app.modules.promotions.domain.exceptions import PromotionRedemptionConflictError
 
 _POSITIVE_AMOUNT_MESSAGE = "프로모션 지급 크레딧은 1 이상이어야 합니다."
@@ -32,7 +33,7 @@ class PromotionBenefitAmount:
 
 
 @dataclass(eq=False, slots=True)  # noqa: RUF100  # noqa: MUTABLE_OK
-class Promotion(Entity[UUID]):
+class Promotion(AggregateRoot[UUID]):
     name: str
     active: bool
     starts_at: datetime
@@ -96,7 +97,7 @@ class PromotionContent(Entity[UUID]):
 
 
 @dataclass(eq=False, slots=True)  # noqa: RUF100  # noqa: MUTABLE_OK
-class PromotionCode(Entity[UUID]):
+class PromotionCode(AggregateRoot[UUID]):
     promotion_id: UUID
     code: str
     active: bool
@@ -120,7 +121,7 @@ class PromotionCode(Entity[UUID]):
 
 
 @dataclass(eq=False, slots=True)  # noqa: RUF100  # noqa: MUTABLE_OK
-class PromotionRedemption(Entity[UUID]):
+class PromotionRedemption(AggregateRoot[UUID]):
     promotion_id: UUID
     promotion_code_id: UUID | None
     user_id: UUID
@@ -162,9 +163,10 @@ class PromotionRedemption(Entity[UUID]):
         user_id: UUID,
         idempotency_key: str,
         redeemed_at: datetime,
+        benefit_amount: int,
         redemption_id: UUID | None = None,
     ) -> "PromotionRedemption":
-        return cls(
+        redemption = cls(
             id=redemption_id or uuid4(),
             promotion_id=promotion_id,
             promotion_code_id=promotion_code_id,
@@ -174,6 +176,17 @@ class PromotionRedemption(Entity[UUID]):
             failure_reason=None,
             redeemed_at=redeemed_at,
         )
+        redemption.record_event(
+            PromotionRedemptionGranted(
+                redemption_id=redemption.id,
+                promotion_id=redemption.promotion_id,
+                user_id=redemption.user_id,
+                promotion_code_id=redemption.promotion_code_id,
+                benefit_amount=benefit_amount,
+                idempotency_key=redemption.idempotency_key,
+            )
+        )
+        return redemption
 
 
 def _benefit_amount_for(

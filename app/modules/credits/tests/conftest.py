@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from testcontainers.postgres import PostgresContainer
 
 from app.core.db.base import Base
+from app.core.db.outbox import orm as outbox_orm
 from app.core.db.session import build_engine, build_session_factory
 from app.modules.credits.infrastructure.persistence import orm as credits_orm
 
@@ -22,6 +23,7 @@ async def postgres_session_factory(
 ) -> AsyncIterator[async_sessionmaker[AsyncSession]]:
     _ = credits_orm.UserCredit
     _ = credits_orm.CreditTransaction
+    _ = outbox_orm.OutboxEvent
     engine = build_engine(postgres_async_database_url)
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
