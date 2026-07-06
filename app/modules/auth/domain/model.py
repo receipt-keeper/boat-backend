@@ -128,6 +128,12 @@ class ExternalIdentity(Entity[UUID]):
 
 @dataclass(eq=False)
 class AuthSession(AggregateRoot[UUID]):
+    """세션 단위 불변식(리프레시 토큰 로테이션)을 소유하는 구조적 애그리거트 루트.
+
+    UserCredential에 묶으면 고빈도 세션 변경이 credential 애그리거트를 비대하게
+    만들어 별도 루트로 분리했다. 세션 수명 이벤트는 소비자가 없어 발행하지 않는다.
+    """
+
     credentials_id: UUID
     revoked_at: datetime | None = None
 

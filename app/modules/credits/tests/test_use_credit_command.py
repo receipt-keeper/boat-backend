@@ -129,6 +129,11 @@ async def test_use_credit_command_rejects_insufficient_remaining_count(
                 )
             )
 
+    async with postgres_session_factory() as session:
+        saved_outbox_events = tuple(await session.scalars(select(OutboxEvent)))
+
+    assert saved_outbox_events == ()
+
 
 async def test_reserved_credit_rolls_back_without_usage_ledger(
     postgres_session_factory: async_sessionmaker[AsyncSession],
