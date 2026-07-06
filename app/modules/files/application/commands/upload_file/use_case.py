@@ -1,5 +1,6 @@
 from uuid import UUID, uuid4
 
+from app.core.application.event_publisher import EventPublisher, NoOpEventPublisher
 from app.core.application.unit_of_work import DeferredCommitUnitOfWork, UnitOfWork
 from app.modules.files.application.commands.upload_file.command import UploadFileCommand
 from app.modules.files.application.commands.upload_file.result import UploadFileResult
@@ -15,10 +16,12 @@ class UploadFileCommandUseCase:
         repository: FileRepository,
         storage: ObjectStorage | None = None,
         unit_of_work: UnitOfWork | None = None,
+        event_publisher: EventPublisher | None = None,
     ) -> None:
         self._repository = repository
         self._storage = storage
         self._unit_of_work = unit_of_work or DeferredCommitUnitOfWork()
+        self._event_publisher = event_publisher or NoOpEventPublisher()
 
     async def execute(self, command: UploadFileCommand) -> UploadFileResult:
         file_id = uuid4()
@@ -50,7 +53,10 @@ class UploadFileCommandUseCase:
                 size=stored_object.size,
                 checksum=stored_object.checksum,
             )
+        file.record_uploaded(file_object=file_object)
         stored_file = await self._repository.save(file=file, file_object=file_object)
+        events = file.pull_events()
+        await self._event_publisher.publish(events)
         await self._unit_of_work.commit()
         return UploadFileResult(
             file_id=stored_file.file.id,

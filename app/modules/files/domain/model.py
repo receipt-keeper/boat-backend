@@ -1,8 +1,9 @@
 from dataclasses import dataclass
 from uuid import UUID, uuid4
 
-from app.core.domain.entity import Entity
+from app.core.domain.entity import AggregateRoot, Entity
 from app.core.domain.validation import Notification
+from app.modules.files.domain.events import FileDeleted, FileUploaded
 from app.modules.files.domain.value_objects import (
     Checksum,
     ContentType,
@@ -15,7 +16,7 @@ from app.modules.files.domain.value_objects import (
 
 
 @dataclass(eq=False)
-class File(Entity[UUID]):
+class File(AggregateRoot[UUID]):
     user_id: UUID
     original_name: OriginalName
 
@@ -35,6 +36,35 @@ class File(Entity[UUID]):
             id=file_id or uuid4(),
             user_id=user_id,
             original_name=new_original_name,
+        )
+
+    def record_uploaded(self, *, file_object: "FileObject") -> None:
+        """업로드 완료(저장소 반영 후 확정된 `FileObject`)를 이벤트로 기록한다.
+
+        `File.create()` 시점에는 storage_key/content_type/size가 아직 확정되지
+        않으므로(업로드 use case가 storage 반영 결과로 `FileObject`를 재생성함),
+        이 메서드는 그 확정 시점 이후 use case가 호출한다. 이벤트 생성 자체는
+        애그리거트가 소유한다.
+        """
+        self.record_event(
+            FileUploaded(
+                file_id=self.id,
+                user_id=self.user_id,
+                original_name=self.original_name.value,
+                content_type=file_object.content_type.value,
+                size=file_object.size.value,
+                storage_key=file_object.storage_key.value,
+            )
+        )
+
+    def record_deleted(self, *, storage_keys: list[str]) -> None:
+        """삭제 guard 통과 후, 전체 variant의 storage_key 목록으로 기록한다."""
+        self.record_event(
+            FileDeleted(
+                file_id=self.id,
+                user_id=self.user_id,
+                storage_keys=storage_keys,
+            )
         )
 
 

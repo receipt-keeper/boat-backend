@@ -30,7 +30,7 @@ from app.modules.credits.api.router import router as credits_router
 from app.modules.credits.dependencies import build_credits_event_registry
 from app.modules.example.api.router import router as example_router
 from app.modules.files.api.router import router as files_router
-from app.modules.files.dependencies import get_file_reference_guard
+from app.modules.files.dependencies import build_files_event_registry, get_file_reference_guard
 from app.modules.notifications.api.router import router as notifications_router
 from app.modules.notifications.dependencies import (
     build_notification_event_registry,
@@ -60,6 +60,7 @@ _EVENT_REGISTRY_BUILDERS = [
     build_promotions_event_registry,
     build_users_event_registry,
     build_auth_event_registry,
+    build_files_event_registry,
 ]
 
 
