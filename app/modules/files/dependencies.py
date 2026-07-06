@@ -4,7 +4,10 @@ from uuid import UUID
 from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.application.event_publisher import EventPublisher
 from app.core.application.unit_of_work import UnitOfWork
+from app.core.db.outbox.publisher import OutboxEventPublisher
+from app.core.db.outbox.serialization import EventTypeRegistry
 from app.core.db.session import AsyncSessionDep
 from app.core.db.unit_of_work import SqlAlchemyUnitOfWork
 from app.modules.files.application.commands.delete_file.use_case import (
@@ -20,6 +23,7 @@ from app.modules.files.application.queries.get_file.use_case import GetFileQuery
 from app.modules.files.application.queries.open_file_content.use_case import (
     OpenFileContentQueryUseCase,
 )
+from app.modules.files.domain.events import FileDeleted, FileUploaded
 from app.modules.files.infrastructure.persistence.repository import SqlAlchemyFileRepository
 from app.modules.files.infrastructure.storage.local import LocalObjectStorage
 
@@ -51,6 +55,18 @@ async def get_file_reference_guard() -> FileReferenceGuard:
     return AllowFileDeleteReferenceGuard()
 
 
+def build_files_event_registry() -> EventTypeRegistry:
+    registry = EventTypeRegistry()
+    registry.register(FileUploaded)
+    registry.register(FileDeleted)
+    return registry
+
+
+async def get_files_event_publisher(session: AsyncSessionDep) -> EventPublisher:
+    registry = build_files_event_registry()
+    return OutboxEventPublisher(session=session, registry=registry)
+
+
 def get_local_file_storage_root(request: Request) -> str:
     return request.app.state.settings.file_storage_root
 
@@ -65,11 +81,13 @@ async def get_upload_file_command_use_case(
     repository: Annotated[FileRepository, Depends(get_file_repository)],
     storage: Annotated[ObjectStorage, Depends(get_object_storage)],
     unit_of_work: Annotated[UnitOfWork, Depends(get_unit_of_work)],
+    event_publisher: Annotated[EventPublisher, Depends(get_files_event_publisher)],
 ) -> UploadFileCommandUseCase:
     return UploadFileCommandUseCase(
         repository=repository,
         storage=storage,
         unit_of_work=unit_of_work,
+        event_publisher=event_publisher,
     )
 
 
@@ -91,12 +109,14 @@ async def get_delete_file_command_use_case(
     storage: Annotated[ObjectStorage, Depends(get_object_storage)],
     unit_of_work: Annotated[UnitOfWork, Depends(get_unit_of_work)],
     reference_guard: Annotated[FileReferenceGuard, Depends(get_file_reference_guard)],
+    event_publisher: Annotated[EventPublisher, Depends(get_files_event_publisher)],
 ) -> DeleteFileCommandUseCase:
     return DeleteFileCommandUseCase(
         repository=repository,
         storage=storage,
         unit_of_work=unit_of_work,
         reference_guard=reference_guard,
+        event_publisher=event_publisher,
     )
 
 

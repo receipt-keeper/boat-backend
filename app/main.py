@@ -24,11 +24,13 @@ from app.core.observability.health import router as observability_router
 from app.modules.auth.api import exception_handlers as auth_exception_handlers
 from app.modules.auth.api.router import router as auth_router
 from app.modules.auth.api.security import authenticate_current_principal
+from app.modules.auth.dependencies import build_auth_event_registry
 from app.modules.auth.domain.exceptions import AuthenticationError, AuthorizationError
 from app.modules.credits.api.router import router as credits_router
+from app.modules.credits.dependencies import build_credits_event_registry
 from app.modules.example.api.router import router as example_router
 from app.modules.files.api.router import router as files_router
-from app.modules.files.dependencies import get_file_reference_guard
+from app.modules.files.dependencies import build_files_event_registry, get_file_reference_guard
 from app.modules.notifications.api.router import router as notifications_router
 from app.modules.notifications.dependencies import (
     build_notification_event_registry,
@@ -38,10 +40,14 @@ from app.modules.ocr.api import exception_handlers as ocr_exception_handlers
 from app.modules.ocr.api.router import router as ocr_router
 from app.modules.ocr.domain.exceptions import ReceiptOcrProviderUnavailableError
 from app.modules.promotions.api.router import router as promotions_router
+from app.modules.promotions.dependencies import build_promotions_event_registry
 from app.modules.receipts.api.router import router as receipts_router
 from app.modules.usage.api.router import router as usage_router
 from app.modules.users.api.router import router as users_router
-from app.modules.users.dependencies import get_profile_image_file_reference_guard
+from app.modules.users.dependencies import (
+    build_users_event_registry,
+    get_profile_image_file_reference_guard,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +56,11 @@ logger = logging.getLogger(__name__)
 # `build_<module>_event_registry()`를 이 리스트에 한 줄 추가한다.
 _EVENT_REGISTRY_BUILDERS = [
     build_notification_event_registry,
+    build_credits_event_registry,
+    build_promotions_event_registry,
+    build_users_event_registry,
+    build_auth_event_registry,
+    build_files_event_registry,
 ]
 
 

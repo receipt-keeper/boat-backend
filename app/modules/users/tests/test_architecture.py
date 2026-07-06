@@ -1,9 +1,12 @@
 import ast
+import dataclasses
 from pathlib import Path
 
 from app.core.config.settings import Settings
-from app.core.domain.entity import Entity
+from app.core.domain.entity import AggregateRoot, Entity
+from app.core.domain.events import DomainEvent
 from app.main import create_app
+from app.modules.users.domain import events as users_events
 from app.modules.users.domain.model import User
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
@@ -18,6 +21,13 @@ EXPECTED_USERS_FILES = {
     "application/commands/delete/command.py",
     "application/commands/delete/use_case.py",
     "application/ports/user_repository.py",
+    "domain/events.py",
+}
+
+EXPECTED_USERS_EVENT_CLASSES = {
+    "UserRegistered",
+    "UserProfileImageChanged",
+    "UserWithdrawn",
 }
 
 FORBIDDEN_USERS_FILES = {
@@ -60,6 +70,47 @@ def _imports(path: Path) -> set[str]:
 
 def test_users_domain_model_uses_core_entity_base() -> None:
     assert issubclass(User, Entity)
+
+
+def test_user_is_an_aggregate_root() -> None:
+    assert issubclass(User, AggregateRoot)
+
+
+def test_users_domain_events_module_declares_expected_event_classes() -> None:
+    declared = {
+        name
+        for name in dir(users_events)
+        if isinstance(getattr(users_events, name), type)
+        and issubclass(getattr(users_events, name), DomainEvent)
+        and getattr(users_events, name) is not DomainEvent
+    }
+
+    assert declared == EXPECTED_USERS_EVENT_CLASSES
+
+
+def test_users_domain_events_are_frozen_kw_only_dataclasses() -> None:
+    for name in EXPECTED_USERS_EVENT_CLASSES:
+        event_class = getattr(users_events, name)
+        params = event_class.__dataclass_params__  # type: ignore[attr-defined]
+
+        assert params.frozen is True
+        assert params.kw_only is True
+
+
+def test_users_domain_events_only_use_serializable_payload_types() -> None:
+    # outbox serialization이 지원하는 UUID/datetime/StrEnum/기본형만 허용한다
+    # (app/core/db/outbox/serialization.py:38-64).
+    allowed_annotation_fragments = ("UUID", "str", "int", "float", "bool", "None", "datetime")
+    offending_fields = [
+        f"{event_class.__name__}.{field.name}"
+        for name in EXPECTED_USERS_EVENT_CLASSES
+        for event_class in (getattr(users_events, name),)
+        for field in dataclasses.fields(event_class)
+        if field.name not in {"event_id", "occurred_at", "event_version"}
+        and not any(fragment in str(field.type) for fragment in allowed_annotation_fragments)
+    ]
+
+    assert offending_fields == []
 
 
 def test_users_file_structure_exposes_command_flows() -> None:

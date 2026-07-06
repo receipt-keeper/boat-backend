@@ -1,3 +1,4 @@
+from app.core.application.event_publisher import EventPublisher
 from app.core.application.unit_of_work import UnitOfWork
 from app.modules.credits.application.commands.finalize_credit_usage.use_case import (
     FinalizeCreditUsageCommandUseCase,
@@ -15,6 +16,7 @@ class UseCreditCommandUseCase:
         *,
         credit_repository: CreditRepository,
         unit_of_work: UnitOfWork,
+        event_publisher: EventPublisher,
     ) -> None:
         self._credit_repository = credit_repository
         self._unit_of_work = unit_of_work
@@ -24,6 +26,7 @@ class UseCreditCommandUseCase:
         self._finalize_credit_usage_use_case = FinalizeCreditUsageCommandUseCase(
             credit_repository=credit_repository,
             unit_of_work=unit_of_work,
+            event_publisher=event_publisher,
         )
 
     async def execute(self, command: UseCreditCommand) -> None:

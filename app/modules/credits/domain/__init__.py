@@ -1,14 +1,16 @@
 from app.modules.credits.domain.exceptions import InsufficientCreditError
 from app.modules.credits.domain.model import (
-    CreditAction,
     CreditAmount,
     CreditBalance,
     CreditCount,
+    CreditTransaction,
+    UserCredit,
+)
+from app.modules.credits.domain.value_objects import (
+    CreditAction,
     CreditReason,
     CreditSourceType,
-    CreditTransaction,
     FeatureKey,
-    UserCredit,
 )
 
 __all__ = [

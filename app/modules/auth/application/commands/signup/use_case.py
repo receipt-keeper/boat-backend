@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 from typing import Final
 
+from app.core.application.event_publisher import EventPublisher
 from app.core.application.unit_of_work import UnitOfWork
 from app.core.domain.exceptions import ErrorDetail, ValidationError
 from app.modules.auth.application.commands.signup.command import SignupCommand
@@ -38,6 +39,7 @@ class SignupCommandUseCase:
         access_token_issuer: AccessTokenIssuer,
         refresh_token_issuer: RefreshTokenIssuer,
         unit_of_work: UnitOfWork,
+        event_publisher: EventPublisher,
     ) -> None:
         self._identity_verifier = identity_verifier
         self._identity_synchronizer = identity_synchronizer
@@ -48,6 +50,7 @@ class SignupCommandUseCase:
         self._access_token_issuer = access_token_issuer
         self._refresh_token_issuer = refresh_token_issuer
         self._unit_of_work = unit_of_work
+        self._event_publisher = event_publisher
 
     async def execute(self, command: SignupCommand) -> SignupResult:
         terms_version = _normalized_consent_version(command.terms_version)
@@ -127,6 +130,7 @@ class SignupCommandUseCase:
             user_id=provisioned_user.user_id,
             logged_in_at=logged_in_at,
         )
+        await self._event_publisher.publish(credentials.pull_events())
         session_id = await self._credential_repository.create_session(
             credentials_id=credentials.credentials_id,
         )

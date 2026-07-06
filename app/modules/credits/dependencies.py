@@ -3,7 +3,10 @@ from typing import Annotated
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.application.event_publisher import EventPublisher
 from app.core.application.unit_of_work import DeferredCommitUnitOfWork, UnitOfWork
+from app.core.db.outbox.publisher import OutboxEventPublisher
+from app.core.db.outbox.serialization import EventTypeRegistry
 from app.core.db.session import AsyncSessionDep
 from app.core.db.unit_of_work import SqlAlchemyUnitOfWork
 from app.modules.credits.application.commands.delete_user_credits.use_case import (
@@ -28,9 +31,22 @@ from app.modules.credits.application.queries.get_credit_balance.use_case import 
 from app.modules.credits.application.queries.list_credit_transactions.use_case import (
     ListCreditTransactionsQueryUseCase,
 )
+from app.modules.credits.domain.events import CreditGranted, CreditUsed, UserCreditsDeleted
 from app.modules.credits.infrastructure.persistence.repository import (
     SqlAlchemyCreditRepository,
 )
+
+
+def build_credits_event_registry() -> EventTypeRegistry:
+    registry = EventTypeRegistry()
+    registry.register(CreditGranted)
+    registry.register(CreditUsed)
+    registry.register(UserCreditsDeleted)
+    return registry
+
+
+def _build_outbox_event_publisher(session: AsyncSession) -> EventPublisher:
+    return OutboxEventPublisher(session=session, registry=build_credits_event_registry())
 
 
 def build_grant_credit_command_use_case(
@@ -40,6 +56,7 @@ def build_grant_credit_command_use_case(
     return GrantCreditCommandUseCase(
         credit_repository=SqlAlchemyCreditRepository(session),
         unit_of_work=unit_of_work,
+        event_publisher=_build_outbox_event_publisher(session),
     )
 
 
@@ -50,6 +67,7 @@ def build_delete_user_credits_command_use_case(
     return DeleteUserCreditsCommandUseCase(
         credit_repository=SqlAlchemyCreditRepository(session),
         unit_of_work=unit_of_work,
+        event_publisher=_build_outbox_event_publisher(session),
     )
 
 
@@ -61,13 +79,19 @@ async def get_unit_of_work(session: AsyncSessionDep) -> UnitOfWork:
     return SqlAlchemyUnitOfWork(session)
 
 
+async def get_credit_event_publisher(session: AsyncSessionDep) -> EventPublisher:
+    return _build_outbox_event_publisher(session)
+
+
 async def get_use_credit_command_use_case(
     credit_repository: Annotated[CreditRepository, Depends(get_credit_repository)],
     unit_of_work: Annotated[UnitOfWork, Depends(get_unit_of_work)],
+    event_publisher: Annotated[EventPublisher, Depends(get_credit_event_publisher)],
 ) -> UseCreditCommandUseCase:
     return UseCreditCommandUseCase(
         credit_repository=credit_repository,
         unit_of_work=unit_of_work,
+        event_publisher=event_publisher,
     )
 
 
@@ -80,20 +104,24 @@ async def get_reserve_credit_command_use_case(
 async def get_finalize_credit_usage_command_use_case(
     credit_repository: Annotated[CreditRepository, Depends(get_credit_repository)],
     unit_of_work: Annotated[UnitOfWork, Depends(get_unit_of_work)],
+    event_publisher: Annotated[EventPublisher, Depends(get_credit_event_publisher)],
 ) -> FinalizeCreditUsageCommandUseCase:
     return FinalizeCreditUsageCommandUseCase(
         credit_repository=credit_repository,
         unit_of_work=unit_of_work,
+        event_publisher=event_publisher,
     )
 
 
 async def get_grant_credit_command_use_case(
     credit_repository: Annotated[CreditRepository, Depends(get_credit_repository)],
     unit_of_work: Annotated[UnitOfWork, Depends(get_unit_of_work)],
+    event_publisher: Annotated[EventPublisher, Depends(get_credit_event_publisher)],
 ) -> GrantCreditCommandUseCase:
     return GrantCreditCommandUseCase(
         credit_repository=credit_repository,
         unit_of_work=unit_of_work,
+        event_publisher=event_publisher,
     )
 
 
@@ -104,6 +132,7 @@ async def get_deferred_grant_credit_command_use_case(
     return GrantCreditCommandUseCase(
         credit_repository=credit_repository,
         unit_of_work=DeferredCommitUnitOfWork(rollback=session.rollback),
+        event_publisher=_build_outbox_event_publisher(session),
     )
 
 

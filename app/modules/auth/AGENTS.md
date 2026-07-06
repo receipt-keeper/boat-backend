@@ -44,7 +44,7 @@ auth/
 - `read_models`는 public optimized read API/read model surface용이다. 내부 auth query에는 요구하지 않는다.
 - Auth는 기본 application DB를 쓴다. 별도 read DB/read-store/projection worker/materialized view는 명시 승인 없이는 금지다.
 - Command bus/query bus는 명시 승인 없이는 금지다.
-- Same-process domain event dispatch는 실제 emitted event와 synchronous in-process handler가 있을 때만 허용한다.
+- 도메인 이벤트는 실제 command 상태 변경에서만 발행하고, 발행 경로는 core-owned transactional outbox(`app.core.db.outbox`) 경유만 허용한다. synchronous in-process handler는 실제 소비 요구가 생길 때 main.py 조립 지점에서 등록한다.
 - Application code는 port와 domain object에만 의존한다. Firebase, JWT, SQLAlchemy, auth infrastructure, users infrastructure import 금지.
 - Token port는 provider-neutral이어야 한다. contract 이름에 JWT-specific naming을 넣지 않는다.
 - `dependencies.py`만 auth와 users provisioning을 연결한다.
@@ -66,5 +66,5 @@ auth/
 - `AuthenticatedPrincipal`을 auth application package로 되돌리지 않는다.
 - business decision을 Firebase, JWT, SQLAlchemy adapter로 옮기지 않는다.
 - NoOpPushCleanup cannot satisfy PRD-complete withdrawal; it must not be used to claim PRD-complete withdrawal cleanup, and missing BC cleanup must remain unclaimed until the real owning BC and cleanup contract exist.
-- event sourcing, durable event store, outbox, retry, replay, external message bus, Kafka/RabbitMQ/Celery, cross-process delivery, durability semantics를 auth에 도입하지 않는다.
-- 빈 event scaffolding을 추가하지 않는다. Auth event는 실제 emitted event와 synchronous in-process handler가 필요하다.
+- event sourcing, durable event store, retry, replay, external message bus, Kafka/RabbitMQ/Celery, cross-process delivery를 auth에 도입하지 않는다. 유일한 예외는 core-owned transactional outbox(`app.core.db.outbox`) 경유 발행이며, auth가 자체 outbox/durability 구현을 소유하는 것은 여전히 금지다.
+- 사용처 없는 추측성 이벤트 타입을 추가하지 않는다. Auth event(현재: `UserCredentialCreated`, `AccountWithdrawn`)는 실제 command 상태 변경에서 발행되어야 하며, 소비자(handler)는 단계적으로 도입한다.

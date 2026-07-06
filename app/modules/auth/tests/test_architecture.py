@@ -1,15 +1,28 @@
 import ast
+import dataclasses
 import importlib
 from pathlib import Path
 
-from app.core.domain.entity import Entity
-from app.modules.auth.domain.model import ExternalIdentity, RefreshToken, UserCredential
+from app.core.domain.entity import AggregateRoot, Entity
+from app.core.domain.events import DomainEvent
+from app.modules.auth.domain import events as auth_events
+from app.modules.auth.domain.model import (
+    AuthSession,
+    ExternalIdentity,
+    RefreshToken,
+    UserCredential,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
 AUTH_ROOT = PROJECT_ROOT / "app" / "modules" / "auth"
 APPLICATION_ROOT = AUTH_ROOT / "application"
 AUTH_GUIDANCE = AUTH_ROOT / "AGENTS.md"
 AUTH_ROUTER = AUTH_ROOT / "api" / "router.py"
+
+EXPECTED_AUTH_EVENT_CLASSES = {
+    "UserCredentialCreated",
+    "AccountWithdrawn",
+}
 
 EXPECTED_AUTH_FILES = {
     "application/commands/login/command.py",
@@ -33,6 +46,7 @@ EXPECTED_AUTH_FILES = {
     "application/ports/notification_settings_initializer.py",
     "application/ports/token_issuer.py",
     "application/ports/user_provisioner.py",
+    "domain/events.py",
     "infrastructure/persistence/orm.py",
     "infrastructure/persistence/mapper.py",
     "infrastructure/persistence/credential_repository.py",
@@ -142,8 +156,56 @@ def test_auth_application_flow_classes_use_command_query_use_case_names() -> Non
 
 def test_auth_domain_models_use_core_entity_base() -> None:
     assert all(
-        issubclass(model, Entity) for model in (UserCredential, ExternalIdentity, RefreshToken)
+        issubclass(model, Entity)
+        for model in (UserCredential, ExternalIdentity, RefreshToken, AuthSession)
     )
+
+
+def test_user_credential_and_auth_session_are_aggregate_roots() -> None:
+    assert issubclass(UserCredential, AggregateRoot)
+    assert issubclass(AuthSession, AggregateRoot)
+
+
+def test_external_identity_and_refresh_token_remain_plain_entities() -> None:
+    assert not issubclass(ExternalIdentity, AggregateRoot)
+    assert not issubclass(RefreshToken, AggregateRoot)
+
+
+def test_auth_domain_events_module_declares_expected_event_classes() -> None:
+    declared = {
+        name
+        for name in dir(auth_events)
+        if isinstance(getattr(auth_events, name), type)
+        and issubclass(getattr(auth_events, name), DomainEvent)
+        and getattr(auth_events, name) is not DomainEvent
+    }
+
+    assert declared == EXPECTED_AUTH_EVENT_CLASSES
+
+
+def test_auth_domain_events_are_frozen_kw_only_dataclasses() -> None:
+    for name in EXPECTED_AUTH_EVENT_CLASSES:
+        event_class = getattr(auth_events, name)
+        params = event_class.__dataclass_params__  # type: ignore[attr-defined]
+
+        assert params.frozen is True
+        assert params.kw_only is True
+
+
+def test_auth_domain_events_only_use_serializable_payload_types() -> None:
+    # outbox serialization이 지원하는 UUID/datetime/StrEnum/기본형만 허용한다
+    # (app/core/db/outbox/serialization.py:38-64).
+    allowed_annotation_fragments = ("UUID", "str", "int", "float", "bool", "None", "datetime")
+    offending_fields = [
+        f"{event_class.__name__}.{field.name}"
+        for name in EXPECTED_AUTH_EVENT_CLASSES
+        for event_class in (getattr(auth_events, name),)
+        for field in dataclasses.fields(event_class)
+        if field.name not in {"event_id", "occurred_at", "event_version"}
+        and not any(fragment in str(field.type) for fragment in allowed_annotation_fragments)
+    ]
+
+    assert offending_fields == []
 
 
 def test_auth_domain_does_not_import_persistence_frameworks() -> None:

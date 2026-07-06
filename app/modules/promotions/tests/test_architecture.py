@@ -1,7 +1,11 @@
 import ast
+import dataclasses
+from importlib import import_module
 from pathlib import Path
+from typing import Any
 
 from app.core.config.settings import Settings
+from app.core.domain.events import DomainEvent
 from app.main import create_app
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
@@ -23,6 +27,7 @@ EXPECTED_LAYOUT_FILES = {
     "application/queries/get_current_ocr_credit_promotion/result.py",
     "application/queries/get_current_ocr_credit_promotion/use_case.py",
     "dependencies.py",
+    "domain/events.py",
     "domain/exceptions.py",
     "domain/model.py",
     "infrastructure/persistence/mapper.py",
@@ -33,6 +38,9 @@ FORBIDDEN_FLAT_FILES = {
     "application/service.py",
     "domain.py",
     "infrastructure/repository.py",
+}
+EXPECTED_EVENT_CLASS_NAMES = {
+    "PromotionRedemptionGranted",
 }
 FORBIDDEN_APPLICATION_DOMAIN_IMPORT_PREFIXES = (
     "app.modules.credits.infrastructure",
@@ -191,6 +199,39 @@ def test_credit_transaction_public_schema_exposes_existing_fields_only() -> None
 
     assert public_fields == EXPECTED_CREDIT_TRANSACTION_FIELDS
     assert public_fields.isdisjoint(FORBIDDEN_CREDIT_TRANSACTION_FIELDS)
+
+
+def test_promotions_domain_events_module_declares_only_frozen_domain_events() -> None:
+    events_module = import_module("app.modules.promotions.domain.events")
+
+    declared_classes = [
+        obj
+        for name, obj in vars(events_module).items()
+        if isinstance(obj, type) and obj.__module__ == events_module.__name__
+    ]
+
+    assert {cls.__name__ for cls in declared_classes} == EXPECTED_EVENT_CLASS_NAMES
+    for cls in declared_classes:
+        assert issubclass(cls, DomainEvent)
+        assert dataclasses.is_dataclass(cls)
+        dataclass_params: Any = getattr(cls, "__dataclass_params__")  # noqa: B009
+        assert dataclass_params.frozen is True
+
+
+def test_promotions_domain_events_import_only_core_events() -> None:
+    events_path = PROMOTIONS_ROOT / "domain" / "events.py"
+    allowed_prefixes = (
+        "dataclasses",
+        "uuid",
+        "app.core.domain.events",
+    )
+    offending_imports = [
+        imported
+        for imported in _imports(events_path)
+        if not _imports_forbidden_prefix(imported, allowed_prefixes)
+    ]
+
+    assert offending_imports == []
 
 
 def _imports(path: Path) -> set[str]:

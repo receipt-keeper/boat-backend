@@ -8,7 +8,7 @@ from app.modules.users.infrastructure.persistence import orm
 
 
 def user_to_domain(record: orm.User) -> DomainUser:
-    return DomainUser.create(
+    return DomainUser.restore(
         user_id=record.id,
         name=record.name,
         email=record.email,

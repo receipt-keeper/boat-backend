@@ -1,7 +1,11 @@
 import ast
+import dataclasses
+import inspect
 from pathlib import Path
 
 from app.core.config.settings import Settings
+from app.core.domain.events import DomainEvent
+from app.modules.files.domain import events as files_events
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
 FILES_ROOT = PROJECT_ROOT / "app" / "modules" / "files"
@@ -26,6 +30,7 @@ EXPECTED_FILES = {
     "domain/model.py",
     "domain/value_objects.py",
     "domain/exceptions.py",
+    "domain/events.py",
     "infrastructure/persistence/orm.py",
     "infrastructure/persistence/mapper.py",
     "infrastructure/persistence/repository.py",
@@ -98,6 +103,24 @@ def test_files_application_and_domain_do_not_import_foreign_infrastructure() -> 
     ]
 
     assert offending_files == []
+
+
+def test_files_events_are_frozen_kw_only_domain_event_subclasses() -> None:
+    event_classes = [
+        member
+        for _name, member in inspect.getmembers(files_events, inspect.isclass)
+        if member.__module__ == files_events.__name__
+    ]
+
+    assert event_classes != []
+    for event_class in event_classes:
+        assert issubclass(event_class, DomainEvent)
+        assert dataclasses.is_dataclass(event_class)
+        assert dataclasses.fields(event_class) != []
+        # dataclass(frozen=True, kw_only=True) 계약을 __dataclass_params__로 직접 확인한다.
+        dataclass_params = event_class.__dataclass_params__  # type: ignore[attr-defined]
+        assert dataclass_params.frozen is True
+        assert dataclass_params.kw_only is True
 
 
 def test_files_module_does_not_expose_storage_in_api_contract() -> None:

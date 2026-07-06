@@ -1,6 +1,10 @@
 import ast
+import dataclasses
 from importlib import import_module
 from pathlib import Path
+from typing import Any
+
+from app.core.domain.events import DomainEvent
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
 CREDITS_ROOT = PROJECT_ROOT / "app" / "modules" / "credits"
@@ -8,9 +12,16 @@ CREDITS_ROOT = PROJECT_ROOT / "app" / "modules" / "credits"
 EXPECTED_DOMAIN_PACKAGE_FILES = {
     "domain/__init__.py",
     "domain/model.py",
+    "domain/events.py",
+    "domain/value_objects.py",
 }
 FORBIDDEN_DOMAIN_FILES = {
     "domain.py",
+}
+EXPECTED_EVENT_CLASS_NAMES = {
+    "CreditGranted",
+    "CreditUsed",
+    "UserCreditsDeleted",
 }
 FORBIDDEN_INFRASTRUCTURE_IMPORT_PREFIXES = ("app.modules.credits.infrastructure",)
 FORBIDDEN_DOMAIN_IMPORT_PREFIXES = (
@@ -144,3 +155,37 @@ def test_credit_account_name_stays_outside_domain_sources() -> None:
     ]
 
     assert offending_files == []
+
+
+def test_credits_domain_events_module_declares_only_frozen_domain_events() -> None:
+    events_module = import_module("app.modules.credits.domain.events")
+
+    declared_classes = [
+        obj
+        for name, obj in vars(events_module).items()
+        if isinstance(obj, type) and obj.__module__ == events_module.__name__
+    ]
+
+    assert {cls.__name__ for cls in declared_classes} == EXPECTED_EVENT_CLASS_NAMES
+    for cls in declared_classes:
+        assert issubclass(cls, DomainEvent)
+        assert dataclasses.is_dataclass(cls)
+        dataclass_params: Any = getattr(cls, "__dataclass_params__")  # noqa: B009
+        assert dataclass_params.frozen is True
+
+
+def test_credits_domain_events_import_only_value_objects_and_core_events() -> None:
+    events_path = CREDITS_ROOT / "domain" / "events.py"
+    allowed_prefixes = (
+        "dataclasses",
+        "uuid",
+        "app.core.domain.events",
+        "app.modules.credits.domain.value_objects",
+    )
+    offending_imports = [
+        imported
+        for imported in _imports(events_path)
+        if not _imports_forbidden_prefix(imported, allowed_prefixes)
+    ]
+
+    assert offending_imports == []

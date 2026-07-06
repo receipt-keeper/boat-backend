@@ -2,10 +2,14 @@ from dataclasses import dataclass
 from typing import Annotated
 
 from fastapi import Depends, Request
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.application.event_publisher import EventPublisher
 from app.core.application.unit_of_work import DeferredCommitUnitOfWork, UnitOfWork
 from app.core.config.dependencies import get_request_settings
 from app.core.config.settings import Settings
+from app.core.db.outbox.publisher import OutboxEventPublisher
+from app.core.db.outbox.serialization import EventTypeRegistry
 from app.core.db.session import AsyncSessionDep
 from app.core.db.unit_of_work import SqlAlchemyUnitOfWork
 from app.modules.auth.application.commands.login.use_case import LoginCommandUseCase
@@ -52,6 +56,7 @@ from app.modules.auth.dependency_adapters import (
     PushTokenWithdrawalCleanerAdapter,
     RequestActiveSessionChecker,
 )
+from app.modules.auth.domain.events import AccountWithdrawn, UserCredentialCreated
 from app.modules.auth.infrastructure.identity_providers.firebase import (
     FirebaseExternalIdentityVerifier,
 )
@@ -86,6 +91,27 @@ from app.modules.users.dependencies import (
 )
 
 SettingsDep = Annotated[Settings, Depends(get_request_settings)]
+
+
+def build_auth_event_registry() -> EventTypeRegistry:
+    registry = EventTypeRegistry()
+    registry.register(UserCredentialCreated)
+    registry.register(AccountWithdrawn)
+    return registry
+
+
+def _build_auth_event_publisher(session: AsyncSession) -> EventPublisher:
+    """모듈 소유 registry로 조립한 plain OutboxEventPublisher.
+
+    auth에는 아직 등록된 이벤트 핸들러가 없으므로 notifications의 즉시발행
+    스케줄링(_ImmediateDispatchSchedulingPublisher)은 적용하지 않는다.
+    outbox insert(같은 세션)만 수행하고, relay 폴러가 회수해 처리한다.
+    """
+    return OutboxEventPublisher(session=session, registry=build_auth_event_registry())
+
+
+async def get_auth_event_publisher(session: AsyncSessionDep) -> EventPublisher:
+    return _build_auth_event_publisher(session)
 
 
 @dataclass(frozen=True, slots=True)
@@ -241,6 +267,7 @@ WithdrawalCleanupUseCaseDep = Annotated[
     WithdrawalCleanupCommandUseCase,
     Depends(get_withdrawal_cleanup_command_use_case),
 ]
+AuthEventPublisherDep = Annotated[EventPublisher, Depends(get_auth_event_publisher)]
 
 
 async def get_login_command_use_case(
@@ -271,6 +298,7 @@ async def get_signup_command_use_case(
     access_token_issuer: AccessTokenIssuerDep,
     refresh_token_issuer: RefreshTokenIssuerDep,
     unit_of_work: UnitOfWorkDep,
+    event_publisher: AuthEventPublisherDep,
 ) -> SignupCommandUseCase:
     return SignupCommandUseCase(
         identity_verifier=identity_verifier,
@@ -282,6 +310,7 @@ async def get_signup_command_use_case(
         access_token_issuer=access_token_issuer,
         refresh_token_issuer=refresh_token_issuer,
         unit_of_work=unit_of_work,
+        event_publisher=event_publisher,
     )
 
 
@@ -329,6 +358,7 @@ async def get_withdraw_account_command_use_case(
     credit_withdrawal_cleaner: CreditWithdrawalCleanerDep,
     push_token_withdrawal_cleaner: PushTokenWithdrawalCleanerDep,
     unit_of_work: UnitOfWorkDep,
+    event_publisher: AuthEventPublisherDep,
 ) -> WithdrawAccountCommandUseCase:
     return WithdrawAccountCommandUseCase(
         credential_repository=credential_repository,
@@ -336,6 +366,7 @@ async def get_withdraw_account_command_use_case(
         credit_withdrawal_cleaner=credit_withdrawal_cleaner,
         push_token_withdrawal_cleaner=push_token_withdrawal_cleaner,
         unit_of_work=unit_of_work,
+        event_publisher=event_publisher,
     )
 
 

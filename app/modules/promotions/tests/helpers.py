@@ -4,6 +4,8 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.application.event_publisher import EventPublisher
+from app.core.db.outbox.publisher import OutboxEventPublisher
 from app.core.db.unit_of_work import SqlAlchemyUnitOfWork
 from app.modules.promotions.application.commands.create_promotion_code_redemption.command import (
     CreatePromotionCodeRedemptionCommand,
@@ -23,6 +25,7 @@ from app.modules.promotions.application.ports.credit_grant import (
     PromotionCreditGrantPort,
     PromotionCreditGrantResult,
 )
+from app.modules.promotions.dependencies import build_promotions_event_registry
 from app.modules.promotions.infrastructure.persistence import orm
 from app.modules.promotions.infrastructure.persistence.repository import (
     SqlAlchemyPromotionRepository,
@@ -68,14 +71,26 @@ class FakePromotionCreditGrantPort(PromotionCreditGrantPort):
         )
 
 
+def _event_publisher_for(
+    session: AsyncSession,
+    event_publisher: EventPublisher | None,
+) -> EventPublisher:
+    if event_publisher is not None:
+        return event_publisher
+    return OutboxEventPublisher(session=session, registry=build_promotions_event_registry())
+
+
 def promotion_use_case(
     session: AsyncSession,
     grant_port: FakePromotionCreditGrantPort,
+    *,
+    event_publisher: EventPublisher | None = None,
 ) -> CreatePromotionRedemptionCommandUseCase:
     return CreatePromotionRedemptionCommandUseCase(
         promotion_repository=SqlAlchemyPromotionRepository(session),
         credit_grant_port=grant_port,
         unit_of_work=SqlAlchemyUnitOfWork(session),
+        event_publisher=_event_publisher_for(session, event_publisher),
         clock=lambda: NOW,
     )
 
@@ -83,11 +98,14 @@ def promotion_use_case(
 def code_use_case(
     session: AsyncSession,
     grant_port: FakePromotionCreditGrantPort,
+    *,
+    event_publisher: EventPublisher | None = None,
 ) -> CreatePromotionCodeRedemptionCommandUseCase:
     return CreatePromotionCodeRedemptionCommandUseCase(
         promotion_repository=SqlAlchemyPromotionRepository(session),
         credit_grant_port=grant_port,
         unit_of_work=SqlAlchemyUnitOfWork(session),
+        event_publisher=_event_publisher_for(session, event_publisher),
         clock=lambda: NOW,
     )
 

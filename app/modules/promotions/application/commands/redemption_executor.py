@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
 
+from app.core.application.event_publisher import EventPublisher
 from app.core.application.unit_of_work import UnitOfWork
 from app.modules.promotions.application.commands.create_promotion_redemption.result import (
     CreatePromotionRedemptionResult,
@@ -48,11 +49,13 @@ class PromotionRedemptionExecutor:
         promotion_repository: PromotionRepository,
         credit_grant_port: PromotionCreditGrantPort,
         unit_of_work: UnitOfWork,
+        event_publisher: EventPublisher,
         clock: Callable[[], datetime] = _utc_now,
     ) -> None:
         self._promotion_repository = promotion_repository
         self._credit_grant_port = credit_grant_port
         self._unit_of_work = unit_of_work
+        self._event_publisher = event_publisher
         self._clock = clock
 
     async def replay_if_existing(
@@ -106,6 +109,7 @@ class PromotionRedemptionExecutor:
             user_id=attempt.user_id,
             idempotency_key=attempt.idempotency_key,
             redeemed_at=now,
+            benefit_amount=attempt.promotion.benefit_amount.value,
         )
         attempt.promotion.record_redemption()
         if attempt.promotion_code is not None:
@@ -114,6 +118,11 @@ class PromotionRedemptionExecutor:
         await self._promotion_repository.save_promotion(promotion=attempt.promotion)
         if attempt.promotion_code is not None:
             await self._promotion_repository.save_code(code=attempt.promotion_code)
+        # 발행은 credits 동기 호출·UoW commit 이전에 수행한다 - 같은 세션에 insert된
+        # outbox row가 아래 credit grant/commit 실패 시의 rollback과 함께 원자적으로
+        # 소거되도록 하기 위함이다(멱등 replay에서 유령 이벤트 방지, credits T3와 동일 원칙).
+        events = redemption.pull_events()
+        await self._event_publisher.publish(events)
         grant_result = await self._credit_grant_port.grant_ocr_credit(
             grant=_credit_grant(
                 redemption=redemption,
