@@ -2,8 +2,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from app.core.domain.entity import Entity
+from app.core.domain.entity import AggregateRoot, Entity
 from app.core.domain.validation import Notification
+from app.modules.auth.domain.events import UserCredentialCreated
 from app.modules.auth.domain.value_objects import (
     Email,
     Issuer,
@@ -15,7 +16,7 @@ from app.modules.auth.domain.value_objects import (
 
 
 @dataclass(eq=False)
-class UserCredential(Entity[UUID]):
+class UserCredential(AggregateRoot[UUID]):
     user_id: UUID
     role: Role
     last_login_at: datetime | None = None
@@ -28,6 +29,47 @@ class UserCredential(Entity[UUID]):
         role: str = "user",
         credentials_id: UUID | None = None,
         last_login_at: datetime | None = None,
+    ) -> "UserCredential":
+        created = cls._assemble(
+            user_id=user_id,
+            role=role,
+            credentials_id=credentials_id,
+            last_login_at=last_login_at,
+        )
+        created.record_event(
+            UserCredentialCreated(
+                credentials_id=created.credentials_id,
+                user_id=created.user_id,
+                role=created.role.value,
+            )
+        )
+        return created
+
+    @classmethod
+    def restore(
+        cls,
+        *,
+        user_id: UUID,
+        role: str,
+        credentials_id: UUID,
+        last_login_at: datetime | None = None,
+    ) -> "UserCredential":
+        # 저장된 레코드 복원 전용 — 생성 이벤트를 기록하지 않는다.
+        return cls._assemble(
+            user_id=user_id,
+            role=role,
+            credentials_id=credentials_id,
+            last_login_at=last_login_at,
+        )
+
+    @classmethod
+    def _assemble(
+        cls,
+        *,
+        user_id: UUID,
+        role: str,
+        credentials_id: UUID | None,
+        last_login_at: datetime | None,
     ) -> "UserCredential":
         new_role = Role(role)
         return cls(
@@ -85,7 +127,7 @@ class ExternalIdentity(Entity[UUID]):
 
 
 @dataclass(eq=False)
-class AuthSession(Entity[UUID]):
+class AuthSession(AggregateRoot[UUID]):
     credentials_id: UUID
     revoked_at: datetime | None = None
 

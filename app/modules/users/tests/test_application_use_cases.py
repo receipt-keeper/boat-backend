@@ -1,9 +1,12 @@
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core.application.event_publisher import EventPublisher
+from app.core.db.outbox.orm import OutboxEvent
+from app.core.db.outbox.publisher import OutboxEventPublisher
 from app.core.db.unit_of_work import SqlAlchemyUnitOfWork
 from app.core.domain.exceptions import ValidationError
 from app.modules.users.application.commands.resolve_user_for_login.command import (
@@ -12,11 +15,20 @@ from app.modules.users.application.commands.resolve_user_for_login.command impor
 from app.modules.users.application.commands.resolve_user_for_login.use_case import (
     ResolveUserForLoginCommandUseCase,
 )
+from app.modules.users.application.commands.update_profile_image.command import (
+    SetProfileImageCommand,
+)
+from app.modules.users.application.commands.update_profile_image.use_case import (
+    UpdateProfileImageCommandUseCase,
+)
 from app.modules.users.application.commands.withdrawal_cleanup.command import (
     WithdrawalCleanupCommand,
 )
 from app.modules.users.application.commands.withdrawal_cleanup.use_case import (
     WithdrawalCleanupCommandUseCase,
+)
+from app.modules.users.application.ports.profile_image_file_validator import (
+    ProfileImageFileValidator,
 )
 from app.modules.users.application.queries.current_user_profile.query import (
     CurrentUserProfileQuery,
@@ -24,10 +36,20 @@ from app.modules.users.application.queries.current_user_profile.query import (
 from app.modules.users.application.queries.current_user_profile.use_case import (
     CurrentUserProfileQueryUseCase,
 )
+from app.modules.users.dependencies import build_users_event_registry
 from app.modules.users.infrastructure.persistence import orm
 from app.modules.users.infrastructure.persistence.repository import SqlAlchemyUserRepository
 
 CountableUsersTable = type[orm.User] | type[orm.UserSettings]
+
+
+class _AlwaysOwnedProfileImageFileValidator(ProfileImageFileValidator):
+    async def ensure_owned_image_file(self, *, user_id: UUID, file_id: UUID) -> None:
+        return None
+
+
+def _event_publisher(session: AsyncSession) -> EventPublisher:
+    return OutboxEventPublisher(session=session, registry=build_users_event_registry())
 
 
 async def test_resolve_user_for_login_creates_profile_email_value(
@@ -39,6 +61,7 @@ async def test_resolve_user_for_login_creates_profile_email_value(
         use_case = ResolveUserForLoginCommandUseCase(
             user_repository=repository,
             unit_of_work=unit_of_work,
+            event_publisher=_event_publisher(session),
         )
 
         result = await use_case.execute(
@@ -66,6 +89,40 @@ async def test_resolve_user_for_login_creates_profile_email_value(
     assert settings_count == 1
 
 
+async def test_resolve_user_for_login_publishes_user_registered_to_outbox(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with postgres_session_factory() as session:
+        repository = SqlAlchemyUserRepository(session)
+        unit_of_work = SqlAlchemyUnitOfWork(session)
+        use_case = ResolveUserForLoginCommandUseCase(
+            user_repository=repository,
+            unit_of_work=unit_of_work,
+            event_publisher=_event_publisher(session),
+        )
+
+        await use_case.execute(
+            ResolveUserForLoginCommand(
+                name="이벤트 확인 사용자",
+                email="outbox-check@example.com",
+                profile_image_url=None,
+                terms_version="1.0",
+                privacy_version="1.0",
+                terms_accepted=True,
+                privacy_accepted=True,
+            )
+        )
+
+    async with postgres_session_factory() as session:
+        outbox_rows = list(
+            await session.scalars(
+                select(OutboxEvent).where(OutboxEvent.event_type == "UserRegistered")
+            )
+        )
+
+    assert len(outbox_rows) == 1
+
+
 async def test_profile_and_withdrawal_surface(
     postgres_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
@@ -75,6 +132,7 @@ async def test_profile_and_withdrawal_surface(
         user = await ResolveUserForLoginCommandUseCase(
             user_repository=repository,
             unit_of_work=unit_of_work,
+            event_publisher=_event_publisher(session),
         ).execute(
             ResolveUserForLoginCommand(
                 name="표면 테스트",
@@ -93,6 +151,7 @@ async def test_profile_and_withdrawal_surface(
         await WithdrawalCleanupCommandUseCase(
             user_repository=repository,
             unit_of_work=unit_of_work,
+            event_publisher=_event_publisher(session),
         ).execute(WithdrawalCleanupCommand(user_id=user.user_id))
 
     async with postgres_session_factory() as session:
@@ -102,6 +161,43 @@ async def test_profile_and_withdrawal_surface(
     assert profile.email == "surface@example.com"
     assert users_count == 0
     assert settings_count == 0
+
+
+async def test_withdrawal_cleanup_publishes_user_withdrawn_to_outbox(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with postgres_session_factory() as session:
+        repository = SqlAlchemyUserRepository(session)
+        unit_of_work = SqlAlchemyUnitOfWork(session)
+        user = await ResolveUserForLoginCommandUseCase(
+            user_repository=repository,
+            unit_of_work=unit_of_work,
+            event_publisher=_event_publisher(session),
+        ).execute(
+            ResolveUserForLoginCommand(
+                name="탈퇴 이벤트 사용자",
+                email="withdraw-event@example.com",
+                profile_image_url=None,
+                terms_version="1.0",
+                privacy_version="1.0",
+                terms_accepted=True,
+                privacy_accepted=True,
+            )
+        )
+        await WithdrawalCleanupCommandUseCase(
+            user_repository=repository,
+            unit_of_work=unit_of_work,
+            event_publisher=_event_publisher(session),
+        ).execute(WithdrawalCleanupCommand(user_id=user.user_id))
+
+    async with postgres_session_factory() as session:
+        outbox_rows = list(
+            await session.scalars(
+                select(OutboxEvent).where(OutboxEvent.event_type == "UserWithdrawn")
+            )
+        )
+
+    assert len(outbox_rows) == 1
 
 
 async def test_current_user_profile_prefers_file_content_path_over_legacy_url(
@@ -114,6 +210,7 @@ async def test_current_user_profile_prefers_file_content_path_over_legacy_url(
         user = await ResolveUserForLoginCommandUseCase(
             user_repository=repository,
             unit_of_work=unit_of_work,
+            event_publisher=_event_publisher(session),
         ).execute(
             ResolveUserForLoginCommand(
                 name="프로필 이미지 우선순위",
@@ -147,6 +244,7 @@ async def test_current_user_profile_keeps_legacy_profile_image_url_without_file(
         user = await ResolveUserForLoginCommandUseCase(
             user_repository=repository,
             unit_of_work=unit_of_work,
+            event_publisher=_event_publisher(session),
         ).execute(
             ResolveUserForLoginCommand(
                 name="레거시 이미지",
@@ -165,6 +263,49 @@ async def test_current_user_profile_keeps_legacy_profile_image_url_without_file(
     assert profile.profile_image_url == "https://example.com/legacy.png"
 
 
+async def test_set_profile_image_publishes_user_profile_image_changed_to_outbox(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    file_id = uuid4()
+    async with postgres_session_factory() as session:
+        repository = SqlAlchemyUserRepository(session)
+        unit_of_work = SqlAlchemyUnitOfWork(session)
+        user = await ResolveUserForLoginCommandUseCase(
+            user_repository=repository,
+            unit_of_work=unit_of_work,
+            event_publisher=_event_publisher(session),
+        ).execute(
+            ResolveUserForLoginCommand(
+                name="프로필 이미지 변경 이벤트",
+                email="profile-image-event@example.com",
+                profile_image_url=None,
+                terms_version="1.0",
+                privacy_version="1.0",
+                terms_accepted=True,
+                privacy_accepted=True,
+            )
+        )
+
+        use_case = UpdateProfileImageCommandUseCase(
+            user_repository=repository,
+            profile_image_file_validator=_AlwaysOwnedProfileImageFileValidator(),
+            unit_of_work=unit_of_work,
+            event_publisher=_event_publisher(session),
+        )
+        await use_case.set_profile_image(
+            SetProfileImageCommand(user_id=user.user_id, file_id=file_id)
+        )
+
+    async with postgres_session_factory() as session:
+        outbox_rows = list(
+            await session.scalars(
+                select(OutboxEvent).where(OutboxEvent.event_type == "UserProfileImageChanged")
+            )
+        )
+
+    assert len(outbox_rows) == 1
+
+
 async def test_use_cases_reject_malformed_input(
     postgres_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
@@ -174,6 +315,7 @@ async def test_use_cases_reject_malformed_input(
         resolver = ResolveUserForLoginCommandUseCase(
             user_repository=repository,
             unit_of_work=unit_of_work,
+            event_publisher=_event_publisher(session),
         )
         with pytest.raises(ValidationError) as invalid_email:
             await resolver.execute(
@@ -198,6 +340,7 @@ async def test_resolve_user_for_login_requires_consent_versions(
         resolver = ResolveUserForLoginCommandUseCase(
             user_repository=SqlAlchemyUserRepository(session),
             unit_of_work=SqlAlchemyUnitOfWork(session),
+            event_publisher=_event_publisher(session),
         )
         with pytest.raises(ValidationError) as missing_versions:
             await resolver.execute(
@@ -223,6 +366,7 @@ async def test_resolve_user_for_login_rejects_blank_consent_versions(
         resolver = ResolveUserForLoginCommandUseCase(
             user_repository=SqlAlchemyUserRepository(session),
             unit_of_work=SqlAlchemyUnitOfWork(session),
+            event_publisher=_event_publisher(session),
         )
         with pytest.raises(ValidationError) as blank_versions:
             await resolver.execute(
@@ -250,6 +394,7 @@ async def test_resolve_user_for_login_rejects_overlong_consent_versions(
         resolver = ResolveUserForLoginCommandUseCase(
             user_repository=SqlAlchemyUserRepository(session),
             unit_of_work=SqlAlchemyUnitOfWork(session),
+            event_publisher=_event_publisher(session),
         )
         with pytest.raises(ValidationError) as overlong_versions:
             await resolver.execute(

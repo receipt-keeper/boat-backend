@@ -67,9 +67,11 @@ class SqlAlchemyUserRepository(UserRepository):
         record = await self._session.get(orm.User, user_id)
         if record is None:
             raise NotFoundError("사용자를 찾을 수 없습니다.")
-        record.profile_image_url = profile_image_url
+        current = mapper.user_to_domain(record)
+        updated = current.update_profile_image_url(profile_image_url=profile_image_url)
+        record.profile_image_url = updated.profile_image_url
         await self._session.flush()
-        return mapper.user_to_domain(record)
+        return updated
 
     async def delete_account_state(self, *, user_id: UUID) -> None:
         await self._session.execute(
