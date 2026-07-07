@@ -22,7 +22,6 @@ from app.modules.auth.api.security import authenticate_current_principal
 from app.modules.credits.infrastructure.persistence import orm as credit_orm
 from app.modules.ocr.dependencies import get_receipt_ocr_client
 from app.modules.receipts.infrastructure.persistence import orm as receipt_orm
-from app.modules.receipts.mock import SAMPLE_RECEIPTS
 
 TEST_USER_ID = UUID("00000000-0000-0000-0000-000000000101")
 TEST_CREDENTIALS_ID = UUID("00000000-0000-0000-0000-000000000102")
@@ -507,65 +506,28 @@ async def test_list_receipts_supports_home_list_and_search_contract(
     assert search_body["data"]["receipts"][0]["receiptFiles"] == first_receipt["receiptFiles"]
 
 
-async def test_dev_list_receipts_returns_mock_data_when_user_has_no_receipts(
+async def test_dev_list_receipts_returns_empty_when_user_has_no_receipts(
     postgres_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     async with _client(postgres_session_factory) as client:
         local_response = await client.get("/api/v1/receipts")
     async with _client(postgres_session_factory, settings=_dev_test_settings()) as client:
         dev_response = await client.get("/api/v1/receipts?limit=2")
-        dev_body = dev_response.json()
-        dev_next_response = await client.get(
-            "/api/v1/receipts",
-            params={
-                "limit": 2,
-                "cursor": dev_body["data"]["pagination"]["nextCursor"],
-            },
-        )
-        dev_search_response = await client.get("/api/v1/receipts?q=주방")
-        stale_cursor_response = await client.get(
-            "/api/v1/receipts",
-            params={
-                "q": "주방",
-                "cursor": dev_body["data"]["pagination"]["nextCursor"],
-            },
-        )
 
     local_body = local_response.json()
-    dev_next_body = dev_next_response.json()
-    dev_search_body = dev_search_response.json()
-    stale_cursor_body = stale_cursor_response.json()
+    dev_body = dev_response.json()
 
     assert local_response.status_code == 200
     assert local_body["data"]["receipts"] == []
     assert local_body["data"]["totalCount"] == 0
 
     assert dev_response.status_code == 200
-    assert dev_body["data"]["totalCount"] == len(SAMPLE_RECEIPTS)
-    assert len(dev_body["data"]["receipts"]) == 2
-    assert dev_body["data"]["pagination"]["nextCursor"] is not None
-    assert dev_body["data"]["pagination"]["hasNext"] is True
+    assert dev_body["data"]["receipts"] == []
+    assert dev_body["data"]["totalCount"] == 0
+    assert dev_body["data"]["pagination"]["nextCursor"] is None
+    assert dev_body["data"]["pagination"]["hasNext"] is False
     assert dev_body["data"]["pagination"]["limit"] == 2
-    assert dev_body["data"]["pagination"]["totalCount"] == len(SAMPLE_RECEIPTS)
-    assert dev_body["data"]["receipts"][0]["itemName"] == "삼성 냉장고 875L"
-    assert dev_body["data"]["receipts"][0]["imageUrl"] is not None
-    assert dev_body["data"]["receipts"][0]["receiptFiles"][0]["contentPath"].startswith(
-        "/api/v1/files/"
-    )
-
-    assert dev_next_response.status_code == 200, dev_next_body
-    assert dev_next_body["data"]["pagination"]["nextCursor"] is None
-    assert len(dev_next_body["data"]["receipts"]) == 1
-
-    assert dev_search_response.status_code == 200
-    assert dev_search_body["data"]["totalCount"] == 1
-    assert dev_search_body["data"]["receipts"][0]["memo"] == "주방 냉장고"
-
-    assert stale_cursor_response.status_code == 422
-    assert stale_cursor_body["data"]["errors"][0] == {
-        "field": "cursor",
-        "message": "유효하지 않은 커서입니다.",
-    }
+    assert dev_body["data"]["pagination"]["totalCount"] == 0
 
 
 async def test_dev_list_receipts_keeps_filtered_empty_result_when_user_has_receipts(
