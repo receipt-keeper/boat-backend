@@ -361,6 +361,8 @@ def test_receipts_openapi_includes_app_test_examples() -> None:
     assert "serialNumber" in receipt_response_properties
     assert {"type": "null"} in receipt_response_properties["imageUrl"]["anyOf"]
     assert update_request_examples["partial_update"]["value"]["item_name"] == "삼성 냉장고 900L"
+    assert update_request_examples["partial_update"]["value"]["total_amount"] == 1500000
+    assert update_response_example["data"]["totalAmount"] == 1500000
     assert update_response_example["data"]["paymentLocation"] == "전자랜드"
     assert update_response_example["data"]["subCategory"] == "냉장고"
     assert delete_response_example == {"success": True, "status": 200}
