@@ -2,7 +2,11 @@ from typing import Final
 
 from fastapi import status
 
+from app.core.config.settings import Settings
+
+_API_PREFIX: Final = str(Settings.model_fields["api_prefix"].default).rstrip("/")
 SAMPLE_RECEIPT_FILE_ID: Final = "00000000-0000-0000-0000-000000000201"
+SAMPLE_RECEIPT_FILE_CONTENT_PATH: Final = f"{_API_PREFIX}/files/{SAMPLE_RECEIPT_FILE_ID}/content"
 
 CREATE_RECEIPT_REQUEST_EXAMPLES: Final = [
     {
@@ -80,6 +84,13 @@ RECEIPT_RESPONSE_EXAMPLE: Final = {
     "memo": "앱 연동 테스트",
     "requiresPhysicalReceipt": True,
     "receiptFileIds": [SAMPLE_RECEIPT_FILE_ID],
+    "receiptFiles": [
+        {
+            "fileId": SAMPLE_RECEIPT_FILE_ID,
+            "contentPath": SAMPLE_RECEIPT_FILE_CONTENT_PATH,
+        }
+    ],
+    "imageUrl": None,
     "supportUrl": "https://search.naver.com/search.naver?query=%EC%82%BC%EC%84%B1+%EC%84%9C%EB%B9%84%EC%8A%A4%EC%84%BC%ED%84%B0",
     "warrantyDDay": 731,
     "registeredAt": "2026-06-29T12:00:00",
