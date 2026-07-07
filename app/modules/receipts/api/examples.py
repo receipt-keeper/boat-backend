@@ -2,8 +2,11 @@ from typing import Final
 
 from fastapi import status
 
+from app.core.config.settings import Settings
+
+_API_PREFIX: Final = str(Settings.model_fields["api_prefix"].default).rstrip("/")
 SAMPLE_RECEIPT_FILE_ID: Final = "00000000-0000-0000-0000-000000000201"
-SAMPLE_RECEIPT_FILE_CONTENT_PATH: Final = f"/api/v1/files/{SAMPLE_RECEIPT_FILE_ID}/content"
+SAMPLE_RECEIPT_FILE_CONTENT_PATH: Final = f"{_API_PREFIX}/files/{SAMPLE_RECEIPT_FILE_ID}/content"
 
 CREATE_RECEIPT_REQUEST_EXAMPLES: Final = [
     {

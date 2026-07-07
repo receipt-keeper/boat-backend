@@ -2,9 +2,11 @@ from datetime import date, datetime
 from typing import Final
 from uuid import UUID
 
+from app.core.config.settings import Settings
 from app.modules.receipts.api.schemas import ReceiptFileResponse, ReceiptResponse
 from app.modules.receipts.domain.service_centers import resolve_service_center_url
 
+_API_PREFIX: Final = str(Settings.model_fields["api_prefix"].default).rstrip("/")
 SAMPLE_RECEIPT_ID: Final = UUID("00000000-0000-0000-0000-000000000301")
 SAMPLE_FILE_ID: Final = UUID("00000000-0000-0000-0000-000000000201")
 SECOND_SAMPLE_FILE_ID: Final = UUID("00000000-0000-0000-0000-000000000202")
@@ -17,7 +19,7 @@ def _sample_receipt_files(file_ids: list[UUID]) -> list[ReceiptFileResponse]:
     return [
         ReceiptFileResponse(
             fileId=file_id,
-            contentPath=f"/api/v1/files/{file_id}/content",
+            contentPath=f"{_API_PREFIX}/files/{file_id}/content",
         )
         for file_id in file_ids
     ]
