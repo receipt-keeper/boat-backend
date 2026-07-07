@@ -20,7 +20,7 @@ async def test_promotion_redeem_rolls_back_credit_grant_when_outer_flow_fails_af
     test_app = _promotion_integration_app(postgres_session_factory)
     test_app.dependency_overrides[get_promotion_unit_of_work] = _failing_unit_of_work
     async with postgres_session_factory() as session:
-        await seed_promotion(session)
+        await seed_promotion(session, context="recharge", benefit_amount=5)
 
     async with api_client(test_app) as test_client:
         response = await test_client.post(f"/api/v1/promotions/{PROMOTION_ID}/redemptions")
@@ -37,6 +37,8 @@ async def test_promotion_redeem_rolls_back_credit_grant_when_outer_flow_fails_af
         outbox_events = tuple(await session.scalars(select(OutboxEvent)))
 
     assert promotion is not None
+    assert promotion.context == "recharge"
+    assert promotion.benefit_amount == 5
     assert promotion.times_redeemed == 0
     assert redemptions == ()
     assert transactions == ()

@@ -16,6 +16,10 @@ class PromotionBenefitFeatureKey(StrEnum):
     OCR = "ocr"
 
 
+class PromotionContext(StrEnum):
+    RECHARGE = "recharge"
+
+
 class PromotionRedemptionStatus(StrEnum):
     GRANTED = "granted"
     REJECTED = "rejected"
@@ -42,6 +46,7 @@ class Promotion(AggregateRoot[UUID]):
     times_redeemed: int
     max_redemptions_per_user: int
     benefit_feature_key: PromotionBenefitFeatureKey
+    context: PromotionContext | None
     benefit_amount: PromotionBenefitAmount
 
     @classmethod
@@ -57,6 +62,7 @@ class Promotion(AggregateRoot[UUID]):
         times_redeemed: int,
         max_redemptions_per_user: int,
         benefit_feature_key: PromotionBenefitFeatureKey,
+        context: PromotionContext | None = None,
         benefit_amount: int | PromotionBenefitAmount,
     ) -> "Promotion":
         return cls(
@@ -69,6 +75,7 @@ class Promotion(AggregateRoot[UUID]):
             times_redeemed=times_redeemed,
             max_redemptions_per_user=max_redemptions_per_user,
             benefit_feature_key=benefit_feature_key,
+            context=context,
             benefit_amount=_benefit_amount_for(benefit_amount),
         )
 

@@ -1,4 +1,3 @@
-from dataclasses import dataclass, field
 from uuid import UUID
 
 from fastapi import Request
@@ -10,9 +9,6 @@ from app.core.http.auth import set_current_principal
 from app.core.security.principal import AuthenticatedPrincipal
 from app.main import create_app
 from app.modules.auth.api.security import authenticate_current_principal
-from app.modules.credits.application.commands.grant_credit.command import GrantCreditCommand
-from app.modules.credits.dependencies import get_grant_credit_command_use_case
-from app.modules.credits.domain import CreditAmount, CreditReason
 from app.modules.notifications.application.commands.create_notification.use_case import (
     CreateNotificationCommandUseCase,
 )
@@ -35,14 +31,6 @@ from tests.support.unit_of_work import FakeUnitOfWork
 TEST_USER_ID = UUID("00000000-0000-0000-0000-000000000401")
 TEST_CREDENTIALS_ID = UUID("00000000-0000-0000-0000-000000000402")
 TEST_SESSION_ID = UUID("00000000-0000-0000-0000-000000000403")
-
-
-@dataclass(slots=True)
-class RecordingGrantCreditCommandUseCase:
-    commands: list[GrantCreditCommand] = field(default_factory=list)
-
-    async def execute(self, command: GrantCreditCommand) -> None:
-        self.commands.append(command)
 
 
 async def _authenticate_test_principal(request: Request) -> AuthenticatedPrincipal:
@@ -93,11 +81,8 @@ def test_force_server_error_endpoint_is_documented_in_openapi() -> None:
     assert operation["responses"]["500"]["description"] == "서버 내부 오류 강제 발생"
 
 
-async def test_grant_ocr_test_credits_endpoint_grants_current_user_credit() -> None:
+async def test_ocr_test_credits_endpoint_is_not_registered() -> None:
     test_app = create_app(Settings(app_name="Boat Backend"))
-    recorder = RecordingGrantCreditCommandUseCase()
-    test_app.dependency_overrides[authenticate_current_principal] = _authenticate_test_principal
-    test_app.dependency_overrides[get_grant_credit_command_use_case] = lambda: recorder
 
     async with AsyncClient(
         transport=ASGITransport(app=test_app, raise_app_exceptions=False),
@@ -105,33 +90,13 @@ async def test_grant_ocr_test_credits_endpoint_grants_current_user_credit() -> N
     ) as test_client:
         response = await test_client.post("/api/v1/example/ocr-test-credits")
 
-    body = response.json()
-
-    assert response.status_code == 201
-    assert body == {
-        "success": True,
-        "status": 201,
-        "data": {
-            "featureKey": "ocr",
-            "reason": "eventOcrAllowance",
-            "grantedCount": 5,
-        },
-    }
-    assert recorder.commands == [
-        GrantCreditCommand(
-            user_id=TEST_USER_ID,
-            amount=CreditAmount(value=5, field_name="amount"),
-            reason=CreditReason.EVENT_OCR_ALLOWANCE,
-        )
-    ]
+    assert response.status_code == 404
 
 
-def test_grant_ocr_test_credits_endpoint_is_documented_in_openapi() -> None:
+def test_ocr_test_credits_endpoint_is_absent_from_openapi() -> None:
     schema = create_app(Settings(app_name="Boat Backend")).openapi()
-    operation = schema["paths"]["/api/v1/example/ocr-test-credits"]["post"]
 
-    assert operation["summary"] == "임시 OCR 테스트 크레딧 발급"
-    assert operation["responses"]["201"]["description"] == "OCR 테스트 크레딧 발급 성공"
+    assert "/api/v1/example/ocr-test-credits" not in schema["paths"]
 
 
 async def test_send_test_push_sends_to_registered_devices() -> None:

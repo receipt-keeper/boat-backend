@@ -144,6 +144,8 @@ async def seed_promotion(
     max_redemptions: int | None = 10,
     times_redeemed: int = 0,
     max_redemptions_per_user: int = 1,
+    context: str | None = None,
+    benefit_amount: int = 3,
 ) -> None:
     session.add(
         orm.Promotion(
@@ -156,7 +158,8 @@ async def seed_promotion(
             times_redeemed=times_redeemed,
             max_redemptions_per_user=max_redemptions_per_user,
             benefit_feature_key="ocr",
-            benefit_amount=3,
+            context=context,
+            benefit_amount=benefit_amount,
         )
     )
     await session.commit()

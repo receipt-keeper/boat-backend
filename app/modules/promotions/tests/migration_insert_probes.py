@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 @dataclass(frozen=True, slots=True)
 class InvalidPromotionProbe:
     benefit_feature_key: str
+    context: str | None
     benefit_amount: int
     expected_constraint: str
 
@@ -27,11 +28,19 @@ async def assert_invalid_promotion_insert_probes(
     for probe in (
         InvalidPromotionProbe(
             benefit_feature_key="receipt_analysis",
+            context=None,
             benefit_amount=10,
             expected_constraint="ck_promotions_benefit_feature_key_allowed",
         ),
         InvalidPromotionProbe(
             benefit_feature_key="ocr",
+            context="receipt_analysis",
+            benefit_amount=10,
+            expected_constraint="ck_promotions_context_allowed",
+        ),
+        InvalidPromotionProbe(
+            benefit_feature_key="ocr",
+            context=None,
             benefit_amount=-1,
             expected_constraint="ck_promotions_benefit_amount_positive",
         ),
@@ -39,6 +48,30 @@ async def assert_invalid_promotion_insert_probes(
         observed_failures.append(await _assert_invalid_promotion_is_rejected(connection, probe))
 
     for probe in (
+        DuplicateProbe(
+            name="duplicate promotions monthly recharge business key",
+            statement="""
+                INSERT INTO promotions (
+                    id,
+                    name,
+                    active,
+                    starts_at,
+                    benefit_feature_key,
+                    context,
+                    benefit_amount
+                )
+                VALUES (
+                    '00000000-0000-0000-0000-000000000102',
+                    'duplicate monthly recharge',
+                    true,
+                    '2026-06-30 15:00:00+00',
+                    'ocr',
+                    'recharge',
+                    5
+                )
+            """,
+            expected_constraint="uq_promotions_benefit_context_starts_at",
+        ),
         DuplicateProbe(
             name="duplicate promotion_codes.code",
             statement="""
@@ -122,6 +155,7 @@ async def _assert_invalid_promotion_is_rejected(
                         active,
                         starts_at,
                         benefit_feature_key,
+                        context,
                         benefit_amount
                     )
                     VALUES (
@@ -130,12 +164,14 @@ async def _assert_invalid_promotion_is_rejected(
                         true,
                         now(),
                         :benefit_feature_key,
+                        :context,
                         :benefit_amount
                     )
                     """
                 ),
                 {
                     "benefit_feature_key": probe.benefit_feature_key,
+                    "context": probe.context,
                     "benefit_amount": probe.benefit_amount,
                 },
             )
@@ -170,14 +206,16 @@ async def _insert_valid_promotion(connection: AsyncConnection) -> None:
                 active,
                 starts_at,
                 benefit_feature_key,
+                context,
                 benefit_amount
             )
             VALUES (
                 '00000000-0000-0000-0000-000000000101',
                 'valid promotion',
                 true,
-                now(),
+                '2026-06-30 15:00:00+00',
                 'ocr',
+                'recharge',
                 10
             )
             """

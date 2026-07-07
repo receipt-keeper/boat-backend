@@ -31,32 +31,38 @@ from app.modules.promotions.tests.helpers import (
 )
 
 CODE_PROMOTION_ID = UUID("00000000-0000-0000-0000-000000000203")
+RECHARGE_CONTEXT = "recharge"
 
 
 async def test_no_code_promotion_redemption_grants_credit_once_through_real_wiring(
     postgres_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    # Given: 실제 Promotion API dependency graph와 받을 수 있는 no-code 프로모션이 있다.
+    # Given: 실제 Promotion API dependency graph와 받을 수 있는 recharge 프로모션이 있다.
     test_app = _promotion_integration_app(postgres_session_factory)
     async with postgres_session_factory() as session:
-        await seed_promotion(session, expires_at=None)
+        await seed_promotion(
+            session,
+            expires_at=None,
+            context=RECHARGE_CONTEXT,
+            benefit_amount=5,
+        )
         await seed_promotion_content(session)
 
     async with api_client(test_app) as test_client:
-        # When: 같은 프로모션 혜택 수령을 두 번 요청한다.
+        # When: 월간 recharge 혜택 수령 action을 같은 idempotency key로 두 번 요청한다.
         first_response = await test_client.post(f"/api/v1/promotions/{PROMOTION_ID}/redemptions")
         second_response = await test_client.post(f"/api/v1/promotions/{PROMOTION_ID}/redemptions")
 
-    # Then: Promotion redemption과 Credits ledger가 한 번만 저장된다.
+    # Then: Promotion redemption, Credits ledger, outbox event가 한 번씩만 저장된다.
     assert first_response.status_code == 200
     assert second_response.status_code == 200
     assert first_response.json()["data"]["balance"] == {
-        "totalGrantedCount": 3,
-        "remainingCount": 3,
+        "totalGrantedCount": 5,
+        "remainingCount": 5,
     }
     assert second_response.json()["data"]["balance"] == {
-        "totalGrantedCount": 3,
-        "remainingCount": 3,
+        "totalGrantedCount": 5,
+        "remainingCount": 5,
     }
     assert first_response.json()["data"]["bannerImage"] == {
         "imageUrl": PUBLIC_BANNER_IMAGE_URL,
@@ -76,15 +82,18 @@ async def test_no_code_promotion_redemption_grants_credit_once_through_real_wiri
         outbox_events = tuple(await session.scalars(select(OutboxEvent).order_by(OutboxEvent.id)))
 
     assert promotion is not None
+    assert promotion.context == RECHARGE_CONTEXT
+    assert promotion.benefit_amount == 5
     assert promotion.times_redeemed == 1
     assert redemption.promotion_code_id is None
     assert transaction.reason == CreditReason.EVENT_OCR_ALLOWANCE.value
     assert transaction.source_type == CreditSourceType.PROMOTION_REDEMPTION.value
     assert transaction.source_id == redemption.id
+    assert transaction.amount == 5
     assert transaction.idempotency_key == PROMOTION_IDEMPOTENCY_KEY
     assert user_credit is not None
-    assert user_credit.total_granted_count == 3
-    assert user_credit.remaining_count == 3
+    assert user_credit.total_granted_count == 5
+    assert user_credit.remaining_count == 5
     # 신규 리딤션 1회 = PromotionRedemptionGranted 1건 + CreditGranted 1건이 같은 트랜잭션의
     # outbox row로 남는다(멱등 재시도는 두 번째 요청이므로 신규 row를 만들지 않는다).
     assert {event.event_type for event in outbox_events} == {
@@ -92,12 +101,19 @@ async def test_no_code_promotion_redemption_grants_credit_once_through_real_wiri
         "CreditGranted",
     }
     assert len(outbox_events) == 2
+    assert outbox_events[0].event_type == "PromotionRedemptionGranted"
+    assert outbox_events[0].payload["benefit_amount"] == 5
+    assert outbox_events[0].payload["idempotency_key"] == PROMOTION_IDEMPOTENCY_KEY
+    assert outbox_events[1].event_type == "CreditGranted"
+    assert outbox_events[1].payload["amount"] == 5
+    assert outbox_events[1].payload["source_id"] == str(redemption.id)
+    assert outbox_events[1].payload["idempotency_key"] == PROMOTION_IDEMPOTENCY_KEY
 
 
 async def test_code_promotion_redemption_grants_credit_once_through_real_wiring(
     postgres_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    # Given: 실제 Promotion API dependency graph와 받을 수 있는 code 프로모션이 있다.
+    # Given: 실제 Promotion API dependency graph와 recharge context가 붙은 code 프로모션이 있다.
     test_app = _promotion_integration_app(postgres_session_factory)
     async with postgres_session_factory() as session:
         await _seed_code_promotion(session)
@@ -144,6 +160,7 @@ async def test_code_promotion_redemption_grants_credit_once_through_real_wiring(
         outbox_events = tuple(await session.scalars(select(OutboxEvent).order_by(OutboxEvent.id)))
 
     assert promotion is not None
+    assert promotion.context == RECHARGE_CONTEXT
     assert promotion.times_redeemed == 1
     assert code is not None
     assert code.times_redeemed == 1
@@ -194,6 +211,7 @@ async def _seed_code_promotion(session: AsyncSession) -> None:
             times_redeemed=0,
             max_redemptions_per_user=1,
             benefit_feature_key="ocr",
+            context=RECHARGE_CONTEXT,
             benefit_amount=3,
         )
     )

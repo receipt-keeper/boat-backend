@@ -8,6 +8,7 @@ from app.modules.promotions.domain.model import (
     PromotionBenefitAmount,
     PromotionBenefitFeatureKey,
     PromotionCode,
+    PromotionContext,
     PromotionRedemption,
     PromotionRedemptionStatus,
 )
@@ -18,6 +19,7 @@ __all__ = [
     "PromotionBenefitFeatureKey",
     "PromotionCode",
     "PromotionCodeNotFoundError",
+    "PromotionContext",
     "PromotionNotFoundError",
     "PromotionRedemption",
     "PromotionRedemptionConflictError",

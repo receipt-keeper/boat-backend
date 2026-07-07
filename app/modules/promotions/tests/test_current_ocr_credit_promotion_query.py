@@ -1,3 +1,6 @@
+from datetime import datetime
+from uuid import UUID
+
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.modules.promotions.application.queries.get_current_ocr_credit_promotion.query import (
@@ -6,7 +9,8 @@ from app.modules.promotions.application.queries.get_current_ocr_credit_promotion
 from app.modules.promotions.application.queries.get_current_ocr_credit_promotion.use_case import (
     GetCurrentOcrCreditPromotionQueryUseCase,
 )
-from app.modules.promotions.domain.model import PromotionRedemptionStatus
+from app.modules.promotions.domain.model import PromotionContext, PromotionRedemptionStatus
+from app.modules.promotions.infrastructure.persistence import orm
 from app.modules.promotions.infrastructure.persistence.repository import (
     SqlAlchemyPromotionRepository,
 )
@@ -21,6 +25,8 @@ from app.modules.promotions.tests.helpers import (
     seed_promotion,
     seed_promotion_content,
 )
+
+RECHARGE_PROMOTION_ID = UUID("00000000-0000-0000-0000-000000000209")
 
 
 async def test_get_current_ocr_credit_promotion_returns_user_status(
@@ -102,3 +108,87 @@ async def test_get_current_ocr_credit_promotion_stays_redeemable_until_user_limi
     assert result.promotion_id == PROMOTION_ID
     assert result.already_redeemed is False
     assert result.redemption_status is None
+
+
+async def test_get_current_ocr_credit_promotion_returns_recharge_context_when_newer_general_exists(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with postgres_session_factory() as session:
+        await _seed_ocr_promotion(session, promotion_id=PROMOTION_ID, starts_at=NOW, amount=3)
+        await _seed_ocr_promotion(
+            session,
+            promotion_id=RECHARGE_PROMOTION_ID,
+            starts_at=NOW.replace(hour=10),
+            context=PromotionContext.RECHARGE.value,
+            amount=5,
+        )
+        use_case = GetCurrentOcrCreditPromotionQueryUseCase(
+            promotion_repository=SqlAlchemyPromotionRepository(session),
+            clock=lambda: NOW,
+        )
+
+        result = await use_case.execute(
+            GetCurrentOcrCreditPromotionQuery(
+                user_id=USER_ID,
+                context=PromotionContext.RECHARGE,
+            )
+        )
+
+    assert result is not None
+    assert result.promotion_id == RECHARGE_PROMOTION_ID
+    assert result.benefit_amount == 5
+
+
+async def test_get_current_ocr_credit_promotion_preserves_legacy_lookup_when_context_omitted(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with postgres_session_factory() as session:
+        await _seed_ocr_promotion(
+            session,
+            promotion_id=PROMOTION_ID,
+            starts_at=NOW.replace(hour=8),
+            amount=3,
+        )
+        await _seed_ocr_promotion(
+            session,
+            promotion_id=RECHARGE_PROMOTION_ID,
+            starts_at=NOW.replace(hour=10),
+            context=PromotionContext.RECHARGE.value,
+            amount=5,
+        )
+        use_case = GetCurrentOcrCreditPromotionQueryUseCase(
+            promotion_repository=SqlAlchemyPromotionRepository(session),
+            clock=lambda: NOW,
+        )
+
+        result = await use_case.execute(GetCurrentOcrCreditPromotionQuery(user_id=USER_ID))
+
+    assert result is not None
+    assert result.promotion_id == PROMOTION_ID
+    assert result.benefit_amount == 3
+
+
+async def _seed_ocr_promotion(
+    session: AsyncSession,
+    *,
+    promotion_id: UUID,
+    starts_at: datetime,
+    context: str | None = None,
+    amount: int,
+) -> None:
+    session.add(
+        orm.Promotion(
+            id=promotion_id,
+            name="OCR credit promotion",
+            active=True,
+            starts_at=starts_at,
+            expires_at=NOW.replace(day=4),
+            max_redemptions=10,
+            times_redeemed=0,
+            max_redemptions_per_user=1,
+            benefit_feature_key="ocr",
+            context=context,
+            benefit_amount=amount,
+        )
+    )
+    await session.commit()

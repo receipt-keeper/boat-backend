@@ -10,7 +10,7 @@ from app.modules.promotions.application.commands.create_promotion_redemption.res
 from app.modules.promotions.application.queries.get_current_ocr_credit_promotion.result import (
     GetCurrentOcrCreditPromotionResult,
 )
-from app.modules.promotions.domain.model import PromotionBenefitFeatureKey
+from app.modules.promotions.domain.model import PromotionBenefitFeatureKey, PromotionContext
 
 
 class PromotionState(StrEnum):
@@ -26,7 +26,13 @@ class PromotionListQuery(AppBaseModel):
 
     benefit_feature_key: PromotionBenefitFeatureKey = Field(
         alias="featureKey",
-        description="조회할 혜택 기능. 현재는 OCR만 지원한다.",
+        description="조회할 혜택 기능. 현재는 OCR만 지원한다. 예: featureKey=ocr&context=recharge",
+        examples=[PromotionBenefitFeatureKey.OCR],
+    )
+    context: PromotionContext | None = Field(
+        default=None,
+        description="프로모션 조회 상황. OCR 크레딧 충전 혜택은 recharge를 전달한다.",
+        examples=[PromotionContext.RECHARGE],
     )
 
 
@@ -79,7 +85,7 @@ class PromotionResponse(AppBaseModel):
                 {
                     "state": "redeemable",
                     "promotionId": "00000000-0000-0000-0000-000000000201",
-                    "benefit": {"featureKey": "ocr", "amount": 3},
+                    "benefit": {"featureKey": "ocr", "amount": 5},
                     "redemption": {"remainingRedemptions": 10},
                     "balance": None,
                     "bannerImage": {

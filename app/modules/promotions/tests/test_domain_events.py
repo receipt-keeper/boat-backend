@@ -35,7 +35,7 @@ def test_promotion_redemption_granted_serialization_round_trips_none_code_id() -
         promotion_id=PROMOTION_ID,
         user_id=USER_ID,
         promotion_code_id=None,
-        benefit_amount=3,
+        benefit_amount=5,
         idempotency_key=f"promotionRedemption:{PROMOTION_ID}:{USER_ID}",
     )
 
@@ -45,6 +45,7 @@ def test_promotion_redemption_granted_serialization_round_trips_none_code_id() -
     assert restored == event
     assert isinstance(restored, PromotionRedemptionGranted)
     assert restored.promotion_code_id is None
+    assert restored.benefit_amount == 5
 
 
 def test_build_promotions_event_registry_resolves_promotion_redemption_granted() -> None:
