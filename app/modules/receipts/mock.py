@@ -2,7 +2,7 @@ from datetime import date, datetime
 from typing import Final
 from uuid import UUID
 
-from app.modules.receipts.api.schemas import ReceiptResponse
+from app.modules.receipts.api.schemas import ReceiptFileResponse, ReceiptResponse
 from app.modules.receipts.domain.service_centers import resolve_service_center_url
 
 SAMPLE_RECEIPT_ID: Final = UUID("00000000-0000-0000-0000-000000000301")
@@ -11,6 +11,17 @@ SECOND_SAMPLE_FILE_ID: Final = UUID("00000000-0000-0000-0000-000000000202")
 SAMPLE_IMAGE_URL_LARGE: Final = "https://picsum.photos/id/1060/960/640"
 SAMPLE_IMAGE_URL_SQUARE: Final = "https://picsum.photos/id/180/512/512"
 SAMPLE_IMAGE_URL_PORTRAIT: Final = "https://picsum.photos/id/160/480/720"
+
+
+def _sample_receipt_files(file_ids: list[UUID]) -> list[ReceiptFileResponse]:
+    return [
+        ReceiptFileResponse(
+            fileId=file_id,
+            contentPath=f"/api/v1/files/{file_id}/content",
+        )
+        for file_id in file_ids
+    ]
+
 
 SAMPLE_RECEIPTS: Final[tuple[ReceiptResponse, ...]] = (
     ReceiptResponse(
@@ -27,6 +38,7 @@ SAMPLE_RECEIPTS: Final[tuple[ReceiptResponse, ...]] = (
         memo="주방 냉장고",
         requiresPhysicalReceipt=True,
         receiptFileIds=[SAMPLE_FILE_ID],
+        receiptFiles=_sample_receipt_files([SAMPLE_FILE_ID]),
         imageUrl=SAMPLE_IMAGE_URL_LARGE,
         warrantyDDay=14,
         serialNumber="SN-20240526-001",
@@ -47,6 +59,7 @@ SAMPLE_RECEIPTS: Final[tuple[ReceiptResponse, ...]] = (
         memo=None,
         requiresPhysicalReceipt=True,
         receiptFileIds=[SECOND_SAMPLE_FILE_ID],
+        receiptFiles=_sample_receipt_files([SECOND_SAMPLE_FILE_ID]),
         imageUrl=SAMPLE_IMAGE_URL_SQUARE,
         warrantyDDay=-6,
         serialNumber=None,
@@ -67,6 +80,7 @@ SAMPLE_RECEIPTS: Final[tuple[ReceiptResponse, ...]] = (
         memo="거실 청소용",
         requiresPhysicalReceipt=True,
         receiptFileIds=[UUID("00000000-0000-0000-0000-000000000203")],
+        receiptFiles=_sample_receipt_files([UUID("00000000-0000-0000-0000-000000000203")]),
         imageUrl=SAMPLE_IMAGE_URL_PORTRAIT,
         warrantyDDay=615,
         serialNumber=None,
@@ -91,6 +105,7 @@ def sample_receipt(
     requires_physical_receipt: bool = True,
     receipt_file_ids: list[UUID] | None = None,
 ) -> ReceiptResponse:
+    receipt_file_ids = receipt_file_ids or [SAMPLE_FILE_ID]
     return ReceiptResponse(
         receiptId=receipt_id,
         itemName=item_name,
@@ -104,7 +119,8 @@ def sample_receipt(
         subCategory=sub_category,
         memo=memo,
         requiresPhysicalReceipt=requires_physical_receipt,
-        receiptFileIds=receipt_file_ids or [SAMPLE_FILE_ID],
+        receiptFileIds=receipt_file_ids,
+        receiptFiles=_sample_receipt_files(receipt_file_ids),
         imageUrl=SAMPLE_IMAGE_URL_LARGE,
         warrantyDDay=14,
         serialNumber="SN-20240526-001",

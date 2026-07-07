@@ -1,10 +1,11 @@
 import base64
 import binascii
 import json
+from collections.abc import Iterable
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Request, status
 
 from app.core.config.dependencies import get_request_settings
 from app.core.config.settings import Settings
@@ -24,6 +25,7 @@ from app.modules.receipts.api.examples import (
 from app.modules.receipts.api.schemas import (
     CreateReceiptRequest,
     CreateReceiptResponse,
+    ReceiptFileResponse,
     ReceiptListQuery,
     ReceiptListResponse,
     ReceiptResponse,
@@ -93,6 +95,7 @@ router = APIRouter(
     },
 )
 async def list_receipts(
+    http_request: Request,
     query: Annotated[ReceiptListQuery, Query()],
     principal: CurrentPrincipalDep,
     query_use_case: ListReceiptsQueryUseCaseDep,
@@ -143,7 +146,7 @@ async def list_receipts(
         success=True,
         status=status.HTTP_200_OK,
         data=ReceiptListResponse(
-            receipts=[_receipt_response(receipt) for receipt in result.receipts],
+            receipts=[_receipt_response(http_request, receipt) for receipt in result.receipts],
             totalCount=result.total_count,
             pagination=CursorPaginationResponse(
                 nextCursor=result.next_cursor,
@@ -310,6 +313,7 @@ def _dev_mock_sort_reverse(sort: ReceiptSort) -> bool:
     },
 )
 async def create_receipt(
+    http_request: Request,
     request: CreateReceiptRequest,
     principal: CurrentPrincipalDep,
     command_use_case: CreateReceiptCommandUseCaseDep,
@@ -349,6 +353,7 @@ async def create_receipt(
             memo=result.memo,
             requiresPhysicalReceipt=result.requires_physical_receipt,
             receiptFileIds=list(result.receipt_file_ids),
+            receiptFiles=_receipt_file_responses(http_request, result.receipt_file_ids),
             supportUrl=resolve_service_center_url(
                 brand_name=result.brand_name,
                 item_name=result.item_name,
@@ -371,6 +376,7 @@ async def create_receipt(
     },
 )
 async def get_receipt(
+    http_request: Request,
     receipt_id: UUID,
     principal: CurrentPrincipalDep,
     query_use_case: GetReceiptQueryUseCaseDep,
@@ -381,7 +387,7 @@ async def get_receipt(
     return CommonResponse(
         success=True,
         status=status.HTTP_200_OK,
-        data=_receipt_response(result),
+        data=_receipt_response(http_request, result),
     )
 
 
@@ -406,6 +412,7 @@ async def get_receipt(
     },
 )
 async def update_receipt(
+    http_request: Request,
     receipt_id: UUID,
     request: UpdateReceiptRequest,
     principal: CurrentPrincipalDep,
@@ -435,7 +442,7 @@ async def update_receipt(
     return CommonResponse(
         success=True,
         status=status.HTTP_200_OK,
-        data=_receipt_response(result),
+        data=_receipt_response(http_request, result),
     )
 
 
@@ -465,7 +472,7 @@ async def delete_receipt(
     return CommonResponse(success=True, status=status.HTTP_200_OK, data=None)
 
 
-def _receipt_response(receipt: ReceiptReadModel) -> ReceiptResponse:
+def _receipt_response(http_request: Request, receipt: ReceiptReadModel) -> ReceiptResponse:
     return ReceiptResponse(
         receiptId=receipt.receipt_id,
         itemName=receipt.item_name,
@@ -481,6 +488,7 @@ def _receipt_response(receipt: ReceiptReadModel) -> ReceiptResponse:
         memo=receipt.memo,
         requiresPhysicalReceipt=receipt.requires_physical_receipt,
         receiptFileIds=list(receipt.receipt_file_ids),
+        receiptFiles=_receipt_file_responses(http_request, receipt.receipt_file_ids),
         imageUrl=None,
         warrantyDDay=receipt.warranty_d_day,
         supportUrl=resolve_service_center_url(
@@ -489,3 +497,21 @@ def _receipt_response(receipt: ReceiptReadModel) -> ReceiptResponse:
         ),
         registeredAt=receipt.registered_at,
     )
+
+
+def _receipt_file_responses(
+    http_request: Request,
+    file_ids: Iterable[UUID],
+) -> list[ReceiptFileResponse]:
+    return [
+        ReceiptFileResponse(
+            fileId=file_id,
+            contentPath=_with_api_prefix(http_request, f"/files/{file_id}/content"),
+        )
+        for file_id in file_ids
+    ]
+
+
+def _with_api_prefix(http_request: Request, path: str) -> str:
+    api_prefix = http_request.app.state.settings.api_prefix.rstrip("/")
+    return f"{api_prefix}{path}"

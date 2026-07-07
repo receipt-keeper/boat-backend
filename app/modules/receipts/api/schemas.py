@@ -115,6 +115,18 @@ class CreateReceiptRequest(AppBaseModel):
     )
 
 
+class ReceiptFileResponse(AppBaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    file_id: UUID = Field(alias="fileId", description="연결된 파일 ID.")
+    content_path: str = Field(
+        alias="contentPath",
+        description=(
+            "영수증 이미지 조회 API 경로. 공개 URL이 아니며 호출 시 Authorization 헤더가 필요하다."
+        ),
+    )
+
+
 class ReceiptResponse(AppBaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -137,7 +149,20 @@ class ReceiptResponse(AppBaseModel):
     receipt_file_ids: list[UUID] = Field(
         alias="receiptFileIds", description="연결된 영수증 파일 ID 목록."
     )
-    image_url: str | None = Field(default=None, alias="imageUrl", description="대표 이미지 URL.")
+    receipt_files: list[ReceiptFileResponse] = Field(
+        alias="receiptFiles",
+        description=(
+            "연결된 영수증 파일 조회 정보. 실제 이미지는 contentPath를 "
+            "Authorization 헤더와 함께 호출해 조회한다."
+        ),
+    )
+    image_url: str | None = Field(
+        default=None,
+        alias="imageUrl",
+        description=(
+            "대표 이미지 URL. 현재 업로드 영수증 이미지는 receiptFiles[].contentPath로 조회한다."
+        ),
+    )
     warranty_d_day: int | None = Field(
         default=None,
         alias="warrantyDDay",

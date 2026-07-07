@@ -262,6 +262,16 @@ async def test_create_receipt_persists_final_values(
     assert data["subCategory"] == "냉장고"
     assert data["requiresPhysicalReceipt"] is True
     assert data["receiptFileIds"] == [str(TEST_FILE_ID), str(SECOND_TEST_FILE_ID)]
+    assert data["receiptFiles"] == [
+        {
+            "fileId": str(TEST_FILE_ID),
+            "contentPath": f"/api/v1/files/{TEST_FILE_ID}/content",
+        },
+        {
+            "fileId": str(SECOND_TEST_FILE_ID),
+            "contentPath": f"/api/v1/files/{SECOND_TEST_FILE_ID}/content",
+        },
+    ]
     assert data["registeredAt"] is not None
     assert _support_query(data["supportUrl"]) == "삼성 서비스센터"
 
@@ -354,11 +364,20 @@ def test_receipts_openapi_includes_app_test_examples() -> None:
     assert create_response_example["data"]["receiptFileIds"] == [
         "00000000-0000-0000-0000-000000000201"
     ]
+    assert create_response_example["data"]["receiptFiles"] == [
+        {
+            "fileId": "00000000-0000-0000-0000-000000000201",
+            "contentPath": "/api/v1/files/00000000-0000-0000-0000-000000000201/content",
+        }
+    ]
     assert create_response_example["data"]["serialNumber"] == "SN-20240526-001"
     assert create_response_example["data"]["subCategory"] == "냉장고"
     assert detail_response_example["data"]["itemName"] == "삼성 냉장고 875L"
     assert "subCategory" in receipt_response_properties
     assert "serialNumber" in receipt_response_properties
+    assert "receiptFiles" in receipt_response_properties
+    receipt_file_schema = schema["components"]["schemas"]["ReceiptFileResponse"]["properties"]
+    assert "Authorization" in receipt_file_schema["contentPath"]["description"]
     assert {"type": "null"} in receipt_response_properties["imageUrl"]["anyOf"]
     assert update_request_examples["partial_update"]["value"]["item_name"] == "삼성 냉장고 900L"
     assert update_request_examples["partial_update"]["value"]["total_amount"] == 1500000
@@ -446,6 +465,9 @@ async def test_list_receipts_supports_home_list_and_search_contract(
     assert recent_body["data"]["pagination"]["limit"] == 2
     assert recent_body["data"]["pagination"]["totalCount"] == 3
     assert recent_body["data"]["receipts"][0]["imageUrl"] is None
+    assert recent_body["data"]["receipts"][0]["receiptFiles"][0]["contentPath"].startswith(
+        "/api/v1/files/"
+    )
     expected_support_queries = {
         "다이슨 청소기": "Dyson 서비스센터",
         "LG 세탁기": "LG 서비스센터",
@@ -482,6 +504,7 @@ async def test_list_receipts_supports_home_list_and_search_contract(
     assert search_body["data"]["pagination"]["totalCount"] == 1
     assert search_body["data"]["receipts"][0]["memo"] == "주방 냉장고"
     assert search_body["data"]["receipts"][0]["receiptFileIds"] == first_receipt["receiptFileIds"]
+    assert search_body["data"]["receipts"][0]["receiptFiles"] == first_receipt["receiptFiles"]
 
 
 async def test_dev_list_receipts_returns_mock_data_when_user_has_no_receipts(
@@ -526,6 +549,9 @@ async def test_dev_list_receipts_returns_mock_data_when_user_has_no_receipts(
     assert dev_body["data"]["pagination"]["totalCount"] == len(SAMPLE_RECEIPTS)
     assert dev_body["data"]["receipts"][0]["itemName"] == "삼성 냉장고 875L"
     assert dev_body["data"]["receipts"][0]["imageUrl"] is not None
+    assert dev_body["data"]["receipts"][0]["receiptFiles"][0]["contentPath"].startswith(
+        "/api/v1/files/"
+    )
 
     assert dev_next_response.status_code == 200, dev_next_body
     assert dev_next_body["data"]["pagination"]["nextCursor"] is None
@@ -619,6 +645,10 @@ async def test_receipt_detail_update_and_delete_use_persisted_data(
     assert detail_body["data"]["receiptId"] == receipt_id
     assert detail_body["data"]["itemName"] == "삼성 냉장고 875L"
     assert detail_body["data"]["serialNumber"] == "SN-20240526-001"
+    assert detail_body["data"]["receiptFiles"][0] == {
+        "fileId": str(TEST_FILE_ID),
+        "contentPath": f"/api/v1/files/{TEST_FILE_ID}/content",
+    }
     assert update_response.status_code == 200
     assert update_body["data"]["itemName"] == "삼성 냉장고 900L"
     assert update_body["data"]["serialNumber"] is None
@@ -630,6 +660,12 @@ async def test_receipt_detail_update_and_delete_use_persisted_data(
     assert update_body["data"]["subCategory"] == "기타"
     assert update_body["data"]["memo"] == "수정 메모"
     assert update_body["data"]["receiptFileIds"] == [str(SECOND_TEST_FILE_ID)]
+    assert update_body["data"]["receiptFiles"] == [
+        {
+            "fileId": str(SECOND_TEST_FILE_ID),
+            "contentPath": f"/api/v1/files/{SECOND_TEST_FILE_ID}/content",
+        }
+    ]
     assert delete_response.status_code == 200
     assert delete_body == {"success": True, "status": 200, "data": None}
     assert missing_response.status_code == 404
@@ -710,6 +746,12 @@ async def test_create_receipt_accepts_nullable_fields_and_manual_registration(
     assert data["expiresOn"] == "2025-06-01"
     assert data["requiresPhysicalReceipt"] is False
     assert data["receiptFileIds"] == [str(TEST_FILE_ID)]
+    assert data["receiptFiles"] == [
+        {
+            "fileId": str(TEST_FILE_ID),
+            "contentPath": f"/api/v1/files/{TEST_FILE_ID}/content",
+        }
+    ]
 
 
 async def test_ocr_failure_can_fall_back_to_manual_receipt_save(
