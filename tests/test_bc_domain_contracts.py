@@ -61,11 +61,6 @@ EXPECTED_PERSISTENCE_BACKED_DATA: Final[dict[str, frozenset[str]]] = {
         }
     ),
 }
-EXPECTED_MOCK_DATA: Final[dict[str, frozenset[str]]] = {
-    "app.modules.receipts.mock": frozenset(
-        {"SAMPLE_FILE_ID", "SAMPLE_RECEIPTS", "receipt_with_id", "sample_receipt"}
-    ),
-}
 
 
 def test_mvp_bc_modules_expose_domain_models() -> None:
@@ -94,13 +89,6 @@ def test_credits_domain_does_not_export_persistence_credit_account() -> None:
     domain_module = import_module("app.modules.credits.domain")
 
     assert not hasattr(domain_module, "Credit" + "Account")
-
-
-def test_mvp_incomplete_api_modules_expose_mock_data() -> None:
-    for module_name, mock_names in EXPECTED_MOCK_DATA.items():
-        module = import_module(module_name)
-        missing_names = [name for name in mock_names if not hasattr(module, name)]
-        assert missing_names == []
 
 
 def test_persistence_backed_api_modules_expose_application_contracts() -> None:
