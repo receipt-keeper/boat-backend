@@ -83,7 +83,12 @@ router = APIRouter(
     "",
     response_model=CommonResponse[PromotionResponse],
     summary="OCR 프로모션 상태 조회",
-    description="앱이 OCR 혜택 수령 가능 여부와 지급 수량을 판단할 수 있는 상태 값을 반환한다.",
+    description=(
+        "앱이 OCR 혜택 수령 가능 여부와 지급 크레딧 수량을 판단할 수 있는 상태 값을 반환한다. "
+        "GET /api/v1/usage에서 ocr.canAnalyze=false이면 "
+        "GET /api/v1/promotions?featureKey=ocr&context=recharge로 월간 OCR 크레딧 "
+        "충전 혜택을 조회하고, state=redeemable일 때 프로모션 ID로 수령을 요청한다."
+    ),
 )
 async def get_promotions(
     query: Annotated[PromotionListQuery, Query()],
@@ -91,7 +96,10 @@ async def get_promotions(
     query_use_case: CurrentOcrCreditPromotionQueryUseCaseDep,
 ) -> CommonResponse[PromotionResponse]:
     result = await query_use_case.execute(
-        GetCurrentOcrCreditPromotionQuery(user_id=context.user_id)
+        GetCurrentOcrCreditPromotionQuery(
+            user_id=context.user_id,
+            context=query.context,
+        )
     )
     data = (
         PromotionResponse.unavailable()
@@ -137,7 +145,11 @@ async def create_promotion_code_redemption(
     "/{promotion_id}/redemptions",
     response_model=CommonResponse[PromotionResponse],
     summary="OCR 프로모션 혜택 받기",
-    description="프로모션 ID로 OCR 크레딧 혜택을 요청한다.",
+    description=(
+        "프로모션 ID로 OCR 크레딧 혜택을 요청한다. 월간 OCR 크레딧 충전은 "
+        "GET /api/v1/promotions?featureKey=ocr&context=recharge 응답의 promotionId를 사용하며, "
+        "중복 요청 방지를 위해 Idempotency-Key 헤더를 함께 보낸다."
+    ),
 )
 async def create_promotion_redemption(
     promotion_id: UUID,

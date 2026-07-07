@@ -115,6 +115,7 @@ def test_credits_usage_openapi_stays_read_only() -> None:
         if path.startswith("/api/v1/credits/")
         and any(term in path for term in ("free-recharge", "grant", "recharge"))
     }
+    assert "/api/v1/example/ocr-test-credits" not in paths
 
 
 async def test_credits_empty_user_reads_zero_snapshot() -> None:

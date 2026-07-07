@@ -11,6 +11,7 @@ from app.modules.promotions.tests.migration_promotion_content_table_contract imp
 
 EXPECTED_PROMOTION_CHECKS = {
     "ck_promotions_benefit_feature_key_allowed",
+    "ck_promotions_context_allowed",
     "ck_promotions_benefit_amount_positive",
     "ck_promotions_max_redemptions_positive",
     "ck_promotions_times_redeemed_non_negative",
@@ -42,6 +43,7 @@ async def assert_promotion_tables_are_constrained(database_url: str) -> list[str
                     "times_redeemed",
                     "max_redemptions_per_user",
                     "benefit_feature_key",
+                    "context",
                     "benefit_amount",
                     "created_at",
                     "updated_at",
@@ -196,11 +198,14 @@ async def _assert_unique_indexes(connection: AsyncConnection) -> None:
             WHERE namespace.nspname = 'public'
               AND table_class.relname IN (
                   'promotion_codes',
-                  'promotion_redemptions'
+                  'promotion_redemptions',
+                  'promotions'
               )
               AND index_class.relname IN (
                   'ix_promotion_codes_code_unique',
-                  'uq_promotion_redemptions_idempotency_key'
+                  'uq_promotion_redemptions_idempotency_key',
+                  'ix_promotions_current_benefit_context',
+                  'uq_promotions_benefit_context_starts_at'
               )
             """
         )
@@ -217,6 +222,18 @@ async def _assert_unique_indexes(connection: AsyncConnection) -> None:
             "CREATE UNIQUE INDEX uq_promotion_redemptions_idempotency_key "
             "ON public.promotion_redemptions USING btree (idempotency_key)",
         ),
+        "ix_promotions_current_benefit_context": (
+            False,
+            "CREATE INDEX ix_promotions_current_benefit_context "
+            "ON public.promotions USING btree "
+            "(benefit_feature_key, context, active, expires_at, starts_at DESC)",
+        ),
+        "uq_promotions_benefit_context_starts_at": (
+            True,
+            "CREATE UNIQUE INDEX uq_promotions_benefit_context_starts_at "
+            "ON public.promotions USING btree "
+            "(benefit_feature_key, context, starts_at) WHERE (context IS NOT NULL)",
+        ),
     }
 
 
@@ -229,6 +246,7 @@ async def _assert_nullable_columns(connection: AsyncConnection) -> None:
             WHERE table_schema = 'public'
               AND (
                   (table_name = 'promotion_codes' AND column_name IN ('starts_at', 'expires_at'))
+                  OR (table_name = 'promotions' AND column_name = 'context')
                   OR (
                       table_name = 'promotion_redemptions'
                       AND column_name = 'promotion_code_id'
@@ -241,5 +259,6 @@ async def _assert_nullable_columns(connection: AsyncConnection) -> None:
     assert nullable == {
         ("promotion_codes", "starts_at"): "YES",
         ("promotion_codes", "expires_at"): "YES",
+        ("promotions", "context"): "YES",
         ("promotion_redemptions", "promotion_code_id"): "YES",
     }

@@ -27,6 +27,10 @@ class Promotion(Base):
             name=conv("ck_promotions_benefit_feature_key_allowed"),
         ),
         CheckConstraint(
+            "context IS NULL OR context IN ('recharge')",
+            name=conv("ck_promotions_context_allowed"),
+        ),
+        CheckConstraint(
             "benefit_amount > 0",
             name=conv("ck_promotions_benefit_amount_positive"),
         ),
@@ -75,6 +79,7 @@ class Promotion(Base):
         server_default="1",
     )
     benefit_feature_key: Mapped[str] = mapped_column(type_=String(50), nullable=False)
+    context: Mapped[str | None] = mapped_column(type_=String(50), nullable=True)
     benefit_amount: Mapped[int] = mapped_column(type_=Integer, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         type_=DateTime(timezone=True),
@@ -87,6 +92,24 @@ class Promotion(Base):
         server_default=func.now(),
         onupdate=func.now(),
     )
+
+
+Index(
+    "ix_promotions_current_benefit_context",
+    Promotion.benefit_feature_key,
+    Promotion.context,
+    Promotion.active,
+    Promotion.expires_at,
+    Promotion.starts_at.desc(),
+)
+Index(
+    "uq_promotions_benefit_context_starts_at",
+    Promotion.benefit_feature_key,
+    Promotion.context,
+    Promotion.starts_at,
+    unique=True,
+    postgresql_where=Promotion.context.is_not(None),
+)
 
 
 class PromotionContent(Base):

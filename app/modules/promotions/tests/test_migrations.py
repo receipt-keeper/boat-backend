@@ -24,9 +24,12 @@ CREDIT_SOURCE_MIGRATION_PATH = (
 PROMOTION_CONTENT_MIGRATION_PATH = (
     PROJECT_ROOT / "alembic" / "versions" / "20260705_0018_create_promotion_contents.py"
 )
+PROMOTION_CONTEXT_MIGRATION_PATH = (
+    PROJECT_ROOT / "alembic" / "versions" / "20260707_0019_add_promotion_context.py"
+)
 
 
-def test_promotion_migration_revision_is_linear_through_content_extension() -> None:
+def test_promotion_migration_revision_is_linear_through_context_extension() -> None:
     # Given: Promotion persistence migration 뒤에 credit source와 content migration이 이어진다.
     config = _alembic_config()
     script_directory = ScriptDirectory.from_config(config)
@@ -34,11 +37,12 @@ def test_promotion_migration_revision_is_linear_through_content_extension() -> N
     # When: Alembic revision graph와 Promotion 관련 migration 파일을 확인한다.
     heads = script_directory.get_heads()
 
-    # Then: 단일 head는 content migration이고 down_revision은 credit source migration이다.
-    assert heads == ["20260705_0018"]
+    # Then: 단일 head는 context migration이고 down_revision은 content migration이다.
+    assert heads == ["20260707_0019"]
     assert PROMOTION_MIGRATION_PATH.is_file()
     assert CREDIT_SOURCE_MIGRATION_PATH.is_file()
     assert PROMOTION_CONTENT_MIGRATION_PATH.is_file()
+    assert PROMOTION_CONTEXT_MIGRATION_PATH.is_file()
 
     migration_source = PROMOTION_MIGRATION_PATH.read_text(encoding="utf-8")
     assert 'revision: str = "20260705_0016"' in migration_source
@@ -48,6 +52,9 @@ def test_promotion_migration_revision_is_linear_through_content_extension() -> N
     promotion_content = PROMOTION_CONTENT_MIGRATION_PATH.read_text(encoding="utf-8")
     assert 'revision: str = "20260705_0018"' in promotion_content
     assert 'down_revision: str | Sequence[str] | None = "20260705_0017"' in promotion_content
+    promotion_context = PROMOTION_CONTEXT_MIGRATION_PATH.read_text(encoding="utf-8")
+    assert 'revision: str = "20260707_0019"' in promotion_context
+    assert 'down_revision: str | Sequence[str] | None = "20260705_0018"' in promotion_context
 
 
 def test_promotion_migration_creates_constrained_tables(
@@ -73,7 +80,7 @@ def test_promotion_migration_creates_constrained_tables(
         get_settings.cache_clear()
 
 
-def test_promotion_migration_rejects_invalid_schema_inputs(
+def test_promotion_migration_rejects_invalid_context_schema_inputs(
     postgres_async_database_url: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -96,7 +103,7 @@ def test_promotion_migration_rejects_invalid_schema_inputs(
         # Then: DB가 각 제약 위반을 실제로 거절한다.
         for failure in observed_failures:
             print(failure)
-        assert len(observed_failures) == 5
+        assert len(observed_failures) == 7
     finally:
         if upgraded:
             command.downgrade(config, "base")

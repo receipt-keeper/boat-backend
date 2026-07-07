@@ -30,7 +30,10 @@ class GetCurrentOcrCreditPromotionQueryUseCase:
         query: GetCurrentOcrCreditPromotionQuery,
     ) -> GetCurrentOcrCreditPromotionResult | None:
         now = self._clock()
-        promotion = await self._promotion_repository.find_current_ocr_credit_promotion(at=now)
+        promotion = await self._promotion_repository.find_current_ocr_credit_promotion(
+            at=now,
+            context=query.context,
+        )
         if promotion is None:
             return None
         promotion.ensure_redeemable(at=now)

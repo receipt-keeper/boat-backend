@@ -4,15 +4,22 @@ from uuid import UUID
 
 from app.modules.promotions.domain.model import (
     Promotion,
+    PromotionBenefitFeatureKey,
     PromotionCode,
     PromotionContent,
+    PromotionContext,
     PromotionRedemption,
 )
 
 
 class PromotionRepository(ABC):
     @abstractmethod
-    async def find_current_ocr_credit_promotion(self, *, at: datetime) -> Promotion | None:
+    async def find_current_ocr_credit_promotion(
+        self,
+        *,
+        at: datetime,
+        context: PromotionContext | None = None,
+    ) -> Promotion | None:
         raise NotImplementedError
 
     @abstractmethod
@@ -21,6 +28,16 @@ class PromotionRepository(ABC):
 
     @abstractmethod
     async def find_promotion_for_update(self, *, promotion_id: UUID) -> Promotion | None:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def find_promotion_by_benefit_context_start_for_update(
+        self,
+        *,
+        benefit_feature_key: PromotionBenefitFeatureKey,
+        context: PromotionContext,
+        starts_at: datetime,
+    ) -> Promotion | None:
         raise NotImplementedError
 
     @abstractmethod
@@ -55,6 +72,10 @@ class PromotionRepository(ABC):
 
     @abstractmethod
     async def create_redemption(self, *, redemption: PromotionRedemption) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def create_promotion(self, *, promotion: Promotion) -> None:
         raise NotImplementedError
 
     @abstractmethod
