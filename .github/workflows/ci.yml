@@ -27,7 +27,7 @@ jobs:
 
       - name: Set up uv
         # setup-uv는 메이저 별칭 태그(v8)를 제공하지 않으므로 정확한 버전으로 고정한다
-        uses: astral-sh/setup-uv@v8.2.0
+        uses: astral-sh/setup-uv@v8.3.2
         with:
           version: "0.11.21"
           enable-cache: true
