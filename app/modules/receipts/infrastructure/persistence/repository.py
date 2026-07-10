@@ -30,7 +30,8 @@ class SqlAlchemyReceiptRepository(ReceiptRepository):
         return await self._record_to_read_model(record)
 
     async def list_by_user(self, *, query: ListReceiptsQuery) -> ReceiptListPage:
-        conditions = listing.list_conditions(query)
+        base_conditions = listing.list_conditions(query)
+        conditions = [*base_conditions]
         cursor = listing.decode_cursor(query.cursor, sort=query.sort)
         cursor_condition = listing.cursor_condition(query.sort, cursor)
         if cursor_condition is not None:
@@ -38,7 +39,7 @@ class SqlAlchemyReceiptRepository(ReceiptRepository):
 
         total_count = (
             await self._session.scalar(
-                select(func.count()).select_from(orm.Receipt).where(*listing.list_conditions(query))
+                select(func.count()).select_from(orm.Receipt).where(*base_conditions)
             )
             or 0
         )

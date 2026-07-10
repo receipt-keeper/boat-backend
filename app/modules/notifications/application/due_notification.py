@@ -13,6 +13,7 @@ from app.modules.notifications.domain.schedule_occurrence import (
     ScheduleOccurrenceKey,
     target_type_for_kind,
 )
+from app.modules.notifications.domain.value_objects import NotificationMessage, NotificationTitle
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,8 +36,16 @@ def warranty_expiry_notification(
             user_id=user_id,
             message_type=delivery.message_type,
             kind=delivery.kind,
-            title=render_notification_text(due_rule.rule.title_template, item_name=item_name),
-            message=render_notification_text(due_rule.rule.body_template, item_name=item_name),
+            title=render_notification_text(
+                due_rule.rule.title_template,
+                item_name=item_name,
+                max_length=NotificationTitle.MAX_LENGTH,
+            ),
+            message=render_notification_text(
+                due_rule.rule.body_template,
+                item_name=item_name,
+                max_length=NotificationMessage.MAX_LENGTH,
+            ),
             resource_type=delivery.resource_type,
             resource_id=receipt_id,
             metadata={"daysUntilExpiry": str(days_until_expiry)},

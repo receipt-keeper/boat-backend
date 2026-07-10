@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from uuid import UUID
 
 
@@ -9,6 +9,7 @@ class ExpiringReceipt:
     receipt_id: UUID
     item_name: str
     expires_on: date
+    created_at: datetime
     days_until_expiry: int
 
 

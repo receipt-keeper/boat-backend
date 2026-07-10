@@ -1,10 +1,10 @@
-from collections.abc import Mapping
 from datetime import UTC, date, datetime, time
 
 from app.modules.notifications.domain.schedule_rule import ScheduleRuleTargetKind
 from app.modules.notifications.tests.scheduler_job_builders import (
     CONSENT_USER_ID,
     FOURTEEN_DAY_USER_ID,
+    assert_no_scheduler_internal_metadata,
     consent_settings,
     engagement_rule,
     schedule_command,
@@ -83,7 +83,7 @@ async def test_scheduler_uses_mutable_rule_offset_join_delay_and_repeat_data() -
     ]
     assert [command.metadata for command in commands] == [{"daysUntilExpiry": "10"}, {}]
     for command in commands:
-        _assert_no_scheduler_internal_metadata(command.metadata)
+        assert_no_scheduler_internal_metadata(command.metadata)
 
 
 async def test_scheduler_creates_new_warranty_occurrence_when_policy_offset_changes_due_date() -> (
@@ -92,7 +92,12 @@ async def test_scheduler_creates_new_warranty_occurrence_when_policy_offset_chan
     # Given: 같은 receipt/campaign이 D-7 due date에 이미 발송됐다.
     fixture = SchedulerFixture(
         rules=(warranty_rule(campaign_key="warranty_risk", day_offset=7),),
-        warranty_candidates=(warranty_candidate(expires_on=date(2026, 7, 16)),),
+        warranty_candidates=(
+            warranty_candidate(
+                expires_on=date(2026, 7, 16),
+                created_at=datetime(2026, 7, 5, 0, 0, tzinfo=UTC),
+            ),
+        ),
     )
     first = await fixture.use_case.execute(
         schedule_command(
@@ -251,23 +256,3 @@ async def test_scheduler_uses_21_day_rule_cadence_without_user_bucket_code_chang
     created = fixture.notification_repository.created[0].command
     assert created.kind == "receipt_analysis_reminder"
     assert created.metadata == {}
-
-
-def _assert_no_scheduler_internal_metadata(metadata: Mapping[str, str]) -> None:
-    internal_keys = {
-        "campaignKey",
-        "campaignPolicy",
-        "deliveryHistory",
-        "occurrenceId",
-        "scheduledKey",
-        "targetId",
-        "targetType",
-        "campaign_key",
-        "campaign_policy",
-        "delivery_history",
-        "occurrence_id",
-        "scheduled_key",
-        "target_id",
-        "target_type",
-    }
-    assert internal_keys.isdisjoint(metadata)

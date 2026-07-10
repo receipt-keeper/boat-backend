@@ -1,42 +1,119 @@
 from collections.abc import Sequence
 from datetime import time
+from typing import Final
 
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 from alembic import op
-from app.modules.notifications.schedule_rule_seed_data import (
-    DEFAULT_NOTIFICATION_SCHEDULE_RULE_SEEDS,
-    ScheduleRuleSeed,
-)
 
 revision: str = "20260709_0020"
 down_revision: str | Sequence[str] | None = "20260707_0019"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-type ScheduleRuleSeedValue = str | int | bool | time | None
-type ScheduleRuleSeedRow = dict[str, ScheduleRuleSeedValue]
-
-
-def _schedule_rule_seed_values(seed: ScheduleRuleSeed) -> ScheduleRuleSeedRow:
-    return {
-        "campaign_key": seed.campaign_key,
-        "enabled": seed.enabled,
-        "target_kind": seed.target_kind,
-        "day_offset": seed.day_offset,
-        "first_delay_days": seed.first_delay_days,
-        "repeat_interval_days": seed.repeat_interval_days,
-        "lookback_days": seed.lookback_days,
-        "send_time_local": seed.send_time_local,
-        "requires_marketing_consent": seed.requires_marketing_consent,
-        "title_template": seed.title_template,
-        "body_template": seed.body_template,
-    }
-
-
-_PM_SCHEDULE_RULES = tuple(
-    _schedule_rule_seed_values(seed) for seed in DEFAULT_NOTIFICATION_SCHEDULE_RULE_SEEDS
+_PM_SCHEDULE_RULES: Final[tuple[dict[str, str | int | bool | time | None], ...]] = (
+    {
+        "campaign_key": "warranty_caution_d30",
+        "enabled": True,
+        "target_kind": "warranty_receipt",
+        "day_offset": 30,
+        "first_delay_days": None,
+        "repeat_interval_days": None,
+        "lookback_days": None,
+        "send_time_local": time(9, 0),
+        "requires_marketing_consent": False,
+        "title_template": "보증 주의",
+        "body_template": "[기기명] 무상 AS 30일 남았어요! 만료 전 서비스 센터 접수를 예약해보세요.",
+    },
+    {
+        "campaign_key": "warranty_warning_d14",
+        "enabled": True,
+        "target_kind": "warranty_receipt",
+        "day_offset": 14,
+        "first_delay_days": None,
+        "repeat_interval_days": None,
+        "lookback_days": None,
+        "send_time_local": time(9, 0),
+        "requires_marketing_consent": False,
+        "title_template": "보증 경고",
+        "body_template": (
+            "[기기명] 무상 AS 14일 남았어요! 기간 지나기 전 영수증 증빙 서류를 챙기세요."
+        ),
+    },
+    {
+        "campaign_key": "warranty_risk_d7",
+        "enabled": True,
+        "target_kind": "warranty_receipt",
+        "day_offset": 7,
+        "first_delay_days": None,
+        "repeat_interval_days": None,
+        "lookback_days": None,
+        "send_time_local": time(9, 0),
+        "requires_marketing_consent": False,
+        "title_template": "보증 위험",
+        "body_template": (
+            "[기기명] 무상 AS 7일 남았어요! 일주일 뒤에는 무상 수리가 어려우니 서두르세요."
+        ),
+    },
+    {
+        "campaign_key": "warranty_expired_d0",
+        "enabled": True,
+        "target_kind": "warranty_receipt",
+        "day_offset": 0,
+        "first_delay_days": None,
+        "repeat_interval_days": None,
+        "lookback_days": None,
+        "send_time_local": time(9, 0),
+        "requires_marketing_consent": False,
+        "title_template": "보증 완료",
+        "body_template": "[기기명] 무상 AS 오늘이 만료예요! 마지막 무상 혜택 기회를 놓치지 마세요.",
+    },
+    {
+        "campaign_key": "engagement_unregistered_receipt_after_7d",
+        "enabled": True,
+        "target_kind": "engagement_unregistered_receipt",
+        "day_offset": None,
+        "first_delay_days": 7,
+        "repeat_interval_days": 7,
+        "lookback_days": None,
+        "send_time_local": time(9, 0),
+        "requires_marketing_consent": True,
+        "title_template": "상시 유도 1",
+        "body_template": (
+            "지갑 속에 방치해둔 가전제품 영수증이 있나요? 지금 등록하고 보증 기간을 챙기세요!"
+        ),
+    },
+    {
+        "campaign_key": "engagement_inactive_receipt_7d",
+        "enabled": True,
+        "target_kind": "engagement_inactive_receipt",
+        "day_offset": None,
+        "first_delay_days": None,
+        "repeat_interval_days": 7,
+        "lookback_days": 7,
+        "send_time_local": time(9, 0),
+        "requires_marketing_consent": True,
+        "title_template": "상시 유도 2",
+        "body_template": (
+            "최근에 새로 구매한 전자기기가 있으신가요? 영수증 한 장으로 AS 만료일을 관리해보세요."
+        ),
+    },
+    {
+        "campaign_key": "engagement_all_users_14d",
+        "enabled": True,
+        "target_kind": "engagement_all_user",
+        "day_offset": None,
+        "first_delay_days": 14,
+        "repeat_interval_days": 14,
+        "lookback_days": None,
+        "send_time_local": time(9, 0),
+        "requires_marketing_consent": True,
+        "title_template": "상시 유도 3",
+        "body_template": (
+            "지금 사용 가능한 무료 영수증 분석 기회가 남아있어요! 서랍 속 영수증을 스캔해보세요."
+        ),
+    },
 )
 
 

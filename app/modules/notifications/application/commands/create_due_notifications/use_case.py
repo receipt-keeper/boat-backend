@@ -44,6 +44,9 @@ from app.modules.receipts.application.queries.get_receipt_activity_for_users.use
 from app.modules.receipts.application.queries.list_receipts_expiring_on.use_case import (
     ListReceiptsExpiringOnQueryUseCase,
 )
+from app.modules.users.application.queries.get_existing_user_ids.use_case import (
+    GetExistingUserIdsQueryUseCase,
+)
 from app.modules.users.application.queries.list_user_registration_facts.use_case import (
     ListUserRegistrationFactsQueryUseCase,
 )
@@ -86,6 +89,7 @@ class CreateDueNotificationsCommandUseCase:
         list_receipts_expiring_on: ListReceiptsExpiringOnQueryUseCase,
         get_receipt_activity_for_users: GetReceiptActivityForUsersQueryUseCase,
         list_user_registration_facts: ListUserRegistrationFactsQueryUseCase,
+        get_existing_user_ids: GetExistingUserIdsQueryUseCase,
         notification_creator: NotificationCreator,
         unit_of_work: UnitOfWork,
     ) -> None:
@@ -93,7 +97,8 @@ class CreateDueNotificationsCommandUseCase:
         self._occurrence_repository = occurrence_repository
         self._notification_repository = notification_repository
         self._warranty_expiry_notifications = WarrantyExpiryNotifications(
-            list_receipts_expiring_on=list_receipts_expiring_on
+            list_receipts_expiring_on=list_receipts_expiring_on,
+            get_existing_user_ids=get_existing_user_ids,
         )
         self._receipt_reminder_notifications = ReceiptReminderNotifications(
             get_receipt_activity_for_users=get_receipt_activity_for_users,

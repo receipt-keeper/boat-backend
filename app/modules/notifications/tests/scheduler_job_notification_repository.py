@@ -22,12 +22,18 @@ class NotificationRepositoryFake(NotificationRepository):
         self,
         settings: dict[UUID, NotificationSettings],
         create_exception: Exception | None = None,
+        create_exceptions: list[Exception | None] | None = None,
     ) -> None:
         self.settings = settings
         self._create_exception = create_exception
+        self._create_exceptions = create_exceptions or []
         self.created: list[CreatedNotification] = []
 
     async def create(self, *, notification: UserNotification) -> UserNotification:
+        if self._create_exceptions:
+            create_exception = self._create_exceptions.pop(0)
+            if create_exception is not None:
+                raise create_exception
         if self._create_exception is not None:
             raise self._create_exception
         self.created.append(

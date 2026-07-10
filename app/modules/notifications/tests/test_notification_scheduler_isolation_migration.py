@@ -14,7 +14,7 @@ SCHEDULER_INTERNAL_USER_NOTIFICATION_COLUMN = "scheduled_key"
 
 
 def test_notification_schedule_migrations_have_single_head() -> None:
-    # Given: current scheduler persistence lives in the 0020 rules and 0021 occurrences migrations.
+    # Given: current scheduler persistence includes the 0022 scheduler query indexes migration.
     config = alembic_config()
     script_directory = ScriptDirectory.from_config(config)
 
@@ -22,9 +22,9 @@ def test_notification_schedule_migrations_have_single_head() -> None:
     heads = script_directory.get_heads()
     revisions = {revision.revision for revision in script_directory.walk_revisions()}
 
-    # Then: scheduler migration graph는 0021을 단일 head로 두고 0020/0021을 포함한다.
-    assert heads == ["20260709_0021"]
-    assert {"20260709_0020", "20260709_0021"} <= revisions
+    # Then: scheduler migration graph는 0022를 단일 head로 두고 이전 revisions를 포함한다.
+    assert heads == ["20260710_0022"]
+    assert {"20260709_0020", "20260709_0021", "20260710_0022"} <= revisions
 
 
 def test_user_notifications_schema_stays_scheduler_agnostic_after_head(

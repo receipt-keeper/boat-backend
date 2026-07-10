@@ -29,6 +29,7 @@ from app.modules.receipts.application.queries.list_receipts_expiring_on.use_case
 
 TARGET_DATE = date(2026, 7, 9)
 RECENT_SINCE = datetime(2026, 7, 1, 15, 0, tzinfo=UTC)
+OBSERVED_BEFORE = datetime(2026, 7, 9, 15, 0, tzinfo=UTC)
 USER_ID = UUID("00000000-0000-0000-0000-000000000101")
 RECEIPT_ID = UUID("00000000-0000-0000-0000-000000000201")
 type _MalformedQueryFactory = Callable[
@@ -69,6 +70,7 @@ async def test_list_receipts_expiring_on_delegates_to_narrow_reader() -> None:
     query = ListReceiptsExpiringOnQuery(
         target_date=TARGET_DATE,
         offset_days=30,
+        observed_before=OBSERVED_BEFORE,
         limit=10,
     )
     expected_page = ExpiringReceiptsPage(
@@ -78,6 +80,7 @@ async def test_list_receipts_expiring_on_delegates_to_narrow_reader() -> None:
                 receipt_id=RECEIPT_ID,
                 item_name="보증 만료 예정 냉장고",
                 expires_on=date(2026, 8, 8),
+                created_at=datetime(2026, 7, 8, 15, 0, tzinfo=UTC),
                 days_until_expiry=30,
             ),
         ),
@@ -98,6 +101,7 @@ async def test_get_receipt_activity_for_users_delegates_to_narrow_reader() -> No
         user_ids=(USER_ID,),
         limit=10,
         recent_since=RECENT_SINCE,
+        observed_before=OBSERVED_BEFORE,
     )
     expected_page = ReceiptActivityPage(
         activities=(
@@ -127,6 +131,7 @@ async def test_get_receipt_activity_for_users_delegates_to_narrow_reader() -> No
             lambda: ListReceiptsExpiringOnQuery(
                 target_date=TARGET_DATE,
                 offset_days=-1,
+                observed_before=OBSERVED_BEFORE,
                 limit=10,
             ),
             [("offsetDays", "보증 알림 후보 조회 offsetDays가 올바르지 않습니다.")],
@@ -135,6 +140,7 @@ async def test_get_receipt_activity_for_users_delegates_to_narrow_reader() -> No
             lambda: ListReceiptsExpiringOnQuery(
                 target_date=TARGET_DATE,
                 offset_days=30,
+                observed_before=OBSERVED_BEFORE,
                 limit=0,
             ),
             [("batchSize", "보증 알림 후보 조회 batchSize가 올바르지 않습니다.")],
@@ -143,6 +149,7 @@ async def test_get_receipt_activity_for_users_delegates_to_narrow_reader() -> No
             lambda: ListReceiptsExpiringOnQuery(
                 target_date=datetime(2026, 7, 9, tzinfo=UTC),
                 offset_days=30,
+                observed_before=OBSERVED_BEFORE,
                 limit=10,
             ),
             [("targetDate", "만료 예정 영수증 조회 targetDate가 올바르지 않습니다.")],
@@ -152,6 +159,7 @@ async def test_get_receipt_activity_for_users_delegates_to_narrow_reader() -> No
                 user_ids=(USER_ID,),
                 limit=-1,
                 recent_since=None,
+                observed_before=OBSERVED_BEFORE,
             ),
             [("batchSize", "영수증 등록 활동 후보 조회 batchSize가 올바르지 않습니다.")],
         ),
@@ -160,12 +168,46 @@ async def test_get_receipt_activity_for_users_delegates_to_narrow_reader() -> No
                 user_ids=(USER_ID,),
                 limit=10,
                 recent_since=datetime(2026, 7, 2, 0, 0),
+                observed_before=OBSERVED_BEFORE,
             ),
             [("recentSince", "영수증 등록 활동 후보 조회 recentSince가 올바르지 않습니다.")],
         ),
     ],
 )
 def test_scheduler_facing_query_contracts_preserve_validation(
+    make_query: _MalformedQueryFactory,
+    expected_details: list[tuple[str, str]],
+) -> None:
+    with pytest.raises(ValidationError) as error:
+        make_query()
+
+    assert [(detail.field, detail.message) for detail in error.value.details] == expected_details
+
+
+@pytest.mark.parametrize(
+    ("make_query", "expected_details"),
+    [
+        (
+            lambda: ListReceiptsExpiringOnQuery(
+                target_date=TARGET_DATE,
+                offset_days=30,
+                observed_before=datetime(2026, 7, 9, 15, 0),
+                limit=10,
+            ),
+            [("observedBefore", "보증 알림 후보 조회 observedBefore가 올바르지 않습니다.")],
+        ),
+        (
+            lambda: GetReceiptActivityForUsersQuery(
+                user_ids=(USER_ID,),
+                limit=10,
+                recent_since=None,
+                observed_before=datetime(2026, 7, 9, 15, 0),
+            ),
+            [("observedBefore", "영수증 등록 활동 후보 조회 observedBefore가 올바르지 않습니다.")],
+        ),
+    ],
+)
+def test_scheduler_fact_queries_reject_naive_observation_cutoff(
     make_query: _MalformedQueryFactory,
     expected_details: list[tuple[str, str]],
 ) -> None:

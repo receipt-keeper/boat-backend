@@ -33,6 +33,9 @@ from app.modules.users.application.ports.user_repository import UserRepository
 from app.modules.users.application.queries.current_user_profile.use_case import (
     CurrentUserProfileQueryUseCase,
 )
+from app.modules.users.application.queries.get_existing_user_ids.use_case import (
+    GetExistingUserIdsQueryUseCase,
+)
 from app.modules.users.application.queries.list_user_registration_facts.use_case import (
     ListUserRegistrationFactsQueryUseCase,
 )
@@ -40,6 +43,9 @@ from app.modules.users.domain.events import (
     UserProfileImageChanged,
     UserRegistered,
     UserWithdrawn,
+)
+from app.modules.users.infrastructure.persistence.existing_user_ids_reader import (
+    SqlAlchemyExistingUserIdsReader,
 )
 from app.modules.users.infrastructure.persistence.repository import SqlAlchemyUserRepository
 from app.modules.users.infrastructure.persistence.user_registration_facts_reader import (
@@ -126,6 +132,12 @@ def build_list_user_registration_facts_query_use_case(
     return ListUserRegistrationFactsQueryUseCase(
         reader=SqlAlchemyUserRegistrationFactsReader(session),
     )
+
+
+def build_get_existing_user_ids_query_use_case(
+    session: AsyncSession,
+) -> GetExistingUserIdsQueryUseCase:
+    return GetExistingUserIdsQueryUseCase(reader=SqlAlchemyExistingUserIdsReader(session))
 
 
 def build_update_profile_image_command_use_case(

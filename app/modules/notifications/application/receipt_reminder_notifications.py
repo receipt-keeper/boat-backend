@@ -12,6 +12,7 @@ from app.modules.notifications.domain.due_notification import (
     DueNotificationRule,
     matches_join_cadence,
     matches_receipt_activity,
+    observation_cutoff_for,
     receipt_activity_since_for,
     registration_age_days_on,
 )
@@ -53,10 +54,15 @@ class ReceiptReminderNotifications:
         due_rule: DueNotificationRule,
         command: CreateDueNotificationsCommand,
     ) -> AsyncIterator[DueNotification]:
+        observed_before = observation_cutoff_for(due_rule)
         cursor: UserRegistrationFactCursor | None = None
         while True:
             page = await self._list_user_registration_facts.execute(
-                ListUserRegistrationFactsQuery(batch_size=command.batch_size, cursor=cursor)
+                ListUserRegistrationFactsQuery(
+                    batch_size=command.batch_size,
+                    observed_before=observed_before,
+                    cursor=cursor,
+                )
             )
             due_facts = tuple(
                 fact
@@ -72,6 +78,7 @@ class ReceiptReminderNotifications:
             async for notification in self._notifications_for_facts(
                 due_rule=due_rule,
                 facts=due_facts,
+                observed_before=observed_before,
                 batch_size=command.batch_size,
             ):
                 yield notification
@@ -84,6 +91,7 @@ class ReceiptReminderNotifications:
         *,
         due_rule: DueNotificationRule,
         facts: tuple[UserRegistrationFact, ...],
+        observed_before: datetime,
         batch_size: int,
     ) -> AsyncIterator[DueNotification]:
         match due_rule.rule.target_kind:
@@ -97,6 +105,7 @@ class ReceiptReminderNotifications:
                 async for activity in self._activities_for(
                     facts=facts,
                     recent_since=receipt_activity_since_for(due_rule),
+                    observed_before=observed_before,
                     batch_size=batch_size,
                 ):
                     if matches_receipt_activity(
@@ -116,6 +125,7 @@ class ReceiptReminderNotifications:
         *,
         facts: tuple[UserRegistrationFact, ...],
         recent_since: datetime | None,
+        observed_before: datetime,
         batch_size: int,
     ) -> AsyncIterator[ReceiptActivity]:
         if not facts:
@@ -128,6 +138,7 @@ class ReceiptReminderNotifications:
                     user_ids=tuple(fact.user_id for fact in facts),
                     limit=batch_size,
                     recent_since=recent_since,
+                    observed_before=observed_before,
                     cursor_user_id=cursor,
                 )
             )

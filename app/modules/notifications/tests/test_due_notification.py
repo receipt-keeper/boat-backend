@@ -1,14 +1,17 @@
 from datetime import UTC, date, datetime, time
+from uuid import UUID
 
 import pytest
 
 from app.core.domain.exceptions import ValidationError
+from app.modules.notifications.application.due_notification import warranty_expiry_notification
 from app.modules.notifications.domain.due_notification import (
     SYSTEM_TIMEZONE,
     DueNotificationRule,
     delivery_contract_for,
     matches_join_cadence,
     matches_receipt_activity,
+    observation_cutoff_for,
     receipt_activity_since_for,
     registration_age_days_on,
     render_notification_text,
@@ -18,7 +21,11 @@ from app.modules.notifications.domain.schedule_rule import (
     NotificationScheduleRule,
     ScheduleRuleTargetKind,
 )
-from app.modules.notifications.domain.value_objects import NotificationMessageType
+from app.modules.notifications.domain.value_objects import (
+    NotificationMessage,
+    NotificationMessageType,
+    NotificationTitle,
+)
 
 
 def test_resolve_due_notification_rule_uses_kst_current_date_without_scheduled_for() -> None:
@@ -99,6 +106,21 @@ def test_resolve_due_notification_rule_rejects_naive_now() -> None:
     assert tuple((detail.field, detail.message) for detail in exc_info.value.details) == (
         ("now", "예약 알림 기준 시각이 올바르지 않습니다."),
     )
+
+
+def test_observation_cutoff_for_uses_due_rule_kst_send_time() -> None:
+    # Given: KST 09:30으로 발송하는 historical due rule이 있다.
+    due_rule = DueNotificationRule(
+        rule=_warranty_rule(send_time_local=time(9, 30)),
+        target_date=date(2026, 7, 9),
+    )
+
+    # When: 후보 사실을 관측할 배타적 마감 시각을 계산한다.
+    cutoff = observation_cutoff_for(due_rule)
+
+    # Then: KST 시각과 동등한 UTC 시각이 정확히 보존된다.
+    assert cutoff == datetime(2026, 7, 9, 9, 30, tzinfo=SYSTEM_TIMEZONE)
+    assert cutoff.astimezone(UTC) == datetime(2026, 7, 9, 0, 30, tzinfo=UTC)
 
 
 @pytest.mark.parametrize(
@@ -293,14 +315,69 @@ def test_receipt_activity_since_for_rejects_all_user_rule() -> None:
         receipt_activity_since_for(due_rule)
 
 
-def test_render_notification_text_replaces_item_name_placeholder() -> None:
+def test_render_notification_text_replaces_item_name_placeholder_without_truncation() -> None:
     # Given: [기기명] placeholder가 있는 notification template이 있다.
 
     # When: item name으로 template을 렌더링한다.
-    rendered = render_notification_text("[기기명] 보증이 7일 남았어요.", item_name="노트북")
+    rendered = render_notification_text(
+        "[기기명] 보증이 7일 남았어요.",
+        item_name="노트북",
+        max_length=NotificationMessage.MAX_LENGTH,
+    )
 
     # Then: user-visible text에 item name이 반영된다.
     assert rendered == "노트북 보증이 7일 남았어요."
+
+
+def test_render_notification_text_preserves_template_without_item_name_placeholder() -> None:
+    # Given: item name marker가 없는 template이 있다.
+
+    # When: 제한 길이로 렌더링한다.
+    rendered = render_notification_text(
+        "보증이 7일 남았어요.",
+        item_name="A" * 255,
+        max_length=NotificationMessage.MAX_LENGTH,
+    )
+
+    # Then: marker가 없으면 template을 그대로 보존한다.
+    assert rendered == "보증이 7일 남았어요."
+
+
+def test_render_notification_text_truncates_each_multiple_marker_with_fixed_suffix() -> None:
+    # Given: item name marker가 두 번이고 고정 suffix가 있는 짧은 template이 있다.
+
+    # When: item name을 최대 길이에 맞춰 렌더링한다.
+    rendered = render_notification_text(
+        "[기기명] / [기기명] suffix",
+        item_name="A" * 255,
+        max_length=20,
+    )
+
+    # Then: 모든 marker는 안전하게 치환되고 고정 suffix는 잘리지 않는다.
+    assert rendered == "AAAAA / AAAAA suffix"
+
+
+def test_warranty_expiry_notification_truncates_255_character_item_name_to_valid_command() -> None:
+    # Given: title과 message template에 marker가 있는 warranty rule과 255자 기기명이 있다.
+    due_rule = _due_rule(_warranty_rule(send_time_local=time(9, 0)))
+
+    # When: warranty notification command를 만든다.
+    due_notification = warranty_expiry_notification(
+        due_rule=due_rule,
+        user_id=UUID("00000000-0000-0000-0000-000000000001"),
+        receipt_id=UUID("00000000-0000-0000-0000-000000000002"),
+        item_name="A" * 255,
+        days_until_expiry=7,
+    )
+
+    # Then: command text는 notification value object의 길이 제약을 만족한다.
+    assert len(due_notification.command.title) <= NotificationTitle.MAX_LENGTH
+    assert len(due_notification.command.message) <= NotificationMessage.MAX_LENGTH
+    assert NotificationTitle(due_notification.command.title).value == due_notification.command.title
+    assert (
+        NotificationMessage(due_notification.command.message).value
+        == due_notification.command.message
+    )
 
 
 def _warranty_rule(*, send_time_local: time) -> NotificationScheduleRule:

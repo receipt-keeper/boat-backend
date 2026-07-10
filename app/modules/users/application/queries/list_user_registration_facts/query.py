@@ -7,6 +7,7 @@ from app.core.domain.exceptions import ErrorDetail, ValidationError
 _INVALID_BATCH_SIZE = "사용자 등록 사실 조회 batchSize가 올바르지 않습니다."
 _INVALID_CURSOR = "사용자 등록 사실 조회 cursor가 올바르지 않습니다."
 _INVALID_REGISTERED_WINDOW = "사용자 등록 시각 범위가 올바르지 않습니다."
+_INVALID_OBSERVED_BEFORE = "사용자 등록 사실 조회 observedBefore가 올바르지 않습니다."
 
 
 @dataclass(frozen=True, slots=True)
@@ -22,9 +23,9 @@ class UserRegistrationFactCursor:
 @dataclass(frozen=True, slots=True)
 class ListUserRegistrationFactsQuery:
     batch_size: int
+    observed_before: datetime
     cursor: UserRegistrationFactCursor | None = None
     registered_after: datetime | None = None
-    registered_before: datetime | None = None
 
     def __post_init__(self) -> None:
         details: list[ErrorDetail] = []
@@ -32,16 +33,13 @@ class ListUserRegistrationFactsQuery:
             details.append(ErrorDetail(field="batchSize", message=_INVALID_BATCH_SIZE))
         if self.registered_after is not None and not _is_aware_datetime(self.registered_after):
             details.append(ErrorDetail(field="registeredAfter", message=_INVALID_REGISTERED_WINDOW))
-        if self.registered_before is not None and not _is_aware_datetime(self.registered_before):
-            details.append(
-                ErrorDetail(field="registeredBefore", message=_INVALID_REGISTERED_WINDOW)
-            )
+        if not _is_aware_datetime(self.observed_before):
+            details.append(ErrorDetail(field="observedBefore", message=_INVALID_OBSERVED_BEFORE))
         if (
             self.registered_after is not None
-            and self.registered_before is not None
+            and _is_aware_datetime(self.observed_before)
             and _is_aware_datetime(self.registered_after)
-            and _is_aware_datetime(self.registered_before)
-            and self.registered_after >= self.registered_before
+            and self.registered_after >= self.observed_before
         ):
             details.append(ErrorDetail(field="registeredAt", message=_INVALID_REGISTERED_WINDOW))
         if details:

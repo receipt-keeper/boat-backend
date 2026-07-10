@@ -1,5 +1,5 @@
-from collections.abc import Mapping
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
+from uuid import UUID
 
 from app.modules.notifications.domain.due_notification import SYSTEM_TIMEZONE
 from app.modules.notifications.domain.schedule_occurrence import ScheduleOccurrenceTargetType
@@ -11,6 +11,7 @@ from app.modules.notifications.tests.scheduler_job_builders import (
     OTHER_RECEIPT_ID,
     RECEIPT_ID,
     activity_candidate,
+    assert_no_scheduler_internal_metadata,
     consent_settings,
     engagement_rule,
     schedule_command,
@@ -19,6 +20,9 @@ from app.modules.notifications.tests.scheduler_job_builders import (
     warranty_rule,
 )
 from app.modules.notifications.tests.scheduler_job_fixture import SchedulerFixture
+from app.modules.users.application.queries.list_user_registration_facts.result import (
+    UserRegistrationFact,
+)
 
 
 async def test_scheduler_creates_due_warranty_notification_with_device_detail_route() -> None:
@@ -41,7 +45,7 @@ async def test_scheduler_creates_due_warranty_notification_with_device_detail_ro
     assert created.resource_id == RECEIPT_ID
     assert created.message == "공기청정기 무상 AS 7일 남았어요."
     assert created.metadata == {"daysUntilExpiry": "7"}
-    _assert_no_scheduler_internal_metadata(created.metadata)
+    assert_no_scheduler_internal_metadata(created.metadata)
     occurrence = next(iter(fixture.occurrence_repository.reserved))
     assert occurrence.campaign_key == "warranty_risk_d7"
     assert occurrence.target_type is ScheduleOccurrenceTargetType.RECEIPT
@@ -86,7 +90,7 @@ async def test_scheduler_filters_marketing_candidates_without_marketing_consent(
     assert created.resource_type is None
     assert created.resource_id is None
     assert created.metadata == {"receiptCount": "0"}
-    _assert_no_scheduler_internal_metadata(created.metadata)
+    assert_no_scheduler_internal_metadata(created.metadata)
     assert fixture.receipt_activity_reader.queries[0].recent_since is None
 
 
@@ -188,6 +192,96 @@ async def test_scheduler_iterates_multiple_warranty_and_user_fact_pages() -> Non
     assert len(fixture.user_registration_facts_reader.queries) == 2
 
 
+async def test_scheduler_skips_withdrawn_warranty_owner_without_stopping_pagination() -> None:
+    withdrawn_user_id = UUID("00000000-0000-0000-0000-000000000901")
+    active_user_id = UUID("00000000-0000-0000-0000-000000000902")
+    fixture = SchedulerFixture(
+        rules=(warranty_rule(campaign_key="warranty_d7", day_offset=7),),
+        warranty_candidates=(
+            warranty_candidate(user_id=withdrawn_user_id, receipt_id=RECEIPT_ID),
+            warranty_candidate(user_id=active_user_id, receipt_id=OTHER_RECEIPT_ID),
+        ),
+        existing_user_ids=frozenset({active_user_id}),
+    )
+
+    result = await fixture.use_case.execute(schedule_command(batch_size=1))
+
+    assert result.candidates == 1
+    assert result.created == 1
+    assert fixture.notification_repository.created[0].command.user_id == active_user_id
+    assert [query.user_ids for query in fixture.existing_user_ids_reader.queries] == [
+        (withdrawn_user_id,),
+        (active_user_id,),
+    ]
+
+
+async def test_scheduler_uses_scheduled_cutoff_for_historical_and_late_current_day_warranty() -> (
+    None
+):
+    target_date = date(2026, 7, 9)
+    scheduled_cutoff = datetime(2026, 7, 9, 0, 0, tzinfo=UTC)
+    fixture = SchedulerFixture(
+        rules=(warranty_rule(campaign_key="warranty_d7", day_offset=7),),
+        warranty_candidates=(
+            warranty_candidate(created_at=scheduled_cutoff),
+            warranty_candidate(
+                receipt_id=OTHER_RECEIPT_ID,
+                created_at=scheduled_cutoff + timedelta(minutes=1),
+            ),
+        ),
+    )
+
+    historical = await fixture.use_case.execute(
+        schedule_command(target_date=target_date, now=datetime(2026, 7, 10, 0, 0, tzinfo=UTC))
+    )
+    late_current_day = await fixture.fresh_use_case().execute(
+        schedule_command(target_date=target_date, now=datetime(2026, 7, 9, 9, 0, tzinfo=UTC))
+    )
+
+    assert historical.candidates == 0
+    assert late_current_day.candidates == 0
+    assert [query.observed_before for query in fixture.expiring_receipts_reader.queries] == [
+        scheduled_cutoff,
+        scheduled_cutoff,
+    ]
+
+
+async def test_scheduler_uses_scheduled_cutoff_for_registration_and_activity_facts() -> None:
+    target_date = date(2026, 7, 9)
+    scheduled_cutoff = datetime(2026, 7, 9, 0, 0, tzinfo=UTC)
+    fixture = SchedulerFixture(
+        rules=(
+            engagement_rule(
+                campaign_key="engagement_inactive_receipt_7d",
+                target_kind=ScheduleRuleTargetKind.ENGAGEMENT_INACTIVE_RECEIPT,
+                first_delay_days=None,
+                repeat_interval_days=7,
+                lookback_days=7,
+            ),
+        ),
+        user_candidates=(
+            user_candidate(user_id=CONSENT_USER_ID, days_since_joined=7),
+            UserRegistrationFact(user_id=NO_CONSENT_USER_ID, registered_at=scheduled_cutoff),
+        ),
+        receipt_activity_candidates=(
+            activity_candidate(
+                user_id=CONSENT_USER_ID,
+                receipt_count=1,
+                last_receipt_created_at=datetime(2026, 7, 1, 14, 59, tzinfo=UTC),
+            ),
+        ),
+        settings=consent_settings(CONSENT_USER_ID),
+    )
+
+    result = await fixture.use_case.execute(
+        schedule_command(target_date=target_date, now=datetime(2026, 7, 10, 0, 0, tzinfo=UTC))
+    )
+
+    assert result.created == 1
+    assert fixture.user_registration_facts_reader.queries[0].observed_before == scheduled_cutoff
+    assert fixture.receipt_activity_reader.queries[0].observed_before == scheduled_cutoff
+
+
 async def test_scheduler_creates_inactive_receipt_reminder_with_receipt_count() -> None:
     # Given: 최근 영수증이 없는 가입 7일 사용자와 기존 영수증 활동 사실이 있다.
     fixture = SchedulerFixture(
@@ -235,23 +329,3 @@ def test_scheduler_cli_accepts_explicit_dry_run_false_for_ops_command() -> None:
     assert command.target_date == date(2026, 7, 9)
     assert command.now == datetime(2026, 7, 9, 0, 0, tzinfo=UTC)
     assert command.dry_run is False
-
-
-def _assert_no_scheduler_internal_metadata(metadata: Mapping[str, str]) -> None:
-    internal_keys = {
-        "campaignKey",
-        "campaignPolicy",
-        "deliveryHistory",
-        "occurrenceId",
-        "scheduledKey",
-        "targetId",
-        "targetType",
-        "campaign_key",
-        "campaign_policy",
-        "delivery_history",
-        "occurrence_id",
-        "scheduled_key",
-        "target_id",
-        "target_type",
-    }
-    assert internal_keys.isdisjoint(metadata)

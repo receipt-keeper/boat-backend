@@ -4,67 +4,6 @@ import pytest
 
 from app.core.domain.exceptions import ValidationError
 from app.modules.notifications.domain.schedule_rule import NotificationScheduleRule
-from app.modules.notifications.schedule_rule_seed_data import (
-    DEFAULT_NOTIFICATION_SCHEDULE_RULE_SEEDS,
-    ScheduleRuleSeed,
-)
-
-
-def test_default_schedule_rule_seed_matches_pm_campaign_table() -> None:
-    # Given: Alembic가 사용하는 schedule rule seed data를 domain factory에 전달한다.
-    rules = _default_schedule_rules()
-    rule_by_key = {rule.campaign_key: rule for rule in rules}
-
-    # When: 기본 schedule rule seed를 확인한다.
-    ordered_keys = tuple(rule.campaign_key for rule in rules)
-
-    # Then: 캠페인 7종은 one row per schedule rule로 표현된다.
-    assert ordered_keys == (
-        "warranty_caution_d30",
-        "warranty_warning_d14",
-        "warranty_risk_d7",
-        "warranty_expired_d0",
-        "engagement_unregistered_receipt_after_7d",
-        "engagement_inactive_receipt_7d",
-        "engagement_all_users_14d",
-    )
-    assert rule_by_key["warranty_caution_d30"].target_kind == "warranty_receipt"
-    assert rule_by_key["warranty_caution_d30"].day_offset == 30
-    assert rule_by_key["warranty_warning_d14"].day_offset == 14
-    assert rule_by_key["warranty_risk_d7"].day_offset == 7
-    assert rule_by_key["warranty_expired_d0"].day_offset == 0
-    assert rule_by_key["engagement_unregistered_receipt_after_7d"].target_kind == (
-        "engagement_unregistered_receipt"
-    )
-    assert rule_by_key["engagement_unregistered_receipt_after_7d"].first_delay_days == 7
-    assert rule_by_key["engagement_unregistered_receipt_after_7d"].repeat_interval_days == 7
-    assert rule_by_key["engagement_inactive_receipt_7d"].target_kind == (
-        "engagement_inactive_receipt"
-    )
-    assert rule_by_key["engagement_inactive_receipt_7d"].repeat_interval_days == 7
-    assert rule_by_key["engagement_inactive_receipt_7d"].lookback_days == 7
-    assert rule_by_key["engagement_all_users_14d"].target_kind == "engagement_all_user"
-    assert rule_by_key["engagement_all_users_14d"].first_delay_days == 14
-    assert rule_by_key["engagement_all_users_14d"].repeat_interval_days == 14
-    assert all(rule.send_time_local == time(9, 0) for rule in rules)
-    assert all(rule.enabled for rule in rules)
-    assert all(
-        not rule_by_key[key].requires_marketing_consent
-        for key in (
-            "warranty_caution_d30",
-            "warranty_warning_d14",
-            "warranty_risk_d7",
-            "warranty_expired_d0",
-        )
-    )
-    assert all(
-        rule_by_key[key].requires_marketing_consent
-        for key in (
-            "engagement_unregistered_receipt_after_7d",
-            "engagement_inactive_receipt_7d",
-            "engagement_all_users_14d",
-        )
-    )
 
 
 def test_schedule_rule_model_rejects_invalid_target_kind() -> None:
@@ -115,23 +54,32 @@ def test_schedule_rule_model_rejects_incomplete_timing_rule() -> None:
     )
 
 
-def _default_schedule_rules() -> tuple[NotificationScheduleRule, ...]:
-    return tuple(_rule_from_seed(seed) for seed in DEFAULT_NOTIFICATION_SCHEDULE_RULE_SEEDS)
+def test_schedule_rule_model_rejects_warranty_rule_with_engagement_timing_values() -> None:
+    # Given: DB warranty timing constraint를 위반하는 engagement timing 값이 있다.
 
+    # When/Then: persistence 전 domain factory가 각 잘못된 필드를 함께 거부한다.
+    with pytest.raises(ValidationError) as exc_info:
+        NotificationScheduleRule.create(
+            campaign_key="warranty_invalid_timing",
+            enabled=True,
+            target_kind="warranty_receipt",
+            day_offset=7,
+            first_delay_days=1,
+            repeat_interval_days=7,
+            lookback_days=7,
+            send_time_local=time(9, 0),
+            requires_marketing_consent=False,
+            title_template="테스트 제목",
+            body_template="테스트 본문",
+        )
 
-def _rule_from_seed(seed: ScheduleRuleSeed) -> NotificationScheduleRule:
-    return NotificationScheduleRule.create(
-        campaign_key=seed.campaign_key,
-        enabled=seed.enabled,
-        target_kind=seed.target_kind,
-        day_offset=seed.day_offset,
-        first_delay_days=seed.first_delay_days,
-        repeat_interval_days=seed.repeat_interval_days,
-        lookback_days=seed.lookback_days,
-        send_time_local=seed.send_time_local,
-        requires_marketing_consent=seed.requires_marketing_consent,
-        title_template=seed.title_template,
-        body_template=seed.body_template,
+    assert _validation_details(exc_info.value) == (
+        ("firstDelayDays", "보증 알림 예약 규칙에는 D-day offset 외의 일정 값이 없어야 합니다."),
+        (
+            "repeatIntervalDays",
+            "보증 알림 예약 규칙에는 D-day offset 외의 일정 값이 없어야 합니다.",
+        ),
+        ("lookbackDays", "보증 알림 예약 규칙에는 D-day offset 외의 일정 값이 없어야 합니다."),
     )
 
 

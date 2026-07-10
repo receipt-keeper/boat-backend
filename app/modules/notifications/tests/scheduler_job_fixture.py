@@ -11,6 +11,7 @@ from app.modules.notifications.application.commands.create_notification.use_case
 from app.modules.notifications.domain.model import NotificationSettings
 from app.modules.notifications.domain.schedule_rule import NotificationScheduleRule
 from app.modules.notifications.tests.due_notification_query_fakes import (
+    ExistingUserIdsReaderFake,
     ExpiringReceiptsReaderFake,
     ReceiptActivityForUsersReaderFake,
     UserRegistrationFactsReaderFake,
@@ -34,6 +35,9 @@ from app.modules.receipts.application.queries.list_receipts_expiring_on.result i
 )
 from app.modules.receipts.application.queries.list_receipts_expiring_on.use_case import (
     ListReceiptsExpiringOnQueryUseCase,
+)
+from app.modules.users.application.queries.get_existing_user_ids.use_case import (
+    GetExistingUserIdsQueryUseCase,
 )
 from app.modules.users.application.queries.list_user_registration_facts.result import (
     UserRegistrationFact,
@@ -66,16 +70,24 @@ class SchedulerFixture:
         warranty_candidates: tuple[ExpiringReceipt, ...] = (),
         user_candidates: tuple[UserRegistrationFact, ...] = (),
         receipt_activity_candidates: tuple[ReceiptActivity, ...] = (),
+        existing_user_ids: frozenset[UUID] | None = None,
         settings: dict[UUID, NotificationSettings] | None = None,
         notification_create_exception: Exception | None = None,
+        notification_create_exceptions: list[Exception | None] | None = None,
     ) -> None:
         self.schedule_rule_repository = ScheduleRuleRepositoryFake(rules)
         self.occurrence_repository = OccurrenceRepositoryFake()
         self.notification_repository = NotificationRepositoryFake(
             settings or {},
             create_exception=notification_create_exception,
+            create_exceptions=notification_create_exceptions,
         )
         self.expiring_receipts_reader = ExpiringReceiptsReaderFake(warranty_candidates)
+        self.existing_user_ids_reader = ExistingUserIdsReaderFake(
+            existing_user_ids
+            if existing_user_ids is not None
+            else frozenset(candidate.user_id for candidate in warranty_candidates)
+        )
         self.receipt_activity_reader = ReceiptActivityForUsersReaderFake(
             receipt_activity_candidates
         )
@@ -101,6 +113,9 @@ class SchedulerFixture:
             ),
             list_user_registration_facts=ListUserRegistrationFactsQueryUseCase(
                 reader=self.user_registration_facts_reader
+            ),
+            get_existing_user_ids=GetExistingUserIdsQueryUseCase(
+                reader=self.existing_user_ids_reader
             ),
             notification_creator=notification_creator,
             unit_of_work=self.unit_of_work,

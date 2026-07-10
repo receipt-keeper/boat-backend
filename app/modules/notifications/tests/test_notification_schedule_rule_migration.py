@@ -16,6 +16,10 @@ SCHEDULE_RULE_MIGRATION_PATH = (
     PROJECT_ROOT / "alembic" / "versions" / "20260709_0020_create_notification_schedule_rules.py"
 )
 LEGACY_SCHEDULE_RULE_TABLE = "notification_campaign_policies"
+SCHEDULER_QUERY_INDEX_NAMES = {
+    "users": "ix_users_created_at_id",
+    "receipts": "ix_receipts_expires_on_id",
+}
 
 
 def test_schedule_rule_migration_revision_is_linear() -> None:
@@ -32,6 +36,8 @@ def test_schedule_rule_migration_revision_is_linear() -> None:
     assert SCHEDULE_RULE_MIGRATION_PATH.is_file()
     assert 'revision: str = "20260709_0020"' in migration_source
     assert 'down_revision: str | Sequence[str] | None = "20260707_0019"' in migration_source
+    assert "app.modules.notifications.schedule_rule_seed_data" not in migration_source
+    assert "ScheduleRuleSeed" not in migration_source
 
 
 def test_schedule_rule_migration_creates_exact_seeded_table(
@@ -128,6 +134,7 @@ async def _assert_schedule_rule_table_seeded(database_url: str) -> None:
                 "ck_notification_schedule_rules_lookback_days",
                 "ck_notification_schedule_rules_warranty_timing",
                 "ck_notification_schedule_rules_engagement_timing",
+                "ck_notification_schedule_rules_engagement_consent",
             } <= check_names
             row_count = await connection.scalar(
                 text("SELECT COUNT(*) FROM notification_schedule_rules")
@@ -151,5 +158,67 @@ async def _assert_schedule_rule_table_seeded(database_url: str) -> None:
                 "warranty_risk_d7": 7,
                 "warranty_expired_d0": 0,
             }
+    finally:
+        await engine.dispose()
+
+
+def test_scheduler_query_indexes_upgrade_and_downgrade(
+    postgres_async_database_url: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given: scheduler 후보 조회가 사용하는 users/receipts 테이블이 존재한다.
+    monkeypatch.setenv("DATABASE_URL", postgres_async_database_url)
+    get_settings.cache_clear()
+    config = alembic_config()
+
+    upgraded = False
+    try:
+        # When: Alembic head까지 upgrade한다.
+        command.upgrade(config, "head")
+        upgraded = True
+
+        # Then: cursor 순서를 보장하는 scheduler query index가 생성된다.
+        anyio.run(
+            _assert_scheduler_query_indexes,
+            postgres_async_database_url,
+            True,
+        )
+
+        # When: index migration 직전 revision으로 downgrade한다.
+        command.downgrade(config, "20260709_0021")
+
+        # Then: 두 index가 모두 제거된다.
+        anyio.run(
+            _assert_scheduler_query_indexes,
+            postgres_async_database_url,
+            False,
+        )
+    finally:
+        if upgraded:
+            command.downgrade(config, "base")
+        get_settings.cache_clear()
+
+
+async def _assert_scheduler_query_indexes(
+    database_url: str,
+    expected_present: bool,
+) -> None:
+    engine = build_engine(database_url)
+    try:
+        async with engine.connect() as connection:
+            for table_name, index_name in SCHEDULER_QUERY_INDEX_NAMES.items():
+                index_count = await connection.scalar(
+                    text(
+                        """
+                        SELECT COUNT(*)
+                        FROM pg_indexes
+                        WHERE schemaname = 'public'
+                          AND tablename = :table_name
+                          AND indexname = :index_name
+                        """
+                    ),
+                    {"table_name": table_name, "index_name": index_name},
+                )
+                assert (index_count == 1) is expected_present
     finally:
         await engine.dispose()

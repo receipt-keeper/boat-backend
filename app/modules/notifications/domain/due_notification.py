@@ -11,6 +11,7 @@ from app.modules.notifications.domain.schedule_rule import (
 from app.modules.notifications.domain.value_objects import NotificationMessageType
 
 SYSTEM_TIMEZONE: Final = ZoneInfo("Asia/Seoul")
+_ITEM_NAME_MARKER: Final = "[기기명]"
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,6 +80,14 @@ def delivery_contract_for(target_kind: ScheduleRuleTargetKind) -> NotificationDe
             assert_never(unreachable)
 
 
+def observation_cutoff_for(due_rule: DueNotificationRule) -> datetime:
+    return datetime.combine(
+        due_rule.target_date,
+        due_rule.rule.send_time_local,
+        tzinfo=SYSTEM_TIMEZONE,
+    )
+
+
 def matches_join_cadence(
     *,
     rule: NotificationScheduleRule,
@@ -133,8 +142,19 @@ def receipt_activity_since_for(due_rule: DueNotificationRule) -> datetime | None
             assert_never(unreachable)
 
 
-def render_notification_text(template: str, *, item_name: str) -> str:
-    return template.replace("[기기명]", item_name)
+def render_notification_text(
+    template: str,
+    *,
+    item_name: str,
+    max_length: int,
+) -> str:
+    marker_count = template.count(_ITEM_NAME_MARKER)
+    if marker_count == 0:
+        return template
+
+    fixed_text_length = len(template.replace(_ITEM_NAME_MARKER, ""))
+    item_name_length = max((max_length - fixed_text_length) // marker_count, 0)
+    return template.replace(_ITEM_NAME_MARKER, item_name[:item_name_length])
 
 
 def _validate_aware_now(now: datetime) -> None:

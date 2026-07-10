@@ -61,7 +61,10 @@ from app.modules.receipts.dependencies import (
     build_get_receipt_activity_for_users_query_use_case,
     build_list_receipts_expiring_on_query_use_case,
 )
-from app.modules.users.dependencies import build_list_user_registration_facts_query_use_case
+from app.modules.users.dependencies import (
+    build_get_existing_user_ids_query_use_case,
+    build_list_user_registration_facts_query_use_case,
+)
 
 __all__ = (
     "NotificationPushDispatcher",
@@ -105,6 +108,7 @@ def build_create_due_notifications_command_use_case(
         list_receipts_expiring_on=build_list_receipts_expiring_on_query_use_case(session),
         get_receipt_activity_for_users=build_get_receipt_activity_for_users_query_use_case(session),
         list_user_registration_facts=build_list_user_registration_facts_query_use_case(session),
+        get_existing_user_ids=build_get_existing_user_ids_query_use_case(session),
         notification_creator=notification_creator,
         unit_of_work=unit_of_work,
     )

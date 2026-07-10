@@ -87,7 +87,9 @@ class NotificationScheduleRule:
         _validate_timing_rule(
             target_kind=new_target_kind,
             day_offset=day_offset,
+            first_delay_days=first_delay_days,
             repeat_interval_days=repeat_interval_days,
+            lookback_days=lookback_days,
         )
         _validate_engagement_consent(
             target_kind=new_target_kind,
@@ -138,19 +140,36 @@ def _validate_timing_rule(
     *,
     target_kind: ScheduleRuleTargetKind,
     day_offset: int | None,
+    first_delay_days: int | None,
     repeat_interval_days: int | None,
+    lookback_days: int | None,
 ) -> None:
     match target_kind:
         case ScheduleRuleTargetKind.WARRANTY_RECEIPT:
+            details = []
             if day_offset is None:
-                raise ValidationError(
-                    [
-                        ErrorDetail(
-                            field="dayOffset",
-                            message="보증 알림 예약 규칙에는 D-day offset이 필요합니다.",
-                        )
-                    ]
+                details.append(
+                    ErrorDetail(
+                        field="dayOffset",
+                        message="보증 알림 예약 규칙에는 D-day offset이 필요합니다.",
+                    )
                 )
+            for field, value in (
+                ("firstDelayDays", first_delay_days),
+                ("repeatIntervalDays", repeat_interval_days),
+                ("lookbackDays", lookback_days),
+            ):
+                if value is not None:
+                    details.append(
+                        ErrorDetail(
+                            field=field,
+                            message=(
+                                "보증 알림 예약 규칙에는 D-day offset 외의 일정 값이 없어야 합니다."
+                            ),
+                        )
+                    )
+            if details:
+                raise ValidationError(details)
         case (
             ScheduleRuleTargetKind.ENGAGEMENT_UNREGISTERED_RECEIPT
             | ScheduleRuleTargetKind.ENGAGEMENT_INACTIVE_RECEIPT

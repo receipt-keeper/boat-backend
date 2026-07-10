@@ -1,3 +1,4 @@
+from collections.abc import Mapping
 from datetime import UTC, date, datetime, time, timedelta
 from uuid import UUID
 
@@ -95,16 +96,19 @@ def engagement_rule(
 
 def warranty_candidate(
     *,
+    user_id: UUID = USER_ID,
     receipt_id: UUID = RECEIPT_ID,
     expires_on: date = date(2026, 7, 16),
+    created_at: datetime = NOW - timedelta(days=1),
     days_until_expiry: int = 7,
     item_name: str = "공기청정기",
 ) -> ExpiringReceipt:
     return ExpiringReceipt(
-        user_id=USER_ID,
+        user_id=user_id,
         receipt_id=receipt_id,
         item_name=item_name,
         expires_on=expires_on,
+        created_at=created_at,
         days_until_expiry=days_until_expiry,
     )
 
@@ -140,3 +144,23 @@ def consent_settings(*user_ids: UUID) -> dict[UUID, NotificationSettings]:
         user_id: NotificationSettings.create(user_id=user_id, marketing_consent=True)
         for user_id in user_ids
     }
+
+
+def assert_no_scheduler_internal_metadata(metadata: Mapping[str, str]) -> None:
+    internal_keys = {
+        "campaignKey",
+        "campaignPolicy",
+        "deliveryHistory",
+        "occurrenceId",
+        "scheduledKey",
+        "targetId",
+        "targetType",
+        "campaign_key",
+        "campaign_policy",
+        "delivery_history",
+        "occurrence_id",
+        "scheduled_key",
+        "target_id",
+        "target_type",
+    }
+    assert internal_keys.isdisjoint(metadata)

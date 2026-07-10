@@ -31,8 +31,7 @@ class SqlAlchemyUserRegistrationFactsReader(UserRegistrationFactsReader):
         )
         if query.registered_after is not None:
             statement = statement.where(orm.User.created_at >= query.registered_after)
-        if query.registered_before is not None:
-            statement = statement.where(orm.User.created_at < query.registered_before)
+        statement = statement.where(orm.User.created_at < query.observed_before)
         if query.cursor is not None:
             statement = statement.where(
                 or_(

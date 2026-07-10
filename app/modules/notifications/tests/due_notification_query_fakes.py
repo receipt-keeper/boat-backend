@@ -1,4 +1,5 @@
 from datetime import timedelta
+from uuid import UUID
 
 from app.modules.receipts.application.queries.get_receipt_activity_for_users.port import (
     ReceiptActivityForUsersReader,
@@ -20,6 +21,13 @@ from app.modules.receipts.application.queries.list_receipts_expiring_on.result i
     ExpiringReceipt,
     ExpiringReceiptsPage,
 )
+from app.modules.users.application.queries.get_existing_user_ids.query import (
+    GetExistingUserIdsQuery,
+)
+from app.modules.users.application.queries.get_existing_user_ids.reader import (
+    ExistingUserIdsReader,
+)
+from app.modules.users.application.queries.get_existing_user_ids.result import ExistingUserIds
 from app.modules.users.application.queries.list_user_registration_facts.query import (
     ListUserRegistrationFactsQuery,
     UserRegistrationFactCursor,
@@ -48,6 +56,7 @@ class ExpiringReceiptsReaderFake(ReceiptsExpiringOnReader):
             receipt
             for receipt in self._receipts
             if receipt.expires_on == query.target_date + timedelta(days=query.offset_days)
+            and receipt.created_at < query.observed_before
             and (query.cursor_receipt_id is None or receipt.receipt_id > query.cursor_receipt_id)
         )
         page = receipts[: query.limit]
@@ -92,6 +101,20 @@ class ReceiptActivityForUsersReaderFake(ReceiptActivityForUsersReader):
         )
 
 
+class ExistingUserIdsReaderFake(ExistingUserIdsReader):
+    def __init__(self, user_ids: frozenset[UUID]) -> None:
+        self._user_ids = user_ids
+        self.queries: list[GetExistingUserIdsQuery] = []
+
+    async def get_existing_user_ids(
+        self,
+        *,
+        query: GetExistingUserIdsQuery,
+    ) -> ExistingUserIds:
+        self.queries.append(query)
+        return ExistingUserIds(user_ids=frozenset(query.user_ids) & self._user_ids)
+
+
 class UserRegistrationFactsReaderFake(UserRegistrationFactsReader):
     def __init__(self, facts: tuple[UserRegistrationFact, ...]) -> None:
         self._facts = facts
@@ -103,7 +126,11 @@ class UserRegistrationFactsReaderFake(UserRegistrationFactsReader):
         query: ListUserRegistrationFactsQuery,
     ) -> UserRegistrationFactsPage:
         self.queries.append(query)
-        facts = _facts_after_cursor(facts=self._facts, cursor=query.cursor)
+        facts = tuple(
+            fact
+            for fact in _facts_after_cursor(facts=self._facts, cursor=query.cursor)
+            if fact.registered_at < query.observed_before
+        )
         page = facts[: query.batch_size]
         next_cursor = (
             UserRegistrationFactCursor(

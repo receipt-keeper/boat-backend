@@ -20,6 +20,8 @@ from app.modules.users.application.queries.list_user_registration_facts.use_case
     ListUserRegistrationFactsQueryUseCase,
 )
 
+OBSERVED_BEFORE = datetime(2026, 7, 9, 15, 0, tzinfo=UTC)
+
 
 class InMemoryUserRegistrationFactsReader(UserRegistrationFactsReader):
     def __init__(self, page: UserRegistrationFactsPage) -> None:
@@ -50,7 +52,7 @@ async def test_list_user_registration_facts_returns_reader_page_without_schedule
         next_cursor=cursor,
     )
     reader = InMemoryUserRegistrationFactsReader(page)
-    query = ListUserRegistrationFactsQuery(batch_size=2)
+    query = ListUserRegistrationFactsQuery(batch_size=2, observed_before=OBSERVED_BEFORE)
 
     result = await ListUserRegistrationFactsQueryUseCase(reader=reader).execute(query)
 
@@ -64,7 +66,7 @@ async def test_list_user_registration_facts_returns_reader_page_without_schedule
 
 def test_list_user_registration_facts_rejects_invalid_batch_size() -> None:
     with pytest.raises(ValidationError) as exc_info:
-        ListUserRegistrationFactsQuery(batch_size=0)
+        ListUserRegistrationFactsQuery(batch_size=0, observed_before=OBSERVED_BEFORE)
 
     assert tuple((detail.field, detail.message) for detail in exc_info.value.details) == (
         ("batchSize", "사용자 등록 사실 조회 batchSize가 올바르지 않습니다."),
@@ -75,6 +77,7 @@ def test_list_user_registration_facts_rejects_naive_window_boundary() -> None:
     with pytest.raises(ValidationError) as exc_info:
         ListUserRegistrationFactsQuery(
             batch_size=1,
+            observed_before=OBSERVED_BEFORE,
             registered_after=datetime(2026, 7, 1, 9),
         )
 
@@ -88,12 +91,24 @@ def test_list_user_registration_facts_rejects_invalid_window_order() -> None:
     with pytest.raises(ValidationError) as exc_info:
         ListUserRegistrationFactsQuery(
             batch_size=1,
+            observed_before=boundary,
             registered_after=boundary,
-            registered_before=boundary,
         )
 
     assert tuple((detail.field, detail.message) for detail in exc_info.value.details) == (
         ("registeredAt", "사용자 등록 시각 범위가 올바르지 않습니다."),
+    )
+
+
+def test_list_user_registration_facts_rejects_naive_observation_cutoff() -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        ListUserRegistrationFactsQuery(
+            batch_size=1,
+            observed_before=datetime(2026, 7, 9, 15, 0),
+        )
+
+    assert tuple((detail.field, detail.message) for detail in exc_info.value.details) == (
+        ("observedBefore", "사용자 등록 사실 조회 observedBefore가 올바르지 않습니다."),
     )
 
 

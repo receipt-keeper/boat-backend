@@ -44,7 +44,10 @@ class SqlAlchemyExpiringReceiptsReader(ReceiptsExpiringOnReader):
         query: ListReceiptsExpiringOnQuery,
     ) -> ExpiringReceiptsPage:
         target_expires_on = query.target_date + timedelta(days=query.offset_days)
-        conditions = [orm.Receipt.expires_on == target_expires_on]
+        conditions = [
+            orm.Receipt.expires_on == target_expires_on,
+            orm.Receipt.created_at < query.observed_before,
+        ]
         if query.cursor_receipt_id is not None:
             conditions.append(orm.Receipt.id > query.cursor_receipt_id)
 
@@ -84,7 +87,11 @@ class SqlAlchemyReceiptActivityForUsersReader(ReceiptActivityForUsersReader):
                 limit=query.limit,
             )
 
-        aggregates = await _activity_aggregates(session=self._session, user_ids=user_ids)
+        aggregates = await _activity_aggregates(
+            session=self._session,
+            user_ids=user_ids,
+            observed_before=query.observed_before,
+        )
         activities = tuple(
             activity
             for user_id in user_ids
@@ -119,6 +126,7 @@ def _expiring_receipt(
         receipt_id=record.id,
         item_name=record.item_name,
         expires_on=record.expires_on,
+        created_at=record.created_at,
         days_until_expiry=(record.expires_on - query.target_date).days,
     )
 
@@ -135,6 +143,7 @@ async def _activity_aggregates(
     *,
     session: AsyncSession,
     user_ids: tuple[UUID, ...],
+    observed_before: datetime,
 ) -> dict[UUID, _ReceiptActivityAggregate]:
     rows = await session.execute(
         select(
@@ -142,7 +151,10 @@ async def _activity_aggregates(
             func.count(orm.Receipt.id),
             func.max(orm.Receipt.created_at),
         )
-        .where(orm.Receipt.user_id.in_(user_ids))
+        .where(
+            orm.Receipt.user_id.in_(user_ids),
+            orm.Receipt.created_at < observed_before,
+        )
         .group_by(orm.Receipt.user_id)
     )
     return {

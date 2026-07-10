@@ -16,6 +16,7 @@ from app.modules.receipts.dependencies import (
 from app.modules.receipts.infrastructure.persistence import orm
 
 TARGET_DATE = date(2026, 7, 9)
+OBSERVED_BEFORE = datetime(2026, 7, 9, 15, 0, tzinfo=UTC)
 WARRANTY_RECEIPT_ID = UUID("00000000-0000-0000-0000-000000000030")
 INACTIVE_USER_ID = UUID("00000000-0000-0000-0000-000000000101")
 ZERO_RECEIPT_USER_ID = UUID("00000000-0000-0000-0000-000000000102")
@@ -44,6 +45,7 @@ async def test_receipt_query_contract_characterization(
             ListReceiptsExpiringOnQuery(
                 target_date=TARGET_DATE,
                 offset_days=30,
+                observed_before=OBSERVED_BEFORE,
                 limit=1,
             )
         )
@@ -52,6 +54,7 @@ async def test_receipt_query_contract_characterization(
                 user_ids=(ZERO_RECEIPT_USER_ID, INACTIVE_USER_ID),
                 limit=10,
                 recent_since=datetime(2026, 7, 2, tzinfo=UTC),
+                observed_before=OBSERVED_BEFORE,
             )
         )
 

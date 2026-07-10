@@ -31,6 +31,7 @@ from app.modules.notifications.infrastructure.persistence.schedule_occurrence_or
     NotificationScheduleOccurrence,
 )
 from app.modules.notifications.tests.due_notification_query_fakes import (
+    ExistingUserIdsReaderFake,
     ExpiringReceiptsReaderFake,
     ReceiptActivityForUsersReaderFake,
     UserRegistrationFactsReaderFake,
@@ -53,6 +54,9 @@ from app.modules.receipts.application.queries.list_receipts_expiring_on.result i
 )
 from app.modules.receipts.application.queries.list_receipts_expiring_on.use_case import (
     ListReceiptsExpiringOnQueryUseCase,
+)
+from app.modules.users.application.queries.get_existing_user_ids.use_case import (
+    GetExistingUserIdsQueryUseCase,
 )
 from app.modules.users.application.queries.list_user_registration_facts.use_case import (
     ListUserRegistrationFactsQueryUseCase,
@@ -126,7 +130,7 @@ async def test_different_occurrence_date_creates_distinct_scheduler_notification
         assert await _occurrence_count(session) == 2
 
 
-async def test_handled_create_failure_rolls_back_occurrence_notification_and_outbox(
+async def test_long_warranty_item_name_is_truncated_before_notification_creation(
     postgres_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     async with postgres_session_factory() as session:
@@ -135,11 +139,11 @@ async def test_handled_create_failure_rolls_back_occurrence_notification_and_out
             candidates=(warranty_candidate(item_name="가" * 260),),
         ).execute(_schedule_command(TARGET_DATE))
 
-    assert result.failed == 1
+    assert result.created == 1
     async with postgres_session_factory() as session:
-        assert await _notification_count(session) == 0
-        assert await _outbox_count(session) == 0
-        assert await _occurrence_count(session) == 0
+        assert await _notification_count(session) == 1
+        assert await _outbox_count(session) == 1
+        assert await _occurrence_count(session) == 1
 
 
 def _scheduler_use_case(
@@ -171,6 +175,11 @@ def _scheduler_use_case(
         ),
         list_user_registration_facts=ListUserRegistrationFactsQueryUseCase(
             reader=UserRegistrationFactsReaderFake(())
+        ),
+        get_existing_user_ids=GetExistingUserIdsQueryUseCase(
+            reader=ExistingUserIdsReaderFake(
+                frozenset(candidate.user_id for candidate in candidates)
+            )
         ),
         notification_creator=notification_creator,
         unit_of_work=SqlAlchemyUnitOfWork(session),

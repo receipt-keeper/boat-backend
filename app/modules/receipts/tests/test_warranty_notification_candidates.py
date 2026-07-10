@@ -22,6 +22,7 @@ from app.modules.receipts.infrastructure.persistence import orm
 TARGET_DATE = date(2026, 7, 9)
 TARGET_START = datetime.combine(TARGET_DATE, time.min, tzinfo=UTC)
 KST_RECENT_SINCE = datetime(2026, 7, 1, 15, 0, tzinfo=UTC)
+OBSERVED_BEFORE = datetime(2026, 7, 10, 0, 0, tzinfo=UTC)
 
 D30_RECEIPT_ID = UUID("00000000-0000-0000-0000-000000000030")
 SECOND_D30_RECEIPT_ID = UUID("00000000-0000-0000-0000-000000000031")
@@ -36,11 +37,15 @@ INACTIVE_LATEST_RECEIPT_ID = UUID("00000000-0000-0000-0000-000000000201")
 INACTIVE_OLDER_RECEIPT_ID = UUID("00000000-0000-0000-0000-000000000202")
 RECENT_RECEIPT_ID = UUID("00000000-0000-0000-0000-000000000203")
 BOUNDARY_RECEIPT_ID = UUID("00000000-0000-0000-0000-000000000204")
+OBSERVED_EARLY_RECEIPT_ID = UUID("00000000-0000-0000-0000-000000000205")
+OBSERVED_EXACT_RECEIPT_ID = UUID("00000000-0000-0000-0000-000000000206")
+OBSERVED_FUTURE_RECEIPT_ID = UUID("00000000-0000-0000-0000-000000000207")
 
 ZERO_RECEIPT_USER_ID = UUID("00000000-0000-0000-0000-000000000101")
 INACTIVE_USER_ID = UUID("00000000-0000-0000-0000-000000000102")
 RECENT_USER_ID = UUID("00000000-0000-0000-0000-000000000103")
 BOUNDARY_USER_ID = UUID("00000000-0000-0000-0000-000000000104")
+FUTURE_ONLY_USER_ID = UUID("00000000-0000-0000-0000-000000000105")
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,6 +88,7 @@ async def test_list_receipts_expiring_on_matches_exact_offsets_and_pages(
             ListReceiptsExpiringOnQuery(
                 target_date=TARGET_DATE,
                 offset_days=30,
+                observed_before=OBSERVED_BEFORE,
                 limit=1,
             )
         )
@@ -90,6 +96,7 @@ async def test_list_receipts_expiring_on_matches_exact_offsets_and_pages(
             ListReceiptsExpiringOnQuery(
                 target_date=TARGET_DATE,
                 offset_days=30,
+                observed_before=OBSERVED_BEFORE,
                 limit=1,
                 cursor_receipt_id=first_d30_page.next_cursor_receipt_id,
             )
@@ -98,6 +105,7 @@ async def test_list_receipts_expiring_on_matches_exact_offsets_and_pages(
             ListReceiptsExpiringOnQuery(
                 target_date=TARGET_DATE,
                 offset_days=14,
+                observed_before=OBSERVED_BEFORE,
                 limit=10,
             )
         )
@@ -105,6 +113,7 @@ async def test_list_receipts_expiring_on_matches_exact_offsets_and_pages(
             ListReceiptsExpiringOnQuery(
                 target_date=TARGET_DATE,
                 offset_days=7,
+                observed_before=OBSERVED_BEFORE,
                 limit=10,
             )
         )
@@ -112,6 +121,7 @@ async def test_list_receipts_expiring_on_matches_exact_offsets_and_pages(
             ListReceiptsExpiringOnQuery(
                 target_date=TARGET_DATE,
                 offset_days=10,
+                observed_before=OBSERVED_BEFORE,
                 limit=10,
             )
         )
@@ -119,6 +129,7 @@ async def test_list_receipts_expiring_on_matches_exact_offsets_and_pages(
             ListReceiptsExpiringOnQuery(
                 target_date=TARGET_DATE,
                 offset_days=0,
+                observed_before=OBSERVED_BEFORE,
                 limit=10,
             )
         )
@@ -202,6 +213,7 @@ async def test_get_receipt_activity_for_users_uses_scheduler_provided_recent_sin
                 ),
                 limit=1,
                 recent_since=KST_RECENT_SINCE,
+                observed_before=OBSERVED_BEFORE,
             )
         )
         second_page = await use_case.execute(
@@ -214,6 +226,7 @@ async def test_get_receipt_activity_for_users_uses_scheduler_provided_recent_sin
                 ),
                 limit=10,
                 recent_since=KST_RECENT_SINCE,
+                observed_before=OBSERVED_BEFORE,
                 cursor_user_id=first_page.next_cursor_user_id,
             )
         )
@@ -257,6 +270,7 @@ async def test_get_receipt_activity_for_users_returns_all_counts_without_recent_
                 user_ids=(ZERO_RECEIPT_USER_ID, RECENT_USER_ID),
                 limit=10,
                 recent_since=None,
+                observed_before=OBSERVED_BEFORE,
             )
         )
 
@@ -265,6 +279,74 @@ async def test_get_receipt_activity_for_users_returns_all_counts_without_recent_
         (ZERO_RECEIPT_USER_ID, 0),
         (RECENT_USER_ID, 1),
     ]
+
+
+async def test_scheduler_receipt_facts_exclude_records_at_or_after_observed_before(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    observed_before = datetime(2026, 7, 9, 0, 0, tzinfo=UTC)
+    early = observed_before - timedelta(minutes=1)
+    future = observed_before + timedelta(minutes=1)
+    async with postgres_session_factory() as session:
+        session.add_all(
+            _receipt_records(
+                (
+                    _SeedReceipt(
+                        OBSERVED_EARLY_RECEIPT_ID,
+                        INACTIVE_USER_ID,
+                        "관측 전 보증 영수증",
+                        _e(7),
+                        early,
+                    ),
+                    _SeedReceipt(
+                        OBSERVED_EXACT_RECEIPT_ID,
+                        INACTIVE_USER_ID,
+                        "정확한 경계 보증 영수증",
+                        _e(7),
+                        observed_before,
+                    ),
+                    _SeedReceipt(
+                        OBSERVED_FUTURE_RECEIPT_ID,
+                        INACTIVE_USER_ID,
+                        "관측 후 보증 영수증",
+                        _e(7),
+                        future,
+                    ),
+                    _SeedReceipt(
+                        BOUNDARY_RECEIPT_ID,
+                        FUTURE_ONLY_USER_ID,
+                        "관측 후 활동 영수증",
+                        _e(100),
+                        future,
+                    ),
+                )
+            )
+        )
+        await session.flush()
+        expiring = await build_list_receipts_expiring_on_query_use_case(session).execute(
+            ListReceiptsExpiringOnQuery(
+                target_date=TARGET_DATE,
+                offset_days=7,
+                observed_before=observed_before,
+                limit=10,
+            )
+        )
+        activities = await build_get_receipt_activity_for_users_query_use_case(session).execute(
+            GetReceiptActivityForUsersQuery(
+                user_ids=(INACTIVE_USER_ID, FUTURE_ONLY_USER_ID),
+                limit=10,
+                recent_since=None,
+                observed_before=observed_before,
+            )
+        )
+
+    assert _candidate_ids(expiring.receipts) == (OBSERVED_EARLY_RECEIPT_ID,)
+    assert [(activity.user_id, activity.receipt_count) for activity in activities.activities] == [
+        (INACTIVE_USER_ID, 1),
+        (FUTURE_ONLY_USER_ID, 0),
+    ]
+    assert activities.activities[0].last_receipt_created_at == early
+    assert activities.activities[1].last_receipt_created_at is None
 
 
 def _receipt_record(seed: _SeedReceipt) -> orm.Receipt:
