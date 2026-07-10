@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import UTC, date, datetime
 from typing import assert_never
 from uuid import UUID
 
@@ -6,24 +6,31 @@ import firebase_admin
 import pytest
 from firebase_admin import messaging
 
-from app.modules.notifications.application.commands.schedule_push_notifications import (
-    candidate_factory,
-    scheduler_models,
-)
 from app.modules.notifications.application.commands.send_notification_push.command import (
     SendNotificationPushCommand,
 )
 from app.modules.notifications.application.commands.send_notification_push.use_case import (
     SendNotificationPushCommandUseCase,
 )
+from app.modules.notifications.application.due_notification import (
+    DueNotification,
+    receipt_reminder_notification,
+    warranty_expiry_notification,
+)
+from app.modules.notifications.domain.due_notification import (
+    DueNotificationRule,
+    resolve_due_notification_rule,
+)
 from app.modules.notifications.domain.model import NotificationSettings
-from app.modules.notifications.domain.schedule_rule import ScheduleRuleTargetKind
+from app.modules.notifications.domain.schedule_rule import (
+    NotificationScheduleRule,
+    ScheduleRuleTargetKind,
+)
 from app.modules.notifications.domain.value_objects import DevicePlatform
 from app.modules.notifications.infrastructure.fcm.push_sender import FcmPushSender
 from app.modules.notifications.tests.scheduler_job_builders import (
     CONSENT_USER_ID,
     engagement_rule,
-    user_candidate,
     warranty_candidate,
     warranty_rule,
 )
@@ -91,7 +98,7 @@ async def test_scheduler_notification_uses_shared_fcm_data_contract(
     expected_data: dict[str, str],
 ) -> None:
     # Given: 스케줄러가 만든 알림 후보와 FCM 등록 토큰이 있다.
-    scheduled = _schedule_candidate(target_kind)
+    scheduled = _due_notification(target_kind)
 
     # When: 생성 이벤트에서 전달될 값으로 FCM 푸시를 발송한다.
     data = await _send_to_fcm(monkeypatch=monkeypatch, scheduled=scheduled)
@@ -128,7 +135,7 @@ async def test_legacy_scheduler_kind_is_normalized_at_fcm_boundary(
     expected_kind: str,
 ) -> None:
     # Given: 배포 전 이벤트가 구 scheduler kind를 가지고 있다.
-    scheduled = _schedule_candidate(target_kind)
+    scheduled = _due_notification(target_kind)
 
     # When: 공용 발송 경로에서 실제 FCM 메시지를 만든다.
     data = await _send_to_fcm(
@@ -141,15 +148,17 @@ async def test_legacy_scheduler_kind_is_normalized_at_fcm_boundary(
     assert data["kind"] == expected_kind
 
 
-def _schedule_candidate(
+def _due_notification(
     target_kind: ScheduleRuleTargetKind,
-) -> scheduler_models.ScheduleCandidate:
+) -> DueNotification:
     match target_kind:
         case ScheduleRuleTargetKind.WARRANTY_RECEIPT:
-            return candidate_factory.warranty_schedule_candidate(
-                rule=warranty_rule(campaign_key="warranty_risk_d7", day_offset=7),
-                candidate=warranty_candidate(),
-                occurrence_on=OCCURRENCE_ON,
+            return warranty_expiry_notification(
+                due_rule=_due_rule(warranty_rule(campaign_key="warranty_risk_d7", day_offset=7)),
+                user_id=CONSENT_USER_ID,
+                receipt_id=warranty_candidate().receipt_id,
+                item_name=warranty_candidate().item_name,
+                days_until_expiry=warranty_candidate().days_until_expiry,
             )
         case ScheduleRuleTargetKind.ENGAGEMENT_UNREGISTERED_RECEIPT:
             rule = engagement_rule(
@@ -177,18 +186,26 @@ def _schedule_candidate(
             )
         case unreachable:
             assert_never(unreachable)
-
-    return candidate_factory.engagement_schedule_candidate(
-        rule=rule,
-        candidate=user_candidate(user_id=CONSENT_USER_ID, days_since_joined=14),
-        bucket_on=OCCURRENCE_ON,
+    return receipt_reminder_notification(
+        due_rule=_due_rule(rule),
+        user_id=CONSENT_USER_ID,
     )
+
+
+def _due_rule(rule: NotificationScheduleRule) -> DueNotificationRule:
+    due_rule = resolve_due_notification_rule(
+        rule=rule,
+        now=datetime(2026, 7, 9, 0, 0, tzinfo=UTC),
+        target_date=OCCURRENCE_ON,
+    )
+    assert due_rule is not None
+    return due_rule
 
 
 async def _send_to_fcm(
     *,
     monkeypatch: pytest.MonkeyPatch,
-    scheduled: scheduler_models.ScheduleCandidate,
+    scheduled: DueNotification,
     kind: str | None = None,
 ) -> dict[str, str]:
     notification_repository = InMemoryNotificationRepository()

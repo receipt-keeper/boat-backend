@@ -1,6 +1,7 @@
 from collections.abc import Mapping
 from datetime import UTC, date, datetime
 
+from app.modules.notifications.domain.due_notification import SYSTEM_TIMEZONE
 from app.modules.notifications.domain.schedule_occurrence import ScheduleOccurrenceTargetType
 from app.modules.notifications.domain.schedule_rule import ScheduleRuleTargetKind
 from app.modules.notifications.jobs import schedule_push_notifications as scheduler_job
@@ -46,7 +47,7 @@ async def test_scheduler_creates_due_warranty_notification_with_device_detail_ro
     assert occurrence.target_type is ScheduleOccurrenceTargetType.RECEIPT
     assert occurrence.target_id == RECEIPT_ID
     assert occurrence.occurrence_on == date(2026, 7, 9)
-    assert fixture.receipt_repository.warranty_queries[0].offset_days == 7
+    assert fixture.expiring_receipts_reader.queries[0].offset_days == 7
 
 
 async def test_scheduler_filters_marketing_candidates_without_marketing_consent() -> None:
@@ -58,6 +59,7 @@ async def test_scheduler_filters_marketing_candidates_without_marketing_consent(
                 target_kind=ScheduleRuleTargetKind.ENGAGEMENT_UNREGISTERED_RECEIPT,
                 first_delay_days=7,
                 repeat_interval_days=7,
+                lookback_days=None,
             ),
         ),
         user_candidates=(
@@ -85,6 +87,7 @@ async def test_scheduler_filters_marketing_candidates_without_marketing_consent(
     assert created.resource_id is None
     assert created.metadata == {"receiptCount": "0"}
     _assert_no_scheduler_internal_metadata(created.metadata)
+    assert fixture.receipt_activity_reader.queries[0].recent_since is None
 
 
 async def test_scheduler_dry_run_does_not_write_notifications_or_occurrences() -> None:
@@ -125,6 +128,94 @@ async def test_scheduler_creates_distinct_occurrences_for_distinct_receipts() ->
         RECEIPT_ID,
         OTHER_RECEIPT_ID,
     }
+
+
+async def test_scheduler_filters_rules_by_campaign_key() -> None:
+    # Given: 서로 다른 D-day 규칙과 각각의 만료 예정 영수증이 있다.
+    fixture = SchedulerFixture(
+        rules=(
+            warranty_rule(campaign_key="warranty_d7", day_offset=7),
+            warranty_rule(campaign_key="warranty_d10", day_offset=10),
+        ),
+        warranty_candidates=(
+            warranty_candidate(receipt_id=RECEIPT_ID),
+            warranty_candidate(
+                receipt_id=OTHER_RECEIPT_ID,
+                expires_on=date(2026, 7, 19),
+                days_until_expiry=10,
+            ),
+        ),
+    )
+
+    # When: 특정 campaign key만 지정해 실행한다.
+    result = await fixture.use_case.execute(schedule_command(campaign_key="warranty_d10"))
+
+    # Then: 대상 규칙과 영수증만 집계 및 생성한다.
+    assert tuple(summary.campaign_key for summary in result.rules) == ("warranty_d10",)
+    assert result.created == 1
+    assert fixture.notification_repository.created[0].command.resource_id == OTHER_RECEIPT_ID
+
+
+async def test_scheduler_iterates_multiple_warranty_and_user_fact_pages() -> None:
+    # Given: batch size보다 많은 warranty와 가입 사실 후보가 있다.
+    fixture = SchedulerFixture(
+        rules=(
+            warranty_rule(campaign_key="warranty_d7", day_offset=7),
+            engagement_rule(
+                campaign_key="engagement_all_users_14d",
+                target_kind=ScheduleRuleTargetKind.ENGAGEMENT_ALL_USER,
+                first_delay_days=14,
+                repeat_interval_days=14,
+            ),
+        ),
+        warranty_candidates=(
+            warranty_candidate(receipt_id=RECEIPT_ID),
+            warranty_candidate(receipt_id=OTHER_RECEIPT_ID),
+        ),
+        user_candidates=(
+            user_candidate(user_id=CONSENT_USER_ID, days_since_joined=14),
+            user_candidate(user_id=NO_CONSENT_USER_ID, days_since_joined=14),
+        ),
+        settings=consent_settings(CONSENT_USER_ID, NO_CONSENT_USER_ID),
+    )
+
+    # When: 한 건씩 page를 읽도록 실행한다.
+    result = await fixture.use_case.execute(schedule_command(batch_size=1))
+
+    # Then: warranty와 users query가 모두 다음 page까지 순회한다.
+    assert result.created == 4
+    assert len(fixture.expiring_receipts_reader.queries) == 2
+    assert len(fixture.user_registration_facts_reader.queries) == 2
+
+
+async def test_scheduler_creates_inactive_receipt_reminder_with_receipt_count() -> None:
+    # Given: 최근 영수증이 없는 가입 7일 사용자와 기존 영수증 활동 사실이 있다.
+    fixture = SchedulerFixture(
+        rules=(
+            engagement_rule(
+                campaign_key="engagement_inactive_receipt_7d",
+                target_kind=ScheduleRuleTargetKind.ENGAGEMENT_INACTIVE_RECEIPT,
+                first_delay_days=None,
+                repeat_interval_days=7,
+                lookback_days=7,
+            ),
+        ),
+        user_candidates=(user_candidate(user_id=CONSENT_USER_ID, days_since_joined=7),),
+        receipt_activity_candidates=(activity_candidate(user_id=CONSENT_USER_ID, receipt_count=3),),
+        settings=consent_settings(CONSENT_USER_ID),
+    )
+
+    # When: due notifications를 생성한다.
+    result = await fixture.use_case.execute(schedule_command())
+
+    # Then: inactive delivery contract와 receiptCount metadata를 보존한다.
+    assert result.created == 1
+    created = fixture.notification_repository.created[0].command
+    assert created.kind == "receipt_inactivity_reminder"
+    assert created.metadata == {"receiptCount": "3"}
+    assert fixture.receipt_activity_reader.queries[0].recent_since == datetime(
+        2026, 7, 2, 0, 0, tzinfo=SYSTEM_TIMEZONE
+    )
 
 
 def test_scheduler_cli_accepts_explicit_dry_run_false_for_ops_command() -> None:

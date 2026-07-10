@@ -5,10 +5,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.application.event_publisher import EventPublisher, NoOpEventPublisher
 from app.core.application.unit_of_work import UnitOfWork
+from app.core.db.outbox.publisher import OutboxEventPublisher
 from app.core.db.session import AsyncSessionDep
 from app.core.db.unit_of_work import SqlAlchemyUnitOfWork
+from app.modules.notifications.application.commands.create_due_notifications.use_case import (
+    CreateDueNotificationsCommandUseCase,
+)
 from app.modules.notifications.application.commands.create_notification.use_case import (
     CreateNotificationCommandUseCase,
+    NotificationCreator,
 )
 from app.modules.notifications.application.commands.delete_user_push_tokens.use_case import (
     DeleteUserPushTokensCommandUseCase,
@@ -39,7 +44,9 @@ from app.modules.notifications.application.queries.list_notifications.use_case i
 )
 from app.modules.notifications.infrastructure.persistence.repository import (
     SqlAlchemyNotificationRepository,
+    SqlAlchemyNotificationScheduleRuleRepository,
     SqlAlchemyPushTokenRepository,
+    SqlAlchemyScheduleOccurrenceRepository,
 )
 from app.modules.notifications.push_dependencies import (
     NotificationPushDispatcher,
@@ -50,16 +57,18 @@ from app.modules.notifications.push_dependencies import (
     get_notification_push_dispatcher,
     get_push_sender,
 )
-from app.modules.notifications.scheduler_dependencies import (
-    build_schedule_push_notifications_command_use_case,
+from app.modules.receipts.dependencies import (
+    build_get_receipt_activity_for_users_query_use_case,
+    build_list_receipts_expiring_on_query_use_case,
 )
+from app.modules.users.dependencies import build_list_user_registration_facts_query_use_case
 
 __all__ = (
     "NotificationPushDispatcher",
+    "build_create_due_notifications_command_use_case",
     "build_notification_event_dispatcher",
     "build_notification_event_registry",
     "build_notification_outbox_relay",
-    "build_schedule_push_notifications_command_use_case",
     "get_notification_push_dispatcher",
     "get_push_sender",
 )
@@ -75,6 +84,30 @@ async def get_push_token_repository(session: AsyncSessionDep) -> PushTokenReposi
 
 async def get_unit_of_work(session: AsyncSessionDep) -> UnitOfWork:
     return SqlAlchemyUnitOfWork(session)
+
+
+def build_create_due_notifications_command_use_case(
+    session: AsyncSession,
+    unit_of_work: UnitOfWork,
+) -> CreateDueNotificationsCommandUseCase:
+    notification_repository = SqlAlchemyNotificationRepository(session)
+    notification_creator = NotificationCreator(
+        notification_repository=notification_repository,
+        event_publisher=OutboxEventPublisher(
+            session=session,
+            registry=build_notification_event_registry(),
+        ),
+    )
+    return CreateDueNotificationsCommandUseCase(
+        schedule_rule_repository=SqlAlchemyNotificationScheduleRuleRepository(session),
+        occurrence_repository=SqlAlchemyScheduleOccurrenceRepository(session),
+        notification_repository=notification_repository,
+        list_receipts_expiring_on=build_list_receipts_expiring_on_query_use_case(session),
+        get_receipt_activity_for_users=build_get_receipt_activity_for_users_query_use_case(session),
+        list_user_registration_facts=build_list_user_registration_facts_query_use_case(session),
+        notification_creator=notification_creator,
+        unit_of_work=unit_of_work,
+    )
 
 
 def build_update_notification_settings_command_use_case(

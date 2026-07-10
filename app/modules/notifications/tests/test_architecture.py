@@ -4,7 +4,9 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parents[4]
 APP_MODULES_ROOT = PROJECT_ROOT / "app" / "modules"
 NOTIFICATIONS_ROOT = APP_MODULES_ROOT / "notifications"
-SCHEDULER_ROOT = NOTIFICATIONS_ROOT / "application" / "commands" / "schedule_push_notifications"
+CREATE_DUE_NOTIFICATIONS_ROOT = (
+    NOTIFICATIONS_ROOT / "application" / "commands" / "create_due_notifications"
+)
 SCHEDULER_AGNOSTIC_FILES = (
     NOTIFICATIONS_ROOT / "domain" / "model.py",
     NOTIFICATIONS_ROOT / "application" / "commands" / "create_notification" / "command.py",
@@ -12,11 +14,13 @@ SCHEDULER_AGNOSTIC_FILES = (
 )
 
 
-def test_notification_scheduler_does_not_invoke_fcm_directly() -> None:
-    scheduler_paths = (
-        *tuple(SCHEDULER_ROOT.glob("*.py")),
+def test_due_notification_flow_does_not_invoke_fcm_directly() -> None:
+    due_notification_paths = (
+        *tuple(CREATE_DUE_NOTIFICATIONS_ROOT.glob("*.py")),
+        NOTIFICATIONS_ROOT / "application" / "due_notification.py",
+        NOTIFICATIONS_ROOT / "application" / "warranty_expiry_notifications.py",
+        NOTIFICATIONS_ROOT / "application" / "receipt_reminder_notifications.py",
         NOTIFICATIONS_ROOT / "jobs" / "schedule_push_notifications.py",
-        NOTIFICATIONS_ROOT / "scheduler_dependencies.py",
     )
     forbidden_terms = (
         "firebase_admin",
@@ -29,7 +33,7 @@ def test_notification_scheduler_does_not_invoke_fcm_directly() -> None:
         "send_notification_push",
     )
 
-    for path in scheduler_paths:
+    for path in due_notification_paths:
         source = path.read_text(encoding="utf-8")
         for term in forbidden_terms:
             assert term not in source, f"{path.relative_to(PROJECT_ROOT)} imports {term}"
@@ -43,17 +47,57 @@ def test_app_main_does_not_wire_notification_scheduler_loop_or_route() -> None:
     assert "build_schedule_push_notifications_command_use_case" not in source
 
 
-def test_notification_scheduler_rules_do_not_depend_on_credits() -> None:
-    scheduler_paths = (
-        *tuple(SCHEDULER_ROOT.glob("*.py")),
-        NOTIFICATIONS_ROOT / "application" / "schedule_rule_seed.py",
+def test_due_notification_flow_does_not_depend_on_credits_or_foreign_repositories() -> None:
+    due_notification_paths = (
+        *tuple(CREATE_DUE_NOTIFICATIONS_ROOT.glob("*.py")),
+        NOTIFICATIONS_ROOT / "application" / "due_notification.py",
+        NOTIFICATIONS_ROOT / "application" / "warranty_expiry_notifications.py",
+        NOTIFICATIONS_ROOT / "application" / "receipt_reminder_notifications.py",
         NOTIFICATIONS_ROOT / "jobs" / "schedule_push_notifications.py",
-        NOTIFICATIONS_ROOT / "scheduler_dependencies.py",
     )
 
-    for path in scheduler_paths:
+    forbidden_imports = (
+        "app.modules.credits",
+        "ReceiptRepository",
+        "UserRepository",
+        "receipt_repository",
+        "user_repository",
+    )
+    for path in due_notification_paths:
         source = path.read_text(encoding="utf-8")
-        assert "app.modules.credits" not in source, path.relative_to(PROJECT_ROOT)
+        for forbidden_import in forbidden_imports:
+            assert forbidden_import not in source, path.relative_to(PROJECT_ROOT)
+
+
+def test_due_notification_command_package_has_only_public_command_files() -> None:
+    assert not (
+        NOTIFICATIONS_ROOT / "application" / "commands" / "schedule_push_notifications"
+    ).exists()
+    assert tuple(
+        sorted(path.name for path in CREATE_DUE_NOTIFICATIONS_ROOT.iterdir() if path.is_file())
+    ) == (
+        "__init__.py",
+        "command.py",
+        "result.py",
+        "use_case.py",
+    )
+
+
+def test_due_notification_builder_has_no_fcm_or_foreign_repository_dependency() -> None:
+    source = _function_source(
+        NOTIFICATIONS_ROOT / "dependencies.py",
+        "build_create_due_notifications_command_use_case",
+    )
+    for forbidden_term in (
+        "FcmPushSender",
+        "firebase_admin",
+        "get_push_sender",
+        "ReceiptRepository",
+        "UserRepository",
+        "build_receipt_repository",
+        "build_user_repository",
+    ):
+        assert forbidden_term not in source
 
 
 def test_notification_schedule_rule_product_code_has_no_campaign_policy_names() -> None:
@@ -142,3 +186,14 @@ def _imported_modules(path: Path) -> tuple[str, ...]:
         if isinstance(node, ast.Import):
             modules.extend(alias.name for alias in node.names)
     return tuple(modules)
+
+
+def _function_source(path: Path, function_name: str) -> str:
+    source = path.read_text(encoding="utf-8")
+    tree = ast.parse(source, filename=str(path))
+    for node in tree.body:
+        if isinstance(node, ast.FunctionDef) and node.name == function_name:
+            segment = ast.get_source_segment(source, node)
+            assert segment is not None
+            return segment
+    raise AssertionError(f"{path.relative_to(PROJECT_ROOT)}에 {function_name}가 없습니다.")

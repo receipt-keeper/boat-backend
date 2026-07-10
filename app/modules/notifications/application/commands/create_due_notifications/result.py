@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 
 @dataclass(frozen=True, slots=True)
-class SchedulePushNotificationRuleSummary:
+class CreateDueNotificationRuleSummary:
     campaign_key: str
     candidates: int
     created: int
@@ -11,8 +11,8 @@ class SchedulePushNotificationRuleSummary:
 
 
 @dataclass(frozen=True, slots=True)
-class SchedulePushNotificationsResult:
-    rules: tuple[SchedulePushNotificationRuleSummary, ...]
+class CreateDueNotificationsResult:
+    rules: tuple[CreateDueNotificationRuleSummary, ...]
     candidates: int
     created: int
     skipped: int

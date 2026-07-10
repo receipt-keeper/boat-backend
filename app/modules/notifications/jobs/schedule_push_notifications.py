@@ -10,27 +10,27 @@ from app.core.config.settings import get_settings
 from app.core.db.session import build_engine, build_session_factory
 from app.core.db.unit_of_work import SqlAlchemyUnitOfWork
 from app.core.domain.exceptions import ValidationError
-from app.modules.notifications.application.commands.schedule_push_notifications.command import (
-    SchedulePushNotificationsCommand,
+from app.modules.notifications.application.commands.create_due_notifications.command import (
+    CreateDueNotificationsCommand,
 )
-from app.modules.notifications.application.commands.schedule_push_notifications.result import (
-    SchedulePushNotificationsResult,
+from app.modules.notifications.application.commands.create_due_notifications.result import (
+    CreateDueNotificationsResult,
 )
 from app.modules.notifications.dependencies import (
-    build_schedule_push_notifications_command_use_case,
+    build_create_due_notifications_command_use_case,
 )
 
 logger = logging.getLogger(__name__)
 
 
-async def run(command: SchedulePushNotificationsCommand) -> SchedulePushNotificationsResult:
+async def run(command: CreateDueNotificationsCommand) -> CreateDueNotificationsResult:
     settings = get_settings()
     engine = build_engine(settings.database_url)
     try:
         sessions = build_session_factory(engine)
         async with sessions() as session:
             unit_of_work = SqlAlchemyUnitOfWork(session)
-            use_case = build_schedule_push_notifications_command_use_case(
+            use_case = build_create_due_notifications_command_use_case(
                 session,
                 unit_of_work,
             )
@@ -53,7 +53,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     print(json.dumps(_summary(result), ensure_ascii=False, sort_keys=True))
 
 
-def _parse_command(argv: Sequence[str] | None) -> SchedulePushNotificationsCommand:
+def _parse_command(argv: Sequence[str] | None) -> CreateDueNotificationsCommand:
     parser = argparse.ArgumentParser(
         prog="python -m app.modules.notifications.jobs.schedule_push_notifications"
     )
@@ -70,7 +70,7 @@ def _parse_command(argv: Sequence[str] | None) -> SchedulePushNotificationsComma
     parser.add_argument("--batch-size", type=_parse_batch_size, default=100)
     args = parser.parse_args(argv)
     try:
-        return SchedulePushNotificationsCommand(
+        return CreateDueNotificationsCommand(
             target_date=args.target_date,
             now=args.now,
             campaign_key=args.campaign_key,
@@ -118,7 +118,7 @@ def _parse_bool(value: str) -> bool:
 
 
 def _summary(
-    result: SchedulePushNotificationsResult,
+    result: CreateDueNotificationsResult,
 ) -> dict[
     str,
     bool | int | list[dict[str, int | str]],

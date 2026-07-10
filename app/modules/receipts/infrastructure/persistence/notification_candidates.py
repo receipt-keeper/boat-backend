@@ -1,17 +1,29 @@
 from dataclasses import dataclass
-from datetime import UTC, datetime, time, timedelta
+from datetime import datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.receipts.application.ports.receipt_repository import (
-    ReceiptRegistrationActivityCandidate,
-    ReceiptRegistrationActivityPage,
-    ReceiptRegistrationActivityQuery,
-    WarrantyNotificationCandidate,
-    WarrantyNotificationCandidatePage,
-    WarrantyNotificationCandidateQuery,
+from app.modules.receipts.application.queries.get_receipt_activity_for_users.port import (
+    ReceiptActivityForUsersReader,
+)
+from app.modules.receipts.application.queries.get_receipt_activity_for_users.query import (
+    GetReceiptActivityForUsersQuery,
+)
+from app.modules.receipts.application.queries.get_receipt_activity_for_users.result import (
+    ReceiptActivity,
+    ReceiptActivityPage,
+)
+from app.modules.receipts.application.queries.list_receipts_expiring_on.port import (
+    ReceiptsExpiringOnReader,
+)
+from app.modules.receipts.application.queries.list_receipts_expiring_on.query import (
+    ListReceiptsExpiringOnQuery,
+)
+from app.modules.receipts.application.queries.list_receipts_expiring_on.result import (
+    ExpiringReceipt,
+    ExpiringReceiptsPage,
 )
 from app.modules.receipts.infrastructure.persistence import orm
 
@@ -22,80 +34,87 @@ class _ReceiptActivityAggregate:
     last_receipt_created_at: datetime
 
 
-async def list_warranty_notification_candidates(
-    *,
-    session: AsyncSession,
-    query: WarrantyNotificationCandidateQuery,
-) -> WarrantyNotificationCandidatePage:
-    target_expires_on = query.target_date + timedelta(days=query.offset_days)
-    conditions = [orm.Receipt.expires_on == target_expires_on]
-    if query.cursor_receipt_id is not None:
-        conditions.append(orm.Receipt.id > query.cursor_receipt_id)
+class SqlAlchemyExpiringReceiptsReader(ReceiptsExpiringOnReader):
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
 
-    records = tuple(
-        await session.scalars(
-            select(orm.Receipt)
-            .where(*conditions)
-            .order_by(orm.Receipt.id.asc())
-            .limit(query.limit + 1)
+    async def list_receipts_expiring_on(
+        self,
+        *,
+        query: ListReceiptsExpiringOnQuery,
+    ) -> ExpiringReceiptsPage:
+        target_expires_on = query.target_date + timedelta(days=query.offset_days)
+        conditions = [orm.Receipt.expires_on == target_expires_on]
+        if query.cursor_receipt_id is not None:
+            conditions.append(orm.Receipt.id > query.cursor_receipt_id)
+
+        records = tuple(
+            await self._session.scalars(
+                select(orm.Receipt)
+                .where(*conditions)
+                .order_by(orm.Receipt.id.asc())
+                .limit(query.limit + 1)
+            )
         )
-    )
-    page_records = records[: query.limit]
-    has_next = len(records) > query.limit
-    return WarrantyNotificationCandidatePage(
-        candidates=tuple(_warranty_candidate(record, query=query) for record in page_records),
-        next_cursor_receipt_id=page_records[-1].id if has_next and page_records else None,
-        has_next=has_next,
-        limit=query.limit,
-    )
-
-
-async def list_receipt_registration_activity_candidates(
-    *,
-    session: AsyncSession,
-    query: ReceiptRegistrationActivityQuery,
-) -> ReceiptRegistrationActivityPage:
-    user_ids = _pageable_user_ids(query)
-    if not user_ids:
-        return ReceiptRegistrationActivityPage(
-            candidates=(),
-            next_cursor_user_id=None,
-            has_next=False,
+        page_records = records[: query.limit]
+        has_next = len(records) > query.limit
+        return ExpiringReceiptsPage(
+            receipts=tuple(_expiring_receipt(record, query=query) for record in page_records),
+            next_cursor_receipt_id=page_records[-1].id if has_next and page_records else None,
+            has_next=has_next,
             limit=query.limit,
         )
 
-    aggregates = await _activity_aggregates(session=session, user_ids=user_ids)
-    recent_cutoff = datetime.combine(query.target_date, time.min, tzinfo=UTC) - timedelta(
-        days=query.recent_days
-    )
-    candidates = tuple(
-        candidate
-        for user_id in user_ids
-        if (
-            candidate := _activity_candidate(
-                user_id=user_id,
-                aggregate=aggregates.get(user_id),
-                recent_cutoff=recent_cutoff,
+
+class SqlAlchemyReceiptActivityForUsersReader(ReceiptActivityForUsersReader):
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def get_receipt_activity_for_users(
+        self,
+        *,
+        query: GetReceiptActivityForUsersQuery,
+    ) -> ReceiptActivityPage:
+        user_ids = _pageable_user_ids(query)
+        if not user_ids:
+            return ReceiptActivityPage(
+                activities=(),
+                next_cursor_user_id=None,
+                has_next=False,
+                limit=query.limit,
             )
+
+        aggregates = await _activity_aggregates(session=self._session, user_ids=user_ids)
+        activities = tuple(
+            activity
+            for user_id in user_ids
+            if (
+                activity := _receipt_activity(
+                    user_id=user_id,
+                    aggregate=aggregates.get(user_id),
+                    recent_since=query.recent_since,
+                )
+            )
+            is not None
         )
-        is not None
-    )
-    page_candidates = candidates[: query.limit]
-    has_next = len(candidates) > query.limit
-    return ReceiptRegistrationActivityPage(
-        candidates=page_candidates,
-        next_cursor_user_id=page_candidates[-1].user_id if has_next and page_candidates else None,
-        has_next=has_next,
-        limit=query.limit,
-    )
+        page_activities = activities[: query.limit]
+        has_next = len(activities) > query.limit
+        return ReceiptActivityPage(
+            activities=page_activities,
+            next_cursor_user_id=(
+                page_activities[-1].user_id if has_next and page_activities else None
+            ),
+            has_next=has_next,
+            limit=query.limit,
+        )
 
 
-def _warranty_candidate(
+def _expiring_receipt(
     record: orm.Receipt,
     *,
-    query: WarrantyNotificationCandidateQuery,
-) -> WarrantyNotificationCandidate:
-    return WarrantyNotificationCandidate(
+    query: ListReceiptsExpiringOnQuery,
+) -> ExpiringReceipt:
+    return ExpiringReceipt(
         user_id=record.user_id,
         receipt_id=record.id,
         item_name=record.item_name,
@@ -104,7 +123,7 @@ def _warranty_candidate(
     )
 
 
-def _pageable_user_ids(query: ReceiptRegistrationActivityQuery) -> tuple[UUID, ...]:
+def _pageable_user_ids(query: GetReceiptActivityForUsersQuery) -> tuple[UUID, ...]:
     return tuple(
         user_id
         for user_id in sorted(set(query.user_ids))
@@ -135,24 +154,24 @@ async def _activity_aggregates(
     }
 
 
-def _activity_candidate(
+def _receipt_activity(
     *,
     user_id: UUID,
     aggregate: _ReceiptActivityAggregate | None,
-    recent_cutoff: datetime,
-) -> ReceiptRegistrationActivityCandidate | None:
+    recent_since: datetime | None,
+) -> ReceiptActivity | None:
     if aggregate is None:
-        return ReceiptRegistrationActivityCandidate(
+        return ReceiptActivity(
             user_id=user_id,
             last_receipt_created_at=None,
             receipt_count=0,
             cursor_user_id=user_id,
         )
 
-    if aggregate.last_receipt_created_at >= recent_cutoff:
+    if recent_since is not None and aggregate.last_receipt_created_at >= recent_since:
         return None
 
-    return ReceiptRegistrationActivityCandidate(
+    return ReceiptActivity(
         user_id=user_id,
         last_receipt_created_at=aggregate.last_receipt_created_at,
         receipt_count=aggregate.receipt_count,

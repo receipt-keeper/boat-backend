@@ -2,7 +2,7 @@
 
 ## 예약 푸시 알림 스케줄러
 
-예약 푸시 알림은 앱 lifespan에 의존하지 않는 외부 스케줄러가 실행한다. 운영 cron, Kubernetes CronJob, EventBridge-equivalent에서 아래 명령을 자주 실행해 due schedule rule을 스캔한다.
+예약 푸시 알림은 앱 lifespan에 의존하지 않는 외부 스케줄러가 실행한다. 운영 cron, Kubernetes CronJob, EventBridge-equivalent에서 아래 명령을 자주 실행해 due notification 생성 규칙을 스캔한다.
 
 ```bash
 uv run python -m app.modules.notifications.jobs.schedule_push_notifications --target-date 2026-07-09 --dry-run=false
@@ -10,7 +10,7 @@ uv run python -m app.modules.notifications.jobs.schedule_push_notifications --ta
 
 권장 주기는 5분마다 또는 그보다 짧은 주기다. 같은 시각에 겹쳐 실행되지 않도록 Kubernetes CronJob을 쓴다면 `concurrencyPolicy: Forbid`를 둔다. 다른 스케줄러도 동일하게 single-flight 실행을 보장한다.
 
-스케줄러는 stdout JSON과 info 로그에 `candidates`, `created`, `skipped`, `failed` 집계를 남긴다. stdout JSON의 `rules` 배열은 schedule rule별 `campaignKey`, 후보 수, 생성/스킵/실패 수를 담는다. 운영 알림은 `failed > 0` 또는 후보가 장시간 0으로 고정되는 경우를 우선 감시한다.
+스케줄러는 stdout JSON과 info 로그에 `candidates`, `created`, `skipped`, `failed` 집계를 남긴다. stdout JSON의 `rules` 배열은 생성 규칙별 `campaignKey`, 후보 수, 생성/스킵/실패 수를 담는다. `ValidationError` 후보는 rollback 후 `failed`로 집계하고 다음 후보를 계속 처리한다. 그 밖의 조회·예약·생성·outbox·bind·commit 오류는 rollback 후 잡을 실패시킨다. 운영 알림은 `failed > 0` 또는 후보가 장시간 0으로 고정되는 경우를 우선 감시한다.
 
 정책 데이터 변경은 DB의 schedule rule 값을 갱신한다. `day_offset`, `first_delay_days`, `repeat_interval_days`, `lookback_days`, `send_time_local`, `requires_marketing_consent`, `title_template`, `body_template`가 보증 D-day, 가입 지연, 반복 간격, 조회 기간, 발송 시각, 동의 필터, 카피를 결정한다. 코드 배포 없이 정책을 바꾸되, 변경 전후 dry-run으로 후보 수를 확인한다.
 

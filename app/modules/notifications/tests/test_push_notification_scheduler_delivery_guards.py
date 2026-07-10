@@ -86,24 +86,6 @@ async def test_scheduler_rule_copy_or_send_time_change_does_not_bypass_same_occu
     assert len(fixture.notification_repository.created) == 1
 
 
-async def test_scheduler_rolls_back_reserved_occurrence_on_handled_create_failure() -> None:
-    # Given: notification create/publish 단계가 typed failure를 던지도록 주입한다.
-    fixture = SchedulerFixture(
-        rules=(warranty_rule(campaign_key="warranty_risk_d7", day_offset=7),),
-        warranty_candidates=(warranty_candidate(),),
-        fail_creates=True,
-    )
-
-    # When: scheduler를 실행한다.
-    result = await fixture.use_case.execute(schedule_command())
-
-    # Then: 실패로 집계하고 rollback을 호출한다.
-    assert result.candidates == 1
-    assert result.created == 0
-    assert result.failed == 1
-    assert fixture.unit_of_work.rollbacks == 1
-
-
 async def test_scheduler_still_gates_engagement_by_marketing_consent() -> None:
     # Given: consent가 없는 engagement 후보가 있다.
     fixture = SchedulerFixture(

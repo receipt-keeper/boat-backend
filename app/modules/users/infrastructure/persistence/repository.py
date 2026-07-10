@@ -1,16 +1,12 @@
 from uuid import UUID
 
-from sqlalchemy import and_, delete, or_, select
+from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.domain.exceptions import NotFoundError
 from app.modules.users.application.ports.user_repository import (
     CreateUserAccountState,
-    ListUserNotificationCandidatesQuery,
     UserAccountState,
-    UserNotificationCandidate,
-    UserNotificationCandidateCursor,
-    UserNotificationCandidatePage,
     UserRepository,
 )
 from app.modules.users.domain.model import User, UserSettings
@@ -83,52 +79,6 @@ class SqlAlchemyUserRepository(UserRepository):
         )
         await self._session.execute(delete(orm.User).where(orm.User.id == user_id))
 
-    async def list_notification_candidates(
-        self,
-        *,
-        query: ListUserNotificationCandidatesQuery,
-    ) -> UserNotificationCandidatePage:
-        statement = (
-            select(orm.User)
-            .order_by(orm.User.created_at.asc(), orm.User.id.asc())
-            .limit(query.batch_size + 1)
-        )
-        if query.created_after is not None:
-            statement = statement.where(orm.User.created_at >= query.created_after)
-        if query.created_before is not None:
-            statement = statement.where(orm.User.created_at < query.created_before)
-        if query.cursor is not None:
-            statement = statement.where(
-                or_(
-                    orm.User.created_at > query.cursor.created_at,
-                    and_(
-                        orm.User.created_at == query.cursor.created_at,
-                        orm.User.id > query.cursor.user_id,
-                    ),
-                )
-            )
-
-        result = await self._session.execute(statement)
-        records = tuple(result.scalars().all())
-        page_records = records[: query.batch_size]
-        candidates = tuple(
-            candidate
-            for record in page_records
-            for candidate in _notification_candidates(record=record, query=query)
-        )
-        next_cursor = (
-            UserNotificationCandidateCursor(
-                created_at=page_records[-1].created_at,
-                user_id=page_records[-1].id,
-            )
-            if len(records) > query.batch_size and page_records
-            else None
-        )
-        return UserNotificationCandidatePage(
-            candidates=candidates,
-            next_cursor=next_cursor,
-        )
-
     async def _account_state(
         self,
         *,
@@ -144,20 +94,3 @@ class SqlAlchemyUserRepository(UserRepository):
             user=mapper.user_to_domain(user_record),
             settings=settings,
         )
-
-
-def _notification_candidates(
-    *,
-    record: orm.User,
-    query: ListUserNotificationCandidatesQuery,
-) -> tuple[UserNotificationCandidate, ...]:
-    days_since_joined = (query.as_of - record.created_at.date()).days
-    return (
-        UserNotificationCandidate(
-            user_id=record.id,
-            created_at=record.created_at,
-            days_since_joined=days_since_joined,
-            cursor_created_at=record.created_at,
-            cursor_id=record.id,
-        ),
-    )

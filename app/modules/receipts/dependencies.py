@@ -19,8 +19,18 @@ from app.modules.receipts.application.ports.receipt_repository import ReceiptRep
 from app.modules.receipts.application.queries.get_receipt.use_case import (
     GetReceiptQueryUseCase,
 )
+from app.modules.receipts.application.queries.get_receipt_activity_for_users.use_case import (
+    GetReceiptActivityForUsersQueryUseCase,
+)
 from app.modules.receipts.application.queries.list_receipts.use_case import (
     ListReceiptsQueryUseCase,
+)
+from app.modules.receipts.application.queries.list_receipts_expiring_on.use_case import (
+    ListReceiptsExpiringOnQueryUseCase,
+)
+from app.modules.receipts.infrastructure.persistence.notification_candidates import (
+    SqlAlchemyExpiringReceiptsReader,
+    SqlAlchemyReceiptActivityForUsersReader,
 )
 from app.modules.receipts.infrastructure.persistence.repository import SqlAlchemyReceiptRepository
 
@@ -31,6 +41,20 @@ async def get_receipt_repository(session: AsyncSessionDep) -> ReceiptRepository:
 
 def build_receipt_repository(session: AsyncSession) -> ReceiptRepository:
     return SqlAlchemyReceiptRepository(session)
+
+
+def build_list_receipts_expiring_on_query_use_case(
+    session: AsyncSession,
+) -> ListReceiptsExpiringOnQueryUseCase:
+    return ListReceiptsExpiringOnQueryUseCase(reader=SqlAlchemyExpiringReceiptsReader(session))
+
+
+def build_get_receipt_activity_for_users_query_use_case(
+    session: AsyncSession,
+) -> GetReceiptActivityForUsersQueryUseCase:
+    return GetReceiptActivityForUsersQueryUseCase(
+        reader=SqlAlchemyReceiptActivityForUsersReader(session)
+    )
 
 
 async def get_unit_of_work(session: AsyncSessionDep) -> UnitOfWork:

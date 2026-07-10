@@ -1,10 +1,6 @@
 from collections.abc import Mapping
 from datetime import UTC, date, datetime, time
-from zoneinfo import ZoneInfo
 
-from app.modules.notifications.application.commands.schedule_push_notifications import (
-    schedule_rule_due,
-)
 from app.modules.notifications.domain.schedule_rule import ScheduleRuleTargetKind
 from app.modules.notifications.tests.scheduler_job_builders import (
     CONSENT_USER_ID,
@@ -40,7 +36,7 @@ async def test_scheduler_waits_until_rule_send_time() -> None:
     # Then: 해당 rule은 due가 아니므로 후보 조회와 쓰기가 없다.
     assert result.candidates == 0
     assert result.created == 0
-    assert fixture.receipt_repository.warranty_queries == []
+    assert fixture.expiring_receipts_reader.queries == []
     assert fixture.notification_repository.created == []
     assert fixture.occurrence_repository.reserved == {}
 
@@ -79,7 +75,7 @@ async def test_scheduler_uses_mutable_rule_offset_join_delay_and_repeat_data() -
     # Then: rule offset/join-delay/repeat 기준으로 두 캠페인이 생성된다.
     assert result.candidates == 2
     assert result.created == 2
-    assert fixture.receipt_repository.warranty_queries[0].offset_days == 10
+    assert fixture.expiring_receipts_reader.queries[0].offset_days == 10
     commands = [created.command for created in fixture.notification_repository.created]
     assert [command.kind for command in commands] == [
         "warranty_expiry",
@@ -143,7 +139,7 @@ async def test_scheduler_allows_historical_target_date_without_matching_now() ->
 
     # Then: historical backfill은 현재 send_time과 무관하게 due다.
     assert result.created == 1
-    assert fixture.receipt_repository.warranty_queries[0].target_date == date(2026, 7, 9)
+    assert fixture.expiring_receipts_reader.queries[0].target_date == date(2026, 7, 9)
 
 
 async def test_scheduler_uses_kst_midnight_for_current_target_date() -> None:
@@ -166,7 +162,7 @@ async def test_scheduler_uses_kst_midnight_for_current_target_date() -> None:
 
     # Then: UTC 날짜가 아니라 KST 날짜인 7/9가 스캔된다.
     assert result.created == 1
-    assert fixture.receipt_repository.warranty_queries[0].target_date == date(2026, 7, 9)
+    assert fixture.expiring_receipts_reader.queries[0].target_date == date(2026, 7, 9)
 
 
 async def test_scheduler_future_target_date_is_noop() -> None:
@@ -186,7 +182,7 @@ async def test_scheduler_future_target_date_is_noop() -> None:
 
     # Then: 미래 backfill은 실행하지 않는다.
     assert result.created == 0
-    assert fixture.receipt_repository.warranty_queries == []
+    assert fixture.expiring_receipts_reader.queries == []
 
 
 async def test_scheduler_enforces_send_time_for_today_in_kst() -> None:
@@ -221,32 +217,9 @@ async def test_scheduler_enforces_send_time_for_today_in_kst() -> None:
 
     # Then: 오늘 KST는 send_time_local 전에는 no-op, 이후에는 due다.
     assert before.created == 0
-    assert before_fixture.receipt_repository.warranty_queries == []
+    assert before_fixture.expiring_receipts_reader.queries == []
     assert after.created == 1
-    assert after_fixture.receipt_repository.warranty_queries[0].target_date == date(2026, 7, 9)
-
-
-def test_due_schedule_rule_builds_kst_scheduled_for() -> None:
-    # Given: KST 시스템 send_time rule이 있다.
-    rule = warranty_rule(campaign_key="warranty_risk_d7", day_offset=7)
-    command = schedule_command(
-        target_date=date(2026, 7, 9),
-        now=datetime(2026, 7, 9, 0, 0, tzinfo=UTC),
-    )
-
-    # When: due rule을 계산한다.
-    due_rule = schedule_rule_due.due_schedule_rule(rule=rule, command=command)
-
-    # Then: scheduled_for는 rule의 KST local send time을 가진 aware datetime이다.
-    assert due_rule is not None
-    assert due_rule.scheduled_for == datetime(
-        2026,
-        7,
-        9,
-        9,
-        0,
-        tzinfo=ZoneInfo("Asia/Seoul"),
-    )
+    assert after_fixture.expiring_receipts_reader.queries[0].target_date == date(2026, 7, 9)
 
 
 async def test_scheduler_uses_21_day_rule_cadence_without_user_bucket_code_change() -> None:

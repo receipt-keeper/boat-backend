@@ -1,102 +1,48 @@
 import ast
-from collections.abc import Callable
-from datetime import date
 from pathlib import Path
-from uuid import UUID
 
-import pytest
-
-from app.core.domain.exceptions import ValidationError
-from app.modules.receipts.application.ports.receipt_repository import (
-    ReceiptRegistrationActivityQuery,
-    WarrantyNotificationCandidateQuery,
+_RECEIPTS_ROOT = Path(__file__).parents[1]
+_RECEIPT_REPOSITORY = _RECEIPTS_ROOT / "application" / "ports" / "receipt_repository.py"
+_QUERY_PATHS = (
+    _RECEIPTS_ROOT / "application" / "queries" / "list_receipts_expiring_on" / "query.py",
+    _RECEIPTS_ROOT / "application" / "queries" / "get_receipt_activity_for_users" / "query.py",
+)
+_LEGACY_SCHEDULER_SYMBOLS = (
+    "WarrantyNotificationCandidate",
+    "ReceiptRegistrationActivity",
+    "list_warranty_notification_candidates",
+    "list_receipt_registration_activity_candidates",
 )
 
-_RECEIPT_REPOSITORY = Path(__file__).parents[1] / "application" / "ports" / "receipt_repository.py"
-_SCHEDULER_CANDIDATE_QUERY_NAMES = {
-    "WarrantyNotificationCandidateQuery",
-    "ReceiptRegistrationActivityQuery",
-}
-_TARGET_DATE = date(2026, 7, 9)
-_USER_ID = UUID("00000000-0000-0000-0000-000000000101")
-type _MalformedQueryFactory = Callable[
-    [],
-    WarrantyNotificationCandidateQuery | ReceiptRegistrationActivityQuery,
-]
+
+def test_receipt_repository_excludes_scheduler_read_contracts() -> None:
+    repository_source = _RECEIPT_REPOSITORY.read_text()
+
+    assert all(symbol not in repository_source for symbol in _LEGACY_SCHEDULER_SYMBOLS)
 
 
-@pytest.mark.parametrize(
-    ("make_query", "expected_details"),
-    [
-        (
-            lambda: WarrantyNotificationCandidateQuery(
-                target_date=_TARGET_DATE,
-                offset_days=-1,
-                limit=10,
-            ),
-            [("offsetDays", "보증 알림 후보 조회 offsetDays가 올바르지 않습니다.")],
-        ),
-        (
-            lambda: WarrantyNotificationCandidateQuery(
-                target_date=_TARGET_DATE,
-                offset_days=30,
-                limit=0,
-            ),
-            [("batchSize", "보증 알림 후보 조회 batchSize가 올바르지 않습니다.")],
-        ),
-        (
-            lambda: ReceiptRegistrationActivityQuery(
-                user_ids=(_USER_ID,),
-                target_date=_TARGET_DATE,
-                limit=-1,
-                recent_days=7,
-            ),
-            [("batchSize", "영수증 등록 활동 후보 조회 batchSize가 올바르지 않습니다.")],
-        ),
-        (
-            lambda: ReceiptRegistrationActivityQuery(
-                user_ids=(_USER_ID,),
-                target_date=_TARGET_DATE,
-                limit=10,
-                recent_days=0,
-            ),
-            [("recentDays", "영수증 등록 활동 후보 조회 recentDays가 올바르지 않습니다.")],
-        ),
-        (
-            lambda: ReceiptRegistrationActivityQuery(
-                user_ids=(_USER_ID,),
-                target_date=_TARGET_DATE,
-                limit=10,
-                recent_days=-1,
-            ),
-            [("recentDays", "영수증 등록 활동 후보 조회 recentDays가 올바르지 않습니다.")],
-        ),
-    ],
-)
-def test_candidate_queries_reject_malformed_inputs_with_domain_validation(
-    make_query: _MalformedQueryFactory,
-    expected_details: list[tuple[str, str]],
-) -> None:
-    with pytest.raises(ValidationError) as error:
-        make_query()
-
-    assert [(detail.field, detail.message) for detail in error.value.details] == expected_details
-
-
-def test_scheduler_candidate_queries_do_not_raise_bare_value_error() -> None:
-    tree = ast.parse(_RECEIPT_REPOSITORY.read_text())
-    query_classes = [
-        node
-        for node in tree.body
-        if isinstance(node, ast.ClassDef) and node.name in _SCHEDULER_CANDIDATE_QUERY_NAMES
+def test_receipts_module_has_no_stale_scheduler_read_contract_imports() -> None:
+    production_paths = (
+        *(_RECEIPTS_ROOT / "application").rglob("*.py"),
+        *(_RECEIPTS_ROOT / "infrastructure").rglob("*.py"),
+        _RECEIPTS_ROOT / "dependencies.py",
+    )
+    offending_files = [
+        path.relative_to(_RECEIPTS_ROOT).as_posix()
+        for path in production_paths
+        if any(symbol in path.read_text() for symbol in _LEGACY_SCHEDULER_SYMBOLS)
     ]
 
-    assert {node.name for node in query_classes} == _SCHEDULER_CANDIDATE_QUERY_NAMES
-    for query_class in query_classes:
-        for node in ast.walk(query_class):
-            assert not (
-                isinstance(node, ast.Raise)
-                and isinstance(node.exc, ast.Call)
-                and isinstance(node.exc.func, ast.Name)
-                and node.exc.func.id == "ValueError"
-            )
+    assert offending_files == []
+
+
+def test_scheduler_facing_query_contracts_do_not_raise_bare_value_error() -> None:
+    for query_path in _QUERY_PATHS:
+        tree = ast.parse(query_path.read_text())
+        assert not any(
+            isinstance(node, ast.Raise)
+            and isinstance(node.exc, ast.Call)
+            and isinstance(node.exc.func, ast.Name)
+            and node.exc.func.id == "ValueError"
+            for node in ast.walk(tree)
+        )

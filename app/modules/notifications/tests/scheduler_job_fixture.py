@@ -1,27 +1,21 @@
+from collections.abc import Callable
 from uuid import UUID
 
 from app.core.application.event_publisher import NoOpEventPublisher
-from app.modules.notifications.application.commands.create_notification.command import (
-    CreateNotificationCommand,
-)
-from app.modules.notifications.application.commands.create_notification.result import (
-    CreateNotificationResult,
+from app.modules.notifications.application.commands.create_due_notifications.use_case import (
+    CreateDueNotificationsCommandUseCase,
 )
 from app.modules.notifications.application.commands.create_notification.use_case import (
     NotificationCreator,
 )
-from app.modules.notifications.application.commands.schedule_push_notifications.use_case import (
-    ScheduleNotificationCreationError,
-    SchedulePushNotificationsCommandUseCase,
-)
 from app.modules.notifications.domain.model import NotificationSettings
 from app.modules.notifications.domain.schedule_rule import NotificationScheduleRule
-from app.modules.notifications.tests.scheduler_job_builders import NOW
-from app.modules.notifications.tests.scheduler_job_candidate_repositories import (
-    ReceiptRepositoryFake,
-    UnitOfWorkFake,
-    UserRepositoryFake,
+from app.modules.notifications.tests.due_notification_query_fakes import (
+    ExpiringReceiptsReaderFake,
+    ReceiptActivityForUsersReaderFake,
+    UserRegistrationFactsReaderFake,
 )
+from app.modules.notifications.tests.scheduler_job_builders import NOW
 from app.modules.notifications.tests.scheduler_job_notification_repository import (
     NotificationRepositoryFake,
 )
@@ -29,16 +23,39 @@ from app.modules.notifications.tests.scheduler_job_occurrence_repositories impor
     OccurrenceRepositoryFake,
     ScheduleRuleRepositoryFake,
 )
-from app.modules.receipts.application.ports.receipt_repository import (
-    ReceiptRegistrationActivityCandidate,
-    WarrantyNotificationCandidate,
+from app.modules.receipts.application.queries.get_receipt_activity_for_users.result import (
+    ReceiptActivity,
 )
-from app.modules.users.application.ports.user_repository import UserNotificationCandidate
+from app.modules.receipts.application.queries.get_receipt_activity_for_users.use_case import (
+    GetReceiptActivityForUsersQueryUseCase,
+)
+from app.modules.receipts.application.queries.list_receipts_expiring_on.result import (
+    ExpiringReceipt,
+)
+from app.modules.receipts.application.queries.list_receipts_expiring_on.use_case import (
+    ListReceiptsExpiringOnQueryUseCase,
+)
+from app.modules.users.application.queries.list_user_registration_facts.result import (
+    UserRegistrationFact,
+)
+from app.modules.users.application.queries.list_user_registration_facts.use_case import (
+    ListUserRegistrationFactsQueryUseCase,
+)
 
 
-class FailingNotificationCreator:
-    async def create(self, command: CreateNotificationCommand) -> CreateNotificationResult:
-        raise ScheduleNotificationCreationError(campaign_key=command.kind)
+class UnitOfWorkFake:
+    def __init__(self, rollback_hook: Callable[[], None] | None = None) -> None:
+        self.commits = 0
+        self.rollbacks = 0
+        self._rollback_hook = rollback_hook
+
+    async def commit(self) -> None:
+        self.commits += 1
+
+    async def rollback(self) -> None:
+        self.rollbacks += 1
+        if self._rollback_hook is not None:
+            self._rollback_hook()
 
 
 class SchedulerFixture:
@@ -46,40 +63,45 @@ class SchedulerFixture:
         self,
         *,
         rules: tuple[NotificationScheduleRule, ...],
-        warranty_candidates: tuple[WarrantyNotificationCandidate, ...] = (),
-        user_candidates: tuple[UserNotificationCandidate, ...] = (),
-        receipt_activity_candidates: tuple[ReceiptRegistrationActivityCandidate, ...] = (),
+        warranty_candidates: tuple[ExpiringReceipt, ...] = (),
+        user_candidates: tuple[UserRegistrationFact, ...] = (),
+        receipt_activity_candidates: tuple[ReceiptActivity, ...] = (),
         settings: dict[UUID, NotificationSettings] | None = None,
-        fail_creates: bool = False,
+        notification_create_exception: Exception | None = None,
     ) -> None:
         self.schedule_rule_repository = ScheduleRuleRepositoryFake(rules)
         self.occurrence_repository = OccurrenceRepositoryFake()
-        self.notification_repository = NotificationRepositoryFake(settings or {})
-        self.receipt_repository = ReceiptRepositoryFake(
-            warranty_candidates=warranty_candidates,
-            receipt_activity_candidates=receipt_activity_candidates,
+        self.notification_repository = NotificationRepositoryFake(
+            settings or {},
+            create_exception=notification_create_exception,
         )
-        self.user_repository = UserRepositoryFake(user_candidates)
+        self.expiring_receipts_reader = ExpiringReceiptsReaderFake(warranty_candidates)
+        self.receipt_activity_reader = ReceiptActivityForUsersReaderFake(
+            receipt_activity_candidates
+        )
+        self.user_registration_facts_reader = UserRegistrationFactsReaderFake(user_candidates)
         self.unit_of_work = UnitOfWorkFake(self.occurrence_repository.rollback_unbound)
-        self.fail_creates = fail_creates
         self.use_case = self.fresh_use_case()
 
-    def fresh_use_case(self) -> SchedulePushNotificationsCommandUseCase:
-        notification_creator = (
-            FailingNotificationCreator()
-            if self.fail_creates
-            else NotificationCreator(
-                notification_repository=self.notification_repository,
-                event_publisher=NoOpEventPublisher(),
-                clock=lambda: NOW,
-            )
+    def fresh_use_case(self) -> CreateDueNotificationsCommandUseCase:
+        notification_creator = NotificationCreator(
+            notification_repository=self.notification_repository,
+            event_publisher=NoOpEventPublisher(),
+            clock=lambda: NOW,
         )
-        return SchedulePushNotificationsCommandUseCase(
+        return CreateDueNotificationsCommandUseCase(
             schedule_rule_repository=self.schedule_rule_repository,
             occurrence_repository=self.occurrence_repository,
             notification_repository=self.notification_repository,
-            receipt_repository=self.receipt_repository,
-            user_repository=self.user_repository,
+            list_receipts_expiring_on=ListReceiptsExpiringOnQueryUseCase(
+                reader=self.expiring_receipts_reader
+            ),
+            get_receipt_activity_for_users=GetReceiptActivityForUsersQueryUseCase(
+                reader=self.receipt_activity_reader
+            ),
+            list_user_registration_facts=ListUserRegistrationFactsQueryUseCase(
+                reader=self.user_registration_facts_reader
+            ),
             notification_creator=notification_creator,
             unit_of_work=self.unit_of_work,
         )

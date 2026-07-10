@@ -18,11 +18,18 @@ class CreatedNotification:
 
 
 class NotificationRepositoryFake(NotificationRepository):
-    def __init__(self, settings: dict[UUID, NotificationSettings]) -> None:
+    def __init__(
+        self,
+        settings: dict[UUID, NotificationSettings],
+        create_exception: Exception | None = None,
+    ) -> None:
         self.settings = settings
+        self._create_exception = create_exception
         self.created: list[CreatedNotification] = []
 
     async def create(self, *, notification: UserNotification) -> UserNotification:
+        if self._create_exception is not None:
+            raise self._create_exception
         self.created.append(
             CreatedNotification(
                 command=CreateNotificationCommand(

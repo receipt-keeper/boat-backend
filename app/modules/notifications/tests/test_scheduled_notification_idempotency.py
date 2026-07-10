@@ -7,18 +7,18 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.core.db.outbox.orm import OutboxEvent
 from app.core.db.outbox.publisher import OutboxEventPublisher
 from app.core.db.unit_of_work import SqlAlchemyUnitOfWork
+from app.modules.notifications.application.commands.create_due_notifications.command import (
+    CreateDueNotificationsCommand,
+)
+from app.modules.notifications.application.commands.create_due_notifications.use_case import (
+    CreateDueNotificationsCommandUseCase,
+)
 from app.modules.notifications.application.commands.create_notification.command import (
     CreateNotificationCommand,
 )
 from app.modules.notifications.application.commands.create_notification.use_case import (
     CreateNotificationCommandUseCase,
     NotificationCreator,
-)
-from app.modules.notifications.application.commands.schedule_push_notifications.command import (
-    SchedulePushNotificationsCommand,
-)
-from app.modules.notifications.application.commands.schedule_push_notifications.use_case import (
-    SchedulePushNotificationsCommandUseCase,
 )
 from app.modules.notifications.dependencies import build_notification_event_registry
 from app.modules.notifications.domain.value_objects import NotificationMessageType
@@ -30,6 +30,11 @@ from app.modules.notifications.infrastructure.persistence.repository import (
 from app.modules.notifications.infrastructure.persistence.schedule_occurrence_orm import (
     NotificationScheduleOccurrence,
 )
+from app.modules.notifications.tests.due_notification_query_fakes import (
+    ExpiringReceiptsReaderFake,
+    ReceiptActivityForUsersReaderFake,
+    UserRegistrationFactsReaderFake,
+)
 from app.modules.notifications.tests.scheduler_job_builders import (
     NOW,
     RECEIPT_ID,
@@ -37,15 +42,21 @@ from app.modules.notifications.tests.scheduler_job_builders import (
     warranty_candidate,
     warranty_rule,
 )
-from app.modules.notifications.tests.scheduler_job_candidate_repositories import (
-    ReceiptRepositoryFake,
-    UserRepositoryFake,
-)
-from app.modules.notifications.tests.scheduler_job_fixture import FailingNotificationCreator
 from app.modules.notifications.tests.scheduler_job_occurrence_repositories import (
     ScheduleRuleRepositoryFake,
 )
-from app.modules.receipts.application.ports.receipt_repository import WarrantyNotificationCandidate
+from app.modules.receipts.application.queries.get_receipt_activity_for_users.use_case import (
+    GetReceiptActivityForUsersQueryUseCase,
+)
+from app.modules.receipts.application.queries.list_receipts_expiring_on.result import (
+    ExpiringReceipt,
+)
+from app.modules.receipts.application.queries.list_receipts_expiring_on.use_case import (
+    ListReceiptsExpiringOnQueryUseCase,
+)
+from app.modules.users.application.queries.list_user_registration_facts.use_case import (
+    ListUserRegistrationFactsQueryUseCase,
+)
 
 TEST_USER_ID = UUID("00000000-0000-0000-0000-000000000101")
 CREATED_AT = datetime(2026, 7, 9, 9, 0, 0, tzinfo=UTC)
@@ -121,8 +132,7 @@ async def test_handled_create_failure_rolls_back_occurrence_notification_and_out
     async with postgres_session_factory() as session:
         result = await _scheduler_use_case(
             session,
-            candidates=(warranty_candidate(),),
-            fail_creates=True,
+            candidates=(warranty_candidate(item_name="가" * 260),),
         ).execute(_schedule_command(TARGET_DATE))
 
     assert result.failed == 1
@@ -135,41 +145,40 @@ async def test_handled_create_failure_rolls_back_occurrence_notification_and_out
 def _scheduler_use_case(
     session: AsyncSession,
     *,
-    candidates: tuple[WarrantyNotificationCandidate, ...],
-    fail_creates: bool = False,
-) -> SchedulePushNotificationsCommandUseCase:
+    candidates: tuple[ExpiringReceipt, ...],
+) -> CreateDueNotificationsCommandUseCase:
     notification_repository = SqlAlchemyNotificationRepository(session)
     event_publisher = OutboxEventPublisher(
         session=session,
         registry=build_notification_event_registry(),
     )
-    notification_creator = (
-        FailingNotificationCreator()
-        if fail_creates
-        else NotificationCreator(
-            notification_repository=notification_repository,
-            event_publisher=event_publisher,
-            clock=lambda: CREATED_AT,
-        )
+    notification_creator = NotificationCreator(
+        notification_repository=notification_repository,
+        event_publisher=event_publisher,
+        clock=lambda: CREATED_AT,
     )
-    return SchedulePushNotificationsCommandUseCase(
+    return CreateDueNotificationsCommandUseCase(
         schedule_rule_repository=ScheduleRuleRepositoryFake(
             (warranty_rule(campaign_key="warranty_risk_d7", day_offset=7),)
         ),
         occurrence_repository=SqlAlchemyScheduleOccurrenceRepository(session),
         notification_repository=notification_repository,
-        receipt_repository=ReceiptRepositoryFake(
-            warranty_candidates=candidates,
-            receipt_activity_candidates=(),
+        list_receipts_expiring_on=ListReceiptsExpiringOnQueryUseCase(
+            reader=ExpiringReceiptsReaderFake(candidates)
         ),
-        user_repository=UserRepositoryFake(()),
+        get_receipt_activity_for_users=GetReceiptActivityForUsersQueryUseCase(
+            reader=ReceiptActivityForUsersReaderFake(())
+        ),
+        list_user_registration_facts=ListUserRegistrationFactsQueryUseCase(
+            reader=UserRegistrationFactsReaderFake(())
+        ),
         notification_creator=notification_creator,
         unit_of_work=SqlAlchemyUnitOfWork(session),
     )
 
 
-def _schedule_command(target_date: date) -> SchedulePushNotificationsCommand:
-    return SchedulePushNotificationsCommand(
+def _schedule_command(target_date: date) -> CreateDueNotificationsCommand:
+    return CreateDueNotificationsCommand(
         target_date=target_date,
         now=NOW.replace(year=target_date.year, month=target_date.month, day=target_date.day),
         campaign_key=None,

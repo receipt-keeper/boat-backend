@@ -1,3 +1,5 @@
+import pytest
+
 from app.modules.notifications.tests.scheduler_job_builders import (
     OTHER_RECEIPT_ID,
     schedule_command,
@@ -30,3 +32,19 @@ async def test_scheduler_isolates_rendered_validation_error_per_candidate() -> N
     occurrence = next(iter(fixture.occurrence_repository.reserved))
     assert occurrence.target_id == OTHER_RECEIPT_ID
     assert fixture.unit_of_work.rollbacks == 1
+
+
+async def test_scheduler_rolls_back_and_reraises_unexpected_creation_error() -> None:
+    # Given: notification persistence가 unexpected RuntimeError로 실패한다.
+    fixture = SchedulerFixture(
+        rules=(warranty_rule(campaign_key="warranty_risk_d7", day_offset=7),),
+        warranty_candidates=(warranty_candidate(),),
+        notification_create_exception=RuntimeError("outbox unavailable"),
+    )
+
+    # When/Then: 잡은 transaction을 rollback하고 성공처럼 집계하지 않는다.
+    with pytest.raises(RuntimeError, match="outbox unavailable"):
+        await fixture.use_case.execute(schedule_command())
+
+    assert fixture.unit_of_work.rollbacks == 1
+    assert fixture.occurrence_repository.reserved == {}

@@ -5,7 +5,7 @@ from app.core.domain.exceptions import ErrorDetail, ValidationError
 
 
 @dataclass(frozen=True, slots=True)
-class SchedulePushNotificationsCommand:
+class CreateDueNotificationsCommand:
     target_date: date | None
     now: datetime
     campaign_key: str | None
@@ -24,10 +24,7 @@ class SchedulePushNotificationsCommand:
             or len(self.campaign_key) > 100
         ):
             details.append(
-                ErrorDetail(
-                    field="campaignKey",
-                    message="예약 알림 캠페인 키가 올바르지 않습니다.",
-                )
+                ErrorDetail(field="campaignKey", message="예약 알림 캠페인 키가 올바르지 않습니다.")
             )
         if self.batch_size < 1:
             details.append(

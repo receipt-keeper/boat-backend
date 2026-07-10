@@ -1,19 +1,23 @@
 from datetime import UTC, date, datetime, time, timedelta
 from uuid import UUID
 
-from app.modules.notifications.application.commands.schedule_push_notifications.command import (
-    SchedulePushNotificationsCommand,
+from app.modules.notifications.application.commands.create_due_notifications.command import (
+    CreateDueNotificationsCommand,
 )
 from app.modules.notifications.domain.model import NotificationSettings
 from app.modules.notifications.domain.schedule_rule import (
     NotificationScheduleRule,
     ScheduleRuleTargetKind,
 )
-from app.modules.receipts.application.ports.receipt_repository import (
-    ReceiptRegistrationActivityCandidate,
-    WarrantyNotificationCandidate,
+from app.modules.receipts.application.queries.get_receipt_activity_for_users.result import (
+    ReceiptActivity,
 )
-from app.modules.users.application.ports.user_repository import UserNotificationCandidate
+from app.modules.receipts.application.queries.list_receipts_expiring_on.result import (
+    ExpiringReceipt,
+)
+from app.modules.users.application.queries.list_user_registration_facts.result import (
+    UserRegistrationFact,
+)
 
 NOW = datetime(2026, 7, 9, 9, 0, tzinfo=UTC)
 TARGET_DATE = date(2026, 7, 9)
@@ -30,13 +34,15 @@ def schedule_command(
     target_date: date | None = TARGET_DATE,
     now: datetime = NOW,
     dry_run: bool = False,
-) -> SchedulePushNotificationsCommand:
-    return SchedulePushNotificationsCommand(
+    batch_size: int = 10,
+    campaign_key: str | None = None,
+) -> CreateDueNotificationsCommand:
+    return CreateDueNotificationsCommand(
         target_date=target_date,
         now=now,
-        campaign_key=None,
+        campaign_key=campaign_key,
         dry_run=dry_run,
-        batch_size=10,
+        batch_size=batch_size,
     )
 
 
@@ -93,8 +99,8 @@ def warranty_candidate(
     expires_on: date = date(2026, 7, 16),
     days_until_expiry: int = 7,
     item_name: str = "공기청정기",
-) -> WarrantyNotificationCandidate:
-    return WarrantyNotificationCandidate(
+) -> ExpiringReceipt:
+    return ExpiringReceipt(
         user_id=USER_ID,
         receipt_id=receipt_id,
         item_name=item_name,
@@ -107,14 +113,11 @@ def user_candidate(
     *,
     user_id: UUID,
     days_since_joined: int,
-) -> UserNotificationCandidate:
+) -> UserRegistrationFact:
     created_at = NOW - timedelta(days=days_since_joined)
-    return UserNotificationCandidate(
+    return UserRegistrationFact(
         user_id=user_id,
-        created_at=created_at,
-        days_since_joined=days_since_joined,
-        cursor_created_at=created_at,
-        cursor_id=user_id,
+        registered_at=created_at,
     )
 
 
@@ -123,8 +126,8 @@ def activity_candidate(
     user_id: UUID,
     receipt_count: int = 0,
     last_receipt_created_at: datetime | None = None,
-) -> ReceiptRegistrationActivityCandidate:
-    return ReceiptRegistrationActivityCandidate(
+) -> ReceiptActivity:
+    return ReceiptActivity(
         user_id=user_id,
         last_receipt_created_at=last_receipt_created_at,
         receipt_count=receipt_count,

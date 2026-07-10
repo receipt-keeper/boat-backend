@@ -8,19 +8,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import app.modules.receipts.infrastructure.persistence.listing as listing
 from app.modules.receipts.application.ports.receipt_repository import (
     ReceiptListPage,
-    ReceiptRegistrationActivityPage,
-    ReceiptRegistrationActivityQuery,
     ReceiptRepository,
-    WarrantyNotificationCandidatePage,
-    WarrantyNotificationCandidateQuery,
 )
 from app.modules.receipts.application.queries.list_receipts.query import ListReceiptsQuery
 from app.modules.receipts.application.read_models.receipt import ReceiptReadModel
 from app.modules.receipts.domain.model import Receipt
 from app.modules.receipts.infrastructure.persistence import mapper, orm
-from app.modules.receipts.infrastructure.persistence import (
-    notification_candidates as candidate_queries,
-)
 
 
 class SqlAlchemyReceiptRepository(ReceiptRepository):
@@ -125,26 +118,6 @@ class SqlAlchemyReceiptRepository(ReceiptRepository):
         await self._session.delete(record)
         await self._session.flush()
         return True
-
-    async def list_warranty_notification_candidates(
-        self,
-        *,
-        query: WarrantyNotificationCandidateQuery,
-    ) -> WarrantyNotificationCandidatePage:
-        return await candidate_queries.list_warranty_notification_candidates(
-            session=self._session,
-            query=query,
-        )
-
-    async def list_receipt_registration_activity_candidates(
-        self,
-        *,
-        query: ReceiptRegistrationActivityQuery,
-    ) -> ReceiptRegistrationActivityPage:
-        return await candidate_queries.list_receipt_registration_activity_candidates(
-            session=self._session,
-            query=query,
-        )
 
     async def _find_record_by_id_for_user(
         self,
