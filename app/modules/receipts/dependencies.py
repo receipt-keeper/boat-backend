@@ -1,6 +1,7 @@
 from typing import Annotated
 
 from fastapi import Depends
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.application.unit_of_work import UnitOfWork
 from app.core.db.session import AsyncSessionDep
@@ -25,6 +26,10 @@ from app.modules.receipts.infrastructure.persistence.repository import SqlAlchem
 
 
 async def get_receipt_repository(session: AsyncSessionDep) -> ReceiptRepository:
+    return SqlAlchemyReceiptRepository(session)
+
+
+def build_receipt_repository(session: AsyncSession) -> ReceiptRepository:
     return SqlAlchemyReceiptRepository(session)
 
 
