@@ -37,8 +37,8 @@ def test_promotion_migration_revision_is_linear_through_context_extension() -> N
     # When: Alembic revision graph와 Promotion 관련 migration 파일을 확인한다.
     heads = script_directory.get_heads()
 
-    # Then: 단일 head는 context migration이고 down_revision은 content migration이다.
-    assert heads == ["20260707_0019"]
+    # Then: repo migration graph는 단일 current head를 유지하고 Promotion 체인은 그대로다.
+    assert heads == [script_directory.get_current_head()]
     assert PROMOTION_MIGRATION_PATH.is_file()
     assert CREDIT_SOURCE_MIGRATION_PATH.is_file()
     assert PROMOTION_CONTENT_MIGRATION_PATH.is_file()

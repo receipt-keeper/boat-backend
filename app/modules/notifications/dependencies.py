@@ -1,21 +1,12 @@
-from collections.abc import Sequence
-from typing import Annotated, cast
+from typing import Annotated
 
-from fastapi import BackgroundTasks, Depends, Request
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from fastapi import Depends
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.application.event_dispatcher import EventDispatcher
 from app.core.application.event_publisher import EventPublisher, NoOpEventPublisher
 from app.core.application.unit_of_work import UnitOfWork
-from app.core.config.dependencies import get_request_settings
-from app.core.config.settings import Settings
-from app.core.db.outbox.immediate_dispatch import dispatch_outbox_events_immediately
-from app.core.db.outbox.publisher import OutboxEventPublisher
-from app.core.db.outbox.relay import OutboxRelay
-from app.core.db.outbox.serialization import EventTypeRegistry
-from app.core.db.session import AsyncSessionDep, request_session_factory
+from app.core.db.session import AsyncSessionDep
 from app.core.db.unit_of_work import SqlAlchemyUnitOfWork
-from app.core.domain.events import DomainEvent
 from app.modules.notifications.application.commands.create_notification.use_case import (
     CreateNotificationCommandUseCase,
 )
@@ -28,12 +19,6 @@ from app.modules.notifications.application.commands.mark_notification_read.use_c
 from app.modules.notifications.application.commands.register_device_token.use_case import (
     RegisterDeviceTokenCommandUseCase,
 )
-from app.modules.notifications.application.commands.send_notification_push.command import (
-    SendNotificationPushCommand,
-)
-from app.modules.notifications.application.commands.send_notification_push.use_case import (
-    SendNotificationPushCommandUseCase,
-)
 from app.modules.notifications.application.commands.unregister_device_token.use_case import (
     UnregisterDeviceTokenCommandUseCase,
 )
@@ -43,7 +28,6 @@ from app.modules.notifications.application.commands.update_notification_settings
 from app.modules.notifications.application.ports.notification_repository import (
     NotificationRepository,
 )
-from app.modules.notifications.application.ports.push_sender import PushSender
 from app.modules.notifications.application.ports.push_token_repository import (
     PushTokenRepository,
 )
@@ -53,17 +37,32 @@ from app.modules.notifications.application.queries.get_notification_settings.use
 from app.modules.notifications.application.queries.list_notifications.use_case import (
     ListNotificationsQueryUseCase,
 )
-from app.modules.notifications.domain.events import NotificationCreated
-from app.modules.notifications.infrastructure.fcm.push_sender import (
-    DisabledPushSender,
-    FcmPushSender,
-)
 from app.modules.notifications.infrastructure.persistence.repository import (
     SqlAlchemyNotificationRepository,
     SqlAlchemyPushTokenRepository,
 )
+from app.modules.notifications.push_dependencies import (
+    NotificationPushDispatcher,
+    build_notification_event_dispatcher,
+    build_notification_event_registry,
+    build_notification_outbox_relay,
+    get_notification_event_publisher,
+    get_notification_push_dispatcher,
+    get_push_sender,
+)
+from app.modules.notifications.scheduler_dependencies import (
+    build_schedule_push_notifications_command_use_case,
+)
 
-SettingsDep = Annotated[Settings, Depends(get_request_settings)]
+__all__ = (
+    "NotificationPushDispatcher",
+    "build_notification_event_dispatcher",
+    "build_notification_event_registry",
+    "build_notification_outbox_relay",
+    "build_schedule_push_notifications_command_use_case",
+    "get_notification_push_dispatcher",
+    "get_push_sender",
+)
 
 
 async def get_notification_repository(session: AsyncSessionDep) -> NotificationRepository:
@@ -76,185 +75,6 @@ async def get_push_token_repository(session: AsyncSessionDep) -> PushTokenReposi
 
 async def get_unit_of_work(session: AsyncSessionDep) -> UnitOfWork:
     return SqlAlchemyUnitOfWork(session)
-
-
-async def get_push_sender(settings: SettingsDep) -> PushSender:
-    if settings.push_send_enabled:
-        return FcmPushSender.from_settings(settings)
-    return DisabledPushSender()
-
-
-class NotificationPushDispatcher:
-    """요청 반환 이후(BackgroundTasks) 또는 lifespan 폴러에서 실행되는 푸시 발송 진입점.
-
-    호출 시점의 세션은 이미 닫혀 있거나(요청 스코프) 애초에 없으므로(폴러),
-    실행 시점에 `session_factory`로 새 세션을 열어 저장소와 unit of work를 조립한다.
-    """
-
-    def __init__(
-        self,
-        *,
-        session_factory: async_sessionmaker[AsyncSession],
-        push_sender: PushSender,
-    ) -> None:
-        self._session_factory = session_factory
-        self._push_sender = push_sender
-
-    async def dispatch(self, command: SendNotificationPushCommand) -> None:
-        async with self._session_factory() as session:
-            use_case = SendNotificationPushCommandUseCase(
-                notification_repository=SqlAlchemyNotificationRepository(session),
-                push_token_repository=SqlAlchemyPushTokenRepository(session),
-                push_sender=self._push_sender,
-                unit_of_work=SqlAlchemyUnitOfWork(session),
-            )
-            await use_case.execute(command)
-
-
-async def get_notification_push_dispatcher(
-    request: Request,
-    push_sender: Annotated[PushSender, Depends(get_push_sender)],
-) -> NotificationPushDispatcher:
-    return NotificationPushDispatcher(
-        session_factory=request_session_factory(request),
-        push_sender=push_sender,
-    )
-
-
-async def _handle_notification_created(
-    event: NotificationCreated,
-    *,
-    push_dispatcher: NotificationPushDispatcher,
-) -> None:
-    await push_dispatcher.dispatch(
-        SendNotificationPushCommand(
-            user_id=event.user_id,
-            notification_id=event.notification_id,
-            message_type=event.message_type,
-            kind=event.kind,
-            title=event.title,
-            message=event.message,
-            resource_type=event.resource_type,
-            resource_id=event.resource_id,
-        )
-    )
-
-
-def build_notification_event_dispatcher(
-    *,
-    push_dispatcher: NotificationPushDispatcher,
-) -> EventDispatcher:
-    async def handle_notification_created(event: DomainEvent) -> None:
-        await _handle_notification_created(
-            cast(NotificationCreated, event),
-            push_dispatcher=push_dispatcher,
-        )
-
-    dispatcher = EventDispatcher()
-    dispatcher.register(NotificationCreated, handle_notification_created)
-    return dispatcher
-
-
-def build_notification_event_registry() -> EventTypeRegistry:
-    registry = EventTypeRegistry()
-    registry.register(NotificationCreated)
-    return registry
-
-
-def build_notification_outbox_relay(
-    *,
-    session_factory: async_sessionmaker[AsyncSession],
-    settings: Settings,
-    registry: EventTypeRegistry,
-) -> OutboxRelay:
-    """lifespan 폴러가 쓰는 relay를 조립한다.
-
-    request가 없는 lifespan 컨텍스트이므로 `NotificationPushDispatcher`에는
-    `session_factory`를 직접 주입한다. push sender는 요청 경로의
-    `get_push_sender`와 동일한 규칙(`settings.push_send_enabled`)을 따른다.
-
-    `registry`는 이 모듈만의 이벤트 타입이 아니라, main.py 조립 지점에서
-    전 모듈 `build_<module>_event_registry()` 결과를 합성한 단일 레지스트리다.
-    notifications는 dispatcher(push 발송 핸들러 연결)만 소유하고, relay가
-    역직렬화할 수 있는 이벤트 타입의 범위는 호출자가 결정한다.
-    """
-    push_sender: PushSender = (
-        FcmPushSender.from_settings(settings)
-        if settings.push_send_enabled
-        else DisabledPushSender()
-    )
-    push_dispatcher = NotificationPushDispatcher(
-        session_factory=session_factory,
-        push_sender=push_sender,
-    )
-    dispatcher = build_notification_event_dispatcher(push_dispatcher=push_dispatcher)
-    return OutboxRelay(
-        registry=registry,
-        dispatcher=dispatcher,
-        redeliver_after_seconds=settings.outbox_redeliver_after_seconds,
-        max_retry=settings.outbox_max_retry,
-        batch_size=settings.outbox_batch_size,
-    )
-
-
-class _ImmediateDispatchSchedulingPublisher(EventPublisher):
-    """outbox insert(같은 세션) + 즉시 발행 스케줄링을 함께 수행하는 발행자.
-
-    `publish()`는 주입된 `OutboxEventPublisher`로 같은 요청 세션에 insert만
-    하고(commit은 use case가 소유), 이번 호출로 insert된 이벤트들의 event_id를
-    BackgroundTasks 즉시 발행 태스크에 넘긴다. 그 태스크는 응답 반환 이후에야
-    실행되므로, 원 요청 커밋이 실제로 성공했는지는 이 시점에 알 수 없다 -
-    delete-then-dispatch(row가 없으면 skip)가 유령 발행을 막는다.
-    """
-
-    def __init__(
-        self,
-        *,
-        outbox_publisher: OutboxEventPublisher,
-        background_tasks: BackgroundTasks,
-        request: Request,
-        registry: EventTypeRegistry,
-        dispatcher: EventDispatcher,
-    ) -> None:
-        self._outbox_publisher = outbox_publisher
-        self._background_tasks = background_tasks
-        self._request = request
-        self._registry = registry
-        self._dispatcher = dispatcher
-
-    async def publish(self, events: Sequence[DomainEvent]) -> None:
-        await self._outbox_publisher.publish(events)
-        event_ids = [event.event_id for event in events]
-        if not event_ids:
-            return
-        self._background_tasks.add_task(
-            dispatch_outbox_events_immediately,
-            request_session_factory(self._request),
-            event_ids=event_ids,
-            registry=self._registry,
-            dispatcher=self._dispatcher,
-        )
-
-
-async def get_notification_event_publisher(
-    session: AsyncSessionDep,
-    background_tasks: BackgroundTasks,
-    request: Request,
-    push_dispatcher: Annotated[
-        NotificationPushDispatcher,
-        Depends(get_notification_push_dispatcher),
-    ],
-) -> EventPublisher:
-    registry = build_notification_event_registry()
-    dispatcher = build_notification_event_dispatcher(push_dispatcher=push_dispatcher)
-    outbox_publisher = OutboxEventPublisher(session=session, registry=registry)
-    return _ImmediateDispatchSchedulingPublisher(
-        outbox_publisher=outbox_publisher,
-        background_tasks=background_tasks,
-        request=request,
-        registry=registry,
-        dispatcher=dispatcher,
-    )
 
 
 def build_update_notification_settings_command_use_case(

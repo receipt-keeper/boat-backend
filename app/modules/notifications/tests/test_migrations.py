@@ -26,11 +26,9 @@ PUSH_TOKENS_MIGRATION_PATH = (
 RENAME_TOKEN_MIGRATION_PATH = (
     PROJECT_ROOT / "alembic" / "versions" / "20260705_0014_rename_user_push_tokens_fid_to_token.py"
 )
-
 _PRE_MIGRATION_REVISION = "20260704_0012"
 _GENERALIZE_REVISION = "20260705_0013"
 _FID_RENAME_REVISION = "20260705_0014"
-_HEAD_REVISION = "20260705_0015"
 
 
 def test_generalize_notifications_migration_revision_is_linear() -> None:
@@ -289,15 +287,20 @@ async def _assert_head_columns_present(database_url: str) -> None:
 
 
 async def _column_names(connection: AsyncConnection) -> set[str]:
+    return await _table_column_names(connection, "user_notifications")
+
+
+async def _table_column_names(connection: AsyncConnection, table_name: str) -> set[str]:
     result = await connection.execute(
         text(
             """
             SELECT column_name
             FROM information_schema.columns
             WHERE table_schema = 'public'
-              AND table_name = 'user_notifications'
+              AND table_name = :table_name
             """
-        )
+        ),
+        {"table_name": table_name},
     )
     return {row[0] for row in result.tuples()}
 
