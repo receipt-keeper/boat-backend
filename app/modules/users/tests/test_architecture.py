@@ -6,6 +6,7 @@ from app.core.config.settings import Settings
 from app.core.domain.entity import AggregateRoot, Entity
 from app.core.domain.events import DomainEvent
 from app.main import create_app
+from app.modules.users.application.ports.user_repository import UserNotificationCandidate
 from app.modules.users.domain import events as users_events
 from app.modules.users.domain.model import User
 
@@ -91,7 +92,7 @@ def test_users_domain_events_module_declares_expected_event_classes() -> None:
 def test_users_domain_events_are_frozen_kw_only_dataclasses() -> None:
     for name in EXPECTED_USERS_EVENT_CLASSES:
         event_class = getattr(users_events, name)
-        params = event_class.__dataclass_params__  # type: ignore[attr-defined]
+        params = event_class.__dict__["__dataclass_params__"]
 
         assert params.frozen is True
         assert params.kw_only is True
@@ -167,6 +168,20 @@ def test_users_application_flow_classes_use_command_use_case_names() -> None:
     ]
 
     assert discovered_forbidden_classes == []
+
+
+def test_user_notification_candidate_exposes_only_policy_neutral_fields() -> None:
+    field_names = {field.name for field in dataclasses.fields(UserNotificationCandidate)}
+
+    assert field_names == {
+        "user_id",
+        "created_at",
+        "days_since_joined",
+        "cursor_created_at",
+        "cursor_id",
+    }
+    assert "join_based_bucket" not in field_names
+    assert all(not field_name.startswith("join_day_") for field_name in field_names)
 
 
 def test_users_domain_does_not_import_persistence_frameworks() -> None:

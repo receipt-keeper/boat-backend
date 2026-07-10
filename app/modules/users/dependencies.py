@@ -153,6 +153,10 @@ async def get_user_repository(session: AsyncSessionDep) -> UserRepository:
     return SqlAlchemyUserRepository(session)
 
 
+def build_user_repository(session: AsyncSession) -> UserRepository:
+    return SqlAlchemyUserRepository(session)
+
+
 async def get_unit_of_work(session: AsyncSessionDep) -> UnitOfWork:
     return SqlAlchemyUnitOfWork(session)
 
