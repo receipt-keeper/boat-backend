@@ -1,3 +1,5 @@
+import json
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 
@@ -5,6 +7,10 @@ from app.core.config.settings import Settings
 from app.core.db.outbox.serialization import UnregisteredEventTypeError
 from app.main import _build_merged_event_registry, create_app
 from app.modules.notifications.domain.events import NotificationCreated
+
+
+class UnhandledExceptionProbeError(RuntimeError):
+    pass
 
 
 async def test_health_endpoint(client: AsyncClient) -> None:
@@ -48,6 +54,40 @@ def test_notifications_openapi_exposes_create_without_alias_routes() -> None:
     assert "/api/v1/notifications/device-token" not in paths
     assert "/api/v1/notification-reads/{notification_id}" not in paths
     assert "/api/v1/notification-settings" not in paths
+    notification_paths = {
+        path: set(methods)
+        for path, methods in paths.items()
+        if path.startswith("/api/v1/notifications")
+    }
+    assert notification_paths == {
+        "/api/v1/notifications": {"get", "post"},
+        "/api/v1/notifications/{notification_id}": {"patch"},
+        "/api/v1/notifications/settings": {"get", "patch"},
+        "/api/v1/notifications/devices": {"put"},
+        "/api/v1/notifications/devices/{token}": {"delete"},
+    }
+
+
+def test_notifications_openapi_hides_scheduler_internal_fields() -> None:
+    schema = create_app(Settings(app_name="Boat Backend")).openapi()
+    schema_json = json.dumps(schema, ensure_ascii=False)
+
+    internal_terms = (
+        "scheduledKey",
+        "scheduled_key",
+        "campaignKey",
+        "campaign_key",
+        "campaignPolicy",
+        "campaign_policy",
+        "deliveryHistory",
+        "delivery_history",
+        "scheduledDelivery",
+        "scheduled_delivery",
+        "notification_campaign_policies",
+        "notification_scheduled_delivery_history",
+    )
+    for term in internal_terms:
+        assert term not in schema_json
 
 
 async def test_unhandled_exception_uses_failure_envelope() -> None:
@@ -55,7 +95,7 @@ async def test_unhandled_exception_uses_failure_envelope() -> None:
 
     @test_app.get("/boom")
     async def boom() -> None:
-        raise RuntimeError("boom")
+        raise UnhandledExceptionProbeError("boom")
 
     # Exception 핸들러는 응답 전송 후 예외를 다시 던지므로(Starlette 동작) 전파를 끈다
     async with AsyncClient(

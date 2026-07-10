@@ -48,6 +48,22 @@ FORBIDDEN_NOTIFICATION_PATHS: Final[frozenset[str]] = frozenset(
 
 async def test_notifications_match_cursor_paging_contract() -> None:
     test_app = create_notifications_contract_app()
+    user_metadata = {
+        "campaignKey": "user-visible-campaign",
+        "landingTarget": "user-visible-target",
+        "joinBasedBucket": "user-visible-bucket",
+        "scheduledKey": "user-visible-schedule",
+        "campaignPolicy": "user-visible-policy",
+        "deliveryHistory": "user-visible-history",
+        "scheduled_key": "user_visible_schedule",
+        "campaign_key": "user_visible_campaign",
+        "campaign_policy": "user_visible_policy",
+        "delivery_history": "user_visible_history",
+        "landing_target": "user_visible_target",
+        "join_based_bucket": "user_visible_bucket",
+        "subCategory": "receiptUpload",
+        "daysUntilExpiry": "7",
+    }
     payloads = [
         {
             "messageType": "transactional",
@@ -56,7 +72,7 @@ async def test_notifications_match_cursor_paging_contract() -> None:
             "message": "영수증을 등록하면 보증 만료 알림을 받을 수 있어요.",
             "resourceType": None,
             "resourceId": None,
-            "metadata": {"subCategory": "receiptUpload"},
+            "metadata": user_metadata,
         },
         {
             "messageType": "marketing",
@@ -101,7 +117,12 @@ async def test_notifications_match_cursor_paging_contract() -> None:
     body = response.json()
     next_body = next_response.json()
     read_body = read_response.json()
-    notification_payloads = created + body["data"]["notifications"] + [read_body["data"]]
+    notification_payloads = (
+        created
+        + body["data"]["notifications"]
+        + next_body["data"]["notifications"]
+        + [read_body["data"]]
+    )
 
     assert [create_response.status_code for create_response in create_responses] == [201, 201, 201]
     assert all(
@@ -112,6 +133,7 @@ async def test_notifications_match_cursor_paging_contract() -> None:
         for notification in notification_payloads
     )
     assert all("userId" not in notification for notification in created)
+    assert created[0]["metadata"] == user_metadata
     assert response.status_code == 200
     assert [notification["notificationId"] for notification in body["data"]["notifications"]] == [
         created[2]["notificationId"],

@@ -1,3 +1,5 @@
+from datetime import date, time
+
 from app.modules.notifications.domain.model import (
     NotificationSettings as DomainNotificationSettings,
 )
@@ -7,14 +9,60 @@ from app.modules.notifications.domain.model import (
 from app.modules.notifications.domain.model import (
     UserPushToken as DomainUserPushToken,
 )
+from app.modules.notifications.domain.schedule_rule import (
+    NotificationScheduleRule as DomainNotificationScheduleRule,
+)
 from app.modules.notifications.domain.value_objects import (
     DevicePlatform,
     NotificationMessageType,
 )
-from app.modules.notifications.infrastructure.persistence import orm
+from app.modules.notifications.infrastructure.persistence.orm import (
+    NotificationSettings,
+    UserNotification,
+    UserPushToken,
+)
+from app.modules.notifications.infrastructure.persistence.schedule_rule_orm import (
+    NotificationScheduleRule,
+)
 
 
-def notification_to_domain(record: orm.UserNotification) -> DomainUserNotification:
+def schedule_rule_to_domain(
+    record: NotificationScheduleRule,
+) -> DomainNotificationScheduleRule:
+    return DomainNotificationScheduleRule.create(
+        campaign_key=record.campaign_key,
+        enabled=record.enabled,
+        target_kind=record.target_kind,
+        day_offset=record.day_offset,
+        first_delay_days=record.first_delay_days,
+        repeat_interval_days=record.repeat_interval_days,
+        lookback_days=record.lookback_days,
+        send_time_local=record.send_time_local,
+        requires_marketing_consent=record.requires_marketing_consent,
+        title_template=record.title_template,
+        body_template=record.body_template,
+    )
+
+
+def schedule_rule_to_insert_values(
+    rule: DomainNotificationScheduleRule,
+) -> dict[str, str | bool | date | time | int | None]:
+    return {
+        "campaign_key": rule.campaign_key,
+        "enabled": rule.enabled,
+        "target_kind": rule.target_kind.value,
+        "day_offset": rule.day_offset,
+        "first_delay_days": rule.first_delay_days,
+        "repeat_interval_days": rule.repeat_interval_days,
+        "lookback_days": rule.lookback_days,
+        "send_time_local": rule.send_time_local,
+        "requires_marketing_consent": rule.requires_marketing_consent,
+        "title_template": rule.title_template,
+        "body_template": rule.body_template,
+    }
+
+
+def notification_to_domain(record: UserNotification) -> DomainUserNotification:
     return DomainUserNotification.restore(
         notification_id=record.id,
         user_id=record.user_id,
@@ -32,8 +80,8 @@ def notification_to_domain(record: orm.UserNotification) -> DomainUserNotificati
 
 def notification_to_record(
     notification: DomainUserNotification,
-) -> orm.UserNotification:
-    return orm.UserNotification(
+) -> UserNotification:
+    return UserNotification(
         id=notification.id,
         user_id=notification.user_id,
         message_type=notification.message_type.value,
@@ -50,7 +98,7 @@ def notification_to_record(
     )
 
 
-def settings_to_domain(record: orm.NotificationSettings) -> DomainNotificationSettings:
+def settings_to_domain(record: NotificationSettings) -> DomainNotificationSettings:
     return DomainNotificationSettings.create(
         user_id=record.user_id,
         push_enabled=record.push_enabled,
@@ -60,15 +108,15 @@ def settings_to_domain(record: orm.NotificationSettings) -> DomainNotificationSe
 
 def settings_to_record(
     settings: DomainNotificationSettings,
-) -> orm.NotificationSettings:
-    return orm.NotificationSettings(
+) -> NotificationSettings:
+    return NotificationSettings(
         user_id=settings.id,
         push_enabled=settings.push_enabled,
         marketing_consent=settings.marketing_consent,
     )
 
 
-def push_token_to_domain(record: orm.UserPushToken) -> DomainUserPushToken:
+def push_token_to_domain(record: UserPushToken) -> DomainUserPushToken:
     return DomainUserPushToken.create(
         push_token_id=record.id,
         user_id=record.user_id,

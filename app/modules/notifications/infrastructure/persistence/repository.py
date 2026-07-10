@@ -21,7 +21,34 @@ from app.modules.notifications.domain.model import (
     UserPushToken,
 )
 from app.modules.notifications.domain.value_objects import DevicePlatform
-from app.modules.notifications.infrastructure.persistence import mapper, orm
+from app.modules.notifications.infrastructure.persistence import mapper
+from app.modules.notifications.infrastructure.persistence.orm import (
+    NotificationSettings as NotificationSettingsRecord,
+)
+from app.modules.notifications.infrastructure.persistence.orm import (
+    UserNotification as UserNotificationRecord,
+)
+from app.modules.notifications.infrastructure.persistence.orm import (
+    UserPushToken as UserPushTokenRecord,
+)
+from app.modules.notifications.infrastructure.persistence.schedule_occurrence_repository import (
+    SqlAlchemyScheduleOccurrenceRepository,
+)
+from app.modules.notifications.infrastructure.persistence.schedule_rule_repository import (
+    SqlAlchemyNotificationScheduleRuleRepository,
+)
+
+__all__ = (
+    "SqlAlchemyNotificationRepository",
+    "SqlAlchemyNotificationScheduleRuleRepository",
+    "SqlAlchemyPushTokenRepository",
+    "SqlAlchemyScheduleOccurrenceRepository",
+)
+
+
+class PushTokenUpsertMissingRecordError(RuntimeError):
+    def __init__(self) -> None:
+        super().__init__("push token upsert 이후 레코드를 찾을 수 없습니다.")
 
 
 class SqlAlchemyNotificationRepository(NotificationRepository):
@@ -42,25 +69,25 @@ class SqlAlchemyNotificationRepository(NotificationRepository):
     ) -> NotificationListResult:
         total_count = await self._session.scalar(
             select(func.count())
-            .select_from(orm.UserNotification)
-            .where(orm.UserNotification.user_id == user_id)
+            .select_from(UserNotificationRecord)
+            .where(UserNotificationRecord.user_id == user_id)
         )
         query = (
-            select(orm.UserNotification)
-            .where(orm.UserNotification.user_id == user_id)
+            select(UserNotificationRecord)
+            .where(UserNotificationRecord.user_id == user_id)
             .order_by(
-                orm.UserNotification.created_at.desc(),
-                orm.UserNotification.id.desc(),
+                UserNotificationRecord.created_at.desc(),
+                UserNotificationRecord.id.desc(),
             )
             .limit(limit + 1)
         )
         if cursor is not None:
             query = query.where(
                 or_(
-                    orm.UserNotification.created_at < cursor.created_at,
+                    UserNotificationRecord.created_at < cursor.created_at,
                     and_(
-                        orm.UserNotification.created_at == cursor.created_at,
-                        orm.UserNotification.id < cursor.notification_id,
+                        UserNotificationRecord.created_at == cursor.created_at,
+                        UserNotificationRecord.id < cursor.notification_id,
                     ),
                 )
             )
@@ -105,7 +132,7 @@ class SqlAlchemyNotificationRepository(NotificationRepository):
         return mapper.notification_to_domain(record)
 
     async def get_settings(self, *, user_id: UUID) -> NotificationSettings:
-        record = await self._session.get(orm.NotificationSettings, user_id)
+        record = await self._session.get(NotificationSettingsRecord, user_id)
         if record is None:
             return NotificationSettings.create(user_id=user_id)
         return mapper.settings_to_domain(record)
@@ -124,13 +151,13 @@ class SqlAlchemyNotificationRepository(NotificationRepository):
             update_values["marketing_consent"] = marketing_consent
 
         if update_values:
-            insert_statement = postgresql_insert(orm.NotificationSettings).values(
+            insert_statement = postgresql_insert(NotificationSettingsRecord).values(
                 user_id=user_id,
                 **update_values,
             )
             await self._session.execute(
                 insert_statement.on_conflict_do_update(
-                    index_elements=[orm.NotificationSettings.user_id],
+                    index_elements=[NotificationSettingsRecord.user_id],
                     set_={
                         **update_values,
                         "updated_at": func.now(),
@@ -140,8 +167,8 @@ class SqlAlchemyNotificationRepository(NotificationRepository):
         await self._session.flush()
 
         record = await self._session.scalar(
-            select(orm.NotificationSettings)
-            .where(orm.NotificationSettings.user_id == user_id)
+            select(NotificationSettingsRecord)
+            .where(NotificationSettingsRecord.user_id == user_id)
             .execution_options(populate_existing=True)
         )
         if record is None:
@@ -153,11 +180,11 @@ class SqlAlchemyNotificationRepository(NotificationRepository):
         *,
         notification_id: UUID,
         user_id: UUID,
-    ) -> orm.UserNotification | None:
+    ) -> UserNotificationRecord | None:
         return await self._session.scalar(
-            select(orm.UserNotification).where(
-                orm.UserNotification.id == notification_id,
-                orm.UserNotification.user_id == user_id,
+            select(UserNotificationRecord).where(
+                UserNotificationRecord.id == notification_id,
+                UserNotificationRecord.user_id == user_id,
             )
         )
 
@@ -173,14 +200,14 @@ class SqlAlchemyPushTokenRepository(PushTokenRepository):
         token: str,
         platform: DevicePlatform,
     ) -> UserPushToken:
-        insert_statement = postgresql_insert(orm.UserPushToken).values(
+        insert_statement = postgresql_insert(UserPushTokenRecord).values(
             user_id=user_id,
             token=token,
             platform=platform.value,
         )
         await self._session.execute(
             insert_statement.on_conflict_do_update(
-                index_elements=[orm.UserPushToken.token],
+                index_elements=[UserPushTokenRecord.token],
                 set_={
                     "user_id": user_id,
                     "platform": platform.value,
@@ -191,28 +218,28 @@ class SqlAlchemyPushTokenRepository(PushTokenRepository):
         await self._session.flush()
 
         record = await self._session.scalar(
-            select(orm.UserPushToken)
-            .where(orm.UserPushToken.token == token)
+            select(UserPushTokenRecord)
+            .where(UserPushTokenRecord.token == token)
             .execution_options(populate_existing=True)
         )
         if record is None:
-            raise RuntimeError("push token upsert 이후 레코드를 찾을 수 없습니다.")
+            raise PushTokenUpsertMissingRecordError()
         return mapper.push_token_to_domain(record)
 
     async def unregister(self, *, user_id: UUID, token: str) -> None:
         await self._session.execute(
-            delete(orm.UserPushToken).where(
-                orm.UserPushToken.user_id == user_id,
-                orm.UserPushToken.token == token,
+            delete(UserPushTokenRecord).where(
+                UserPushTokenRecord.user_id == user_id,
+                UserPushTokenRecord.token == token,
             )
         )
         await self._session.flush()
 
     async def list_by_user(self, *, user_id: UUID) -> tuple[UserPushToken, ...]:
         records = await self._session.scalars(
-            select(orm.UserPushToken)
-            .where(orm.UserPushToken.user_id == user_id)
-            .order_by(orm.UserPushToken.created_at, orm.UserPushToken.id)
+            select(UserPushTokenRecord)
+            .where(UserPushTokenRecord.user_id == user_id)
+            .order_by(UserPushTokenRecord.created_at, UserPushTokenRecord.id)
         )
         return tuple(mapper.push_token_to_domain(record) for record in records)
 
@@ -220,13 +247,13 @@ class SqlAlchemyPushTokenRepository(PushTokenRepository):
         if not tokens:
             return
         await self._session.execute(
-            delete(orm.UserPushToken).where(orm.UserPushToken.token.in_(list(tokens)))
+            delete(UserPushTokenRecord).where(UserPushTokenRecord.token.in_(list(tokens)))
         )
         await self._session.flush()
 
     async def delete_by_user_id(self, *, user_id: UUID) -> None:
         await self._session.execute(
-            delete(orm.UserPushToken).where(orm.UserPushToken.user_id == user_id)
+            delete(UserPushTokenRecord).where(UserPushTokenRecord.user_id == user_id)
         )
         await self._session.flush()
 
@@ -234,7 +261,7 @@ class SqlAlchemyPushTokenRepository(PushTokenRepository):
         result = cast(
             "CursorResult[Any]",
             await self._session.execute(
-                delete(orm.UserPushToken).where(orm.UserPushToken.updated_at < older_than)
+                delete(UserPushTokenRecord).where(UserPushTokenRecord.updated_at < older_than)
             ),
         )
         await self._session.flush()

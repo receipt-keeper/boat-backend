@@ -98,7 +98,7 @@ class NotificationResponse(AppBaseModel):
     )
     metadata: dict[str, str] = Field(
         description=(
-            "발신자 소유 부가 정보. 서버는 형식만 검증하며 내용의 의미는 해석하지 않는다. "
+            "발신자 소유 부가 정보. 서버는 형식만 검증하고 내용을 해석하지 않는다. "
             "값이 없으면 빈 객체다."
         ),
     )

@@ -8,6 +8,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     UniqueConstraint,
@@ -30,6 +31,7 @@ class Receipt(Base):
             "total_amount IS NULL OR total_amount >= 0",
             name="ck_receipts_total_amount_non_negative",
         ),
+        Index("ix_receipts_expires_on_id", "expires_on", "id"),
     )
 
     id: Mapped[UUID] = mapped_column(

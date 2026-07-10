@@ -2,13 +2,35 @@ from datetime import datetime
 from uuid import UUID, uuid4
 
 import sqlalchemy as sa
-from sqlalchemy import Boolean, CheckConstraint, DateTime, Index, String, UniqueConstraint, func
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    Index,
+    String,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PostgreSQLUUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.schema import conv
 
 from app.core.db.base import Base
+from app.modules.notifications.infrastructure.persistence.schedule_occurrence_orm import (
+    NotificationScheduleOccurrence as NotificationScheduleOccurrence,
+)
+from app.modules.notifications.infrastructure.persistence.schedule_rule_orm import (
+    NotificationScheduleRule as NotificationScheduleRule,
+)
+
+__all__ = (
+    "NotificationScheduleOccurrence",
+    "NotificationScheduleRule",
+    "NotificationSettings",
+    "UserNotification",
+    "UserPushToken",
+)
 
 
 class UserNotification(Base):

@@ -4,6 +4,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import (
     DateTime,
     ForeignKey,
+    Index,
     String,
     func,
 )
@@ -15,6 +16,7 @@ from app.core.db.base import Base
 
 class User(Base):
     __tablename__ = "users"
+    __table_args__ = (Index("ix_users_created_at_id", "created_at", "id"),)
 
     id: Mapped[UUID] = mapped_column(
         type_=PostgreSQLUUID(as_uuid=True),
