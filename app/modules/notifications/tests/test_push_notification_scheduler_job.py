@@ -35,7 +35,7 @@ async def test_scheduler_creates_due_warranty_notification_with_device_detail_ro
     assert result.created == 1
     assert result.skipped == 0
     created = fixture.notification_repository.created[0].command
-    assert created.kind == "warranty"
+    assert created.kind == "warranty_expiry"
     assert created.resource_type == "receipt"
     assert created.resource_id == RECEIPT_ID
     assert created.message == "공기청정기 무상 AS 7일 남았어요."
@@ -80,7 +80,7 @@ async def test_scheduler_filters_marketing_candidates_without_marketing_consent(
     assert result.skipped == 1
     created = fixture.notification_repository.created[0].command
     assert created.user_id == CONSENT_USER_ID
-    assert created.kind == "engagement_unregistered_receipt"
+    assert created.kind == "receipt_registration_reminder"
     assert created.resource_type is None
     assert created.resource_id is None
     assert created.metadata == {"receiptCount": "0"}

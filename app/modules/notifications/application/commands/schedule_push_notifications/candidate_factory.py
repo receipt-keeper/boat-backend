@@ -159,13 +159,13 @@ def _message_type(target_kind: ScheduleRuleTargetKind) -> NotificationMessageTyp
 def _kind(target_kind: ScheduleRuleTargetKind) -> str:
     match target_kind:
         case ScheduleRuleTargetKind.WARRANTY_RECEIPT:
-            return "warranty"
+            return "warranty_expiry"
         case ScheduleRuleTargetKind.ENGAGEMENT_UNREGISTERED_RECEIPT:
-            return "engagement_unregistered_receipt"
+            return "receipt_registration_reminder"
         case ScheduleRuleTargetKind.ENGAGEMENT_INACTIVE_RECEIPT:
-            return "engagement_inactive_receipt"
+            return "receipt_inactivity_reminder"
         case ScheduleRuleTargetKind.ENGAGEMENT_ALL_USER:
-            return "engagement_all_user"
+            return "receipt_analysis_reminder"
         case unreachable:
             assert_never(unreachable)
 

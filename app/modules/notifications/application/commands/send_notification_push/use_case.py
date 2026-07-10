@@ -1,4 +1,6 @@
 import logging
+from collections.abc import Mapping
+from typing import Final
 
 from app.core.application.unit_of_work import UnitOfWork
 from app.modules.notifications.application.commands.send_notification_push.command import (
@@ -17,6 +19,13 @@ from app.modules.notifications.application.ports.push_token_repository import (
 from app.modules.notifications.domain.value_objects import NotificationMessageType
 
 logger = logging.getLogger(__name__)
+
+_LEGACY_SCHEDULER_KIND_ALIASES: Final[Mapping[str, str]] = {
+    "warranty": "warranty_expiry",
+    "engagement_unregistered_receipt": "receipt_registration_reminder",
+    "engagement_inactive_receipt": "receipt_inactivity_reminder",
+    "engagement_all_user": "receipt_analysis_reminder",
+}
 
 
 class SendNotificationPushCommandUseCase:
@@ -70,7 +79,7 @@ def _push_data(command: SendNotificationPushCommand) -> dict[str, str]:
     data = {
         "notificationId": str(command.notification_id),
         "messageType": command.message_type.value,
-        "kind": command.kind,
+        "kind": _LEGACY_SCHEDULER_KIND_ALIASES.get(command.kind, command.kind),
     }
     if command.resource_type is not None:
         data["resourceType"] = command.resource_type

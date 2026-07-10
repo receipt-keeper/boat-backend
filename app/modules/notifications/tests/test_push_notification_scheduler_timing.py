@@ -81,7 +81,10 @@ async def test_scheduler_uses_mutable_rule_offset_join_delay_and_repeat_data() -
     assert result.created == 2
     assert fixture.receipt_repository.warranty_queries[0].offset_days == 10
     commands = [created.command for created in fixture.notification_repository.created]
-    assert [command.kind for command in commands] == ["warranty", "engagement_all_user"]
+    assert [command.kind for command in commands] == [
+        "warranty_expiry",
+        "receipt_analysis_reminder",
+    ]
     assert [command.metadata for command in commands] == [{"daysUntilExpiry": "10"}, {}]
     for command in commands:
         _assert_no_scheduler_internal_metadata(command.metadata)
@@ -273,7 +276,7 @@ async def test_scheduler_uses_21_day_rule_cadence_without_user_bucket_code_chang
     assert result.candidates == 1
     assert result.created == 1
     created = fixture.notification_repository.created[0].command
-    assert created.kind == "engagement_all_user"
+    assert created.kind == "receipt_analysis_reminder"
     assert created.metadata == {}
 
 

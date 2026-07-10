@@ -194,7 +194,7 @@ def _ad_hoc_command(*, receipt_id: UUID) -> CreateNotificationCommand:
     return CreateNotificationCommand(
         user_id=TEST_USER_ID,
         message_type=NotificationMessageType.TRANSACTIONAL,
-        kind="warranty",
+        kind="warranty_expiry",
         title="보증 만료 임박",
         message="냉장고 보증이 7일 뒤 만료돼요.",
         resource_type="receipt",
