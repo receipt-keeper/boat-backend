@@ -42,3 +42,12 @@ def test_hmac_identity_hasher_output_changes_with_subject() -> None:
     digest_two = hasher.hash(issuer="google", subject="subject-2")
 
     assert digest_one != digest_two
+
+
+def test_hmac_identity_hasher_has_no_separator_ambiguity() -> None:
+    hasher = HmacIdentityHasher(secret="secret-a")
+
+    digest_one = hasher.hash(issuer="a:b", subject="c")
+    digest_two = hasher.hash(issuer="a", subject="b:c")
+
+    assert digest_one != digest_two
