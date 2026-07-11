@@ -46,6 +46,7 @@ EXPECTED_AUTH_FILES = {
     "application/ports/notification_settings_initializer.py",
     "application/ports/token_issuer.py",
     "application/ports/user_provisioner.py",
+    "application/ports/withdrawn_identity.py",
     "domain/events.py",
     "infrastructure/persistence/orm.py",
     "infrastructure/persistence/mapper.py",

@@ -6,6 +6,7 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 DEFAULT_JWT_SECRET_KEY: Final = "local-development-secret-change-me-32bytes"  # noqa: S105
 DEFAULT_REFRESH_TOKEN_PEPPER: Final = "local-refresh-token-pepper-change-me"  # noqa: S105
+DEFAULT_IDENTITY_HASH_SECRET: Final = "local-development-identity-hash-secret-change-me"  # noqa: S105
 SECURE_DEPLOYMENT_ENVS: Final = {"staging", "prod"}
 
 
@@ -102,6 +103,23 @@ class Settings(BaseSettings):
         description="Server-side pepper used when hashing opaque refresh tokens.",
     )
 
+    identity_hash_secret: str = Field(
+        default=DEFAULT_IDENTITY_HASH_SECRET,
+        description="탈퇴 신원(external identity) HMAC 해시 계산에 사용하는 서버 secret.",
+    )
+    withdrawn_identity_retention_days: int = Field(
+        default=180,
+        description="탈퇴 신원 해시(tombstone) 보존 기간(일). 경과분은 백그라운드로 자동 파기된다.",
+    )
+    withdrawn_identity_purge_enabled: bool = Field(
+        default=True,
+        description="lifespan에서 만료된 탈퇴 신원 tombstone 파기 폴러를 시작할지 여부.",
+    )
+    withdrawn_identity_purge_interval_seconds: float = Field(
+        default=3600.0,
+        description="탈퇴 신원 tombstone 파기 폴러가 만료 row를 조회하는 주기(초).",
+    )
+
     default_profile_image_url: str | None = None
     file_storage_backend: Literal["local"] = "local"
     file_storage_root: str = "./storage/files"
@@ -129,6 +147,8 @@ class Settings(BaseSettings):
             raise ValueError("prod/staging requires a non-default jwt_secret_key")
         if self.refresh_token_pepper == DEFAULT_REFRESH_TOKEN_PEPPER:
             raise ValueError("prod/staging requires a non-default refresh_token_pepper")
+        if self.identity_hash_secret == DEFAULT_IDENTITY_HASH_SECRET:
+            raise ValueError("prod/staging requires a non-default identity_hash_secret")
         if not self.firebase_check_revoked:
             raise ValueError("prod/staging requires firebase_check_revoked=true")
         return self

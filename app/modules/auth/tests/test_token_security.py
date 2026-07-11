@@ -24,6 +24,7 @@ from app.modules.auth.infrastructure.tokens.jwt import (
 TEST_SIGNING_KEY: Final = "x" * 48
 OTHER_SIGNING_KEY: Final = "y" * 48
 TEST_REFRESH_TOKEN_PEPPER: Final = "p" * 48
+TEST_IDENTITY_HASH_SECRET: Final = "i" * 48
 TEST_USER_ID: Final = UUID("00000000-0000-0000-0000-000000000001")
 TEST_CREDENTIALS_ID: Final = UUID("00000000-0000-0000-0000-000000000002")
 
@@ -92,12 +93,23 @@ def test_staging_settings_reject_default_refresh_token_pepper() -> None:
         Settings(app_env="staging", jwt_secret_key=TEST_SIGNING_KEY)
 
 
+def test_prod_settings_reject_default_identity_hash_secret() -> None:
+    with pytest.raises(PydanticValidationError):
+        Settings(
+            app_env="prod",
+            jwt_secret_key=TEST_SIGNING_KEY,
+            refresh_token_pepper=TEST_REFRESH_TOKEN_PEPPER,
+            firebase_check_revoked=True,
+        )
+
+
 def test_prod_settings_reject_disabled_firebase_revocation_check() -> None:
     with pytest.raises(PydanticValidationError):
         Settings(
             app_env="prod",
             jwt_secret_key=TEST_SIGNING_KEY,
             refresh_token_pepper=TEST_REFRESH_TOKEN_PEPPER,
+            identity_hash_secret=TEST_IDENTITY_HASH_SECRET,
             firebase_check_revoked=False,
         )
 
@@ -107,6 +119,7 @@ def test_prod_settings_accept_strong_secrets_and_firebase_revocation_check() -> 
         app_env="prod",
         jwt_secret_key=TEST_SIGNING_KEY,
         refresh_token_pepper=TEST_REFRESH_TOKEN_PEPPER,
+        identity_hash_secret=TEST_IDENTITY_HASH_SECRET,
         firebase_check_revoked=True,
     )
 
