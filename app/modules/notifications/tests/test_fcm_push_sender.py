@@ -88,6 +88,12 @@ async def test_fcm_push_sender_builds_messages_and_reports_dead_registrations(
         for fcm_message in fcm_messages
     )
     assert all(fcm_message.data == {"kind": "benefit"} for fcm_message in fcm_messages)
+    android_message, ios_message = fcm_messages
+    assert android_message.apns is None
+    assert android_message.android is None
+    assert ios_message.apns is not None
+    assert ios_message.apns.payload.aps.sound == "default"
+    assert ios_message.android is None
 
 
 async def test_fcm_push_sender_splits_sends_into_batches_of_500(

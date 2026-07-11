@@ -1,7 +1,9 @@
 import asyncio
 import warnings
 from collections.abc import Sequence
+from dataclasses import dataclass
 from itertools import batched
+from typing import assert_never
 
 import firebase_admin
 from firebase_admin import credentials, messaging
@@ -15,12 +17,19 @@ from app.modules.notifications.application.ports.push_sender import (
     PushSendReport,
 )
 from app.modules.notifications.domain.model import UserPushToken
+from app.modules.notifications.domain.value_objects import DevicePlatform
 
 # 이 응답을 받은 등록은 다시 유효해지지 않으므로 저장소에서 제거 대상으로 보고한다.
 _DEAD_REGISTRATION_ERRORS = (messaging.UnregisteredError, messaging.SenderIdMismatchError)
 
 # send_each는 한 번에 500개까지만 받는다. 넘기면 ValueError로 즉시 거부된다.
 _SEND_BATCH_LIMIT = 500
+
+
+@dataclass(frozen=True, slots=True)
+class _PlatformConfig:
+    apns: messaging.APNSConfig | None = None
+    android: messaging.AndroidConfig | None = None
 
 
 class DisabledPushSender(PushSender):
@@ -82,6 +91,7 @@ class FcmPushSender(PushSender):
 
 
 def _to_fcm_message(token: UserPushToken, message: PushMessage) -> messaging.Message:
+    platform_config = _platform_config(token.platform)
     # firebase-admin 7.5.0에서 Message.token은 DeprecationWarning을 발생시키지만,
     # 클라이언트(Samsung SMP 래퍼)가 신규 FID 등록 경로를 생성하지 않아 FID 발송이
     # 수신되지 않는 것이 실측 확정됐다. token 발송은 deprecated지만 제거 공지가 없고
@@ -94,4 +104,22 @@ def _to_fcm_message(token: UserPushToken, message: PushMessage) -> messaging.Mes
             token=token.token.value,
             notification=messaging.Notification(title=message.title, body=message.body),
             data=dict(message.data),
+            apns=platform_config.apns,
+            android=platform_config.android,
         )
+
+
+def _platform_config(platform: DevicePlatform) -> _PlatformConfig:
+    match platform:
+        case DevicePlatform.IOS:
+            return _PlatformConfig(
+                apns=messaging.APNSConfig(
+                    payload=messaging.APNSPayload(
+                        aps=messaging.Aps(sound="default"),
+                    )
+                )
+            )
+        case DevicePlatform.ANDROID:
+            return _PlatformConfig()
+        case unreachable:
+            assert_never(unreachable)
