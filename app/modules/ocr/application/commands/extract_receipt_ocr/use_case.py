@@ -38,12 +38,15 @@ class ExtractReceiptOcrCommandUseCase:
         )
         await self._reserve_credit_command_use_case.execute(use_credit_command)
         try:
-            extracted = await self._ocr_client.extract(
-                image_content=command.image_content,
-                content_type=command.content_type,
-            )
+            extracted = await self._ocr_client.extract(images=command.images)
+            if extracted.unreadable_file_indexes:
+                raise ReceiptImageUnreadableError(
+                    file_indexes=extracted.unreadable_file_indexes,
+                )
             if not (extracted.item_name or "").strip():
-                raise ReceiptImageUnreadableError()
+                raise ReceiptImageUnreadableError(
+                    file_indexes=tuple(image.file_index for image in command.images),
+                )
 
             result = ReceiptOcrResult.create(
                 item_name=extracted.item_name,

@@ -12,7 +12,10 @@ from app.modules.ocr.application.commands.extract_receipt_ocr.command import (
 from app.modules.ocr.application.commands.extract_receipt_ocr.use_case import (
     ExtractReceiptOcrCommandUseCase,
 )
-from app.modules.ocr.application.ports.receipt_ocr_client import ExtractedReceiptOcrFields
+from app.modules.ocr.application.ports.receipt_ocr_client import (
+    ExtractedReceiptOcrFields,
+    ReceiptOcrImage,
+)
 from app.modules.ocr.domain.exceptions import ReceiptImageUnreadableError
 from tests.support.unit_of_work import FakeUnitOfWork
 
@@ -29,9 +32,7 @@ class FakeUseCreditCommandUseCase:
 
 @dataclass(slots=True)
 class ReadableReceiptOcrClient:
-    async def extract(
-        self, *, image_content: bytes, content_type: str
-    ) -> ExtractedReceiptOcrFields:
+    async def extract(self, *, images: tuple[ReceiptOcrImage, ...]) -> ExtractedReceiptOcrFields:
         return ExtractedReceiptOcrFields(
             item_name="삼성 냉장고",
             brand_name="삼성",
@@ -46,9 +47,7 @@ class ReadableReceiptOcrClient:
 
 
 class UnreadableReceiptOcrClient:
-    async def extract(
-        self, *, image_content: bytes, content_type: str
-    ) -> ExtractedReceiptOcrFields:
+    async def extract(self, *, images: tuple[ReceiptOcrImage, ...]) -> ExtractedReceiptOcrFields:
         return ExtractedReceiptOcrFields(
             item_name=None,
             brand_name=None,
@@ -63,9 +62,7 @@ class UnreadableReceiptOcrClient:
 
 
 class FailingReceiptOcrClient:
-    async def extract(
-        self, *, image_content: bytes, content_type: str
-    ) -> ExtractedReceiptOcrFields:
+    async def extract(self, *, images: tuple[ReceiptOcrImage, ...]) -> ExtractedReceiptOcrFields:
         raise RuntimeError("ocr provider failed")
 
 
@@ -94,8 +91,7 @@ async def test_extract_receipt_ocr_use_case_consumes_credit_after_success() -> N
     result = await use_case.execute(
         ExtractReceiptOcrCommand(
             user_id=USER_ID,
-            image_content=b"image",
-            content_type="image/png",
+            images=(ReceiptOcrImage(file_index=0, content=b"image", content_type="image/png"),),
         )
     )
 
@@ -133,8 +129,7 @@ async def test_extract_receipt_ocr_use_case_does_not_consume_credit_when_unreada
         await use_case.execute(
             ExtractReceiptOcrCommand(
                 user_id=USER_ID,
-                image_content=b"image",
-                content_type="image/png",
+                images=(ReceiptOcrImage(file_index=0, content=b"image", content_type="image/png"),),
             )
         )
 
@@ -164,8 +159,7 @@ async def test_extract_receipt_ocr_use_case_rolls_back_when_provider_fails() -> 
         await use_case.execute(
             ExtractReceiptOcrCommand(
                 user_id=USER_ID,
-                image_content=b"image",
-                content_type="image/png",
+                images=(ReceiptOcrImage(file_index=0, content=b"image", content_type="image/png"),),
             )
         )
 
@@ -195,8 +189,7 @@ async def test_extract_receipt_ocr_use_case_rolls_back_when_finalize_fails() -> 
         await use_case.execute(
             ExtractReceiptOcrCommand(
                 user_id=USER_ID,
-                image_content=b"image",
-                content_type="image/png",
+                images=(ReceiptOcrImage(file_index=0, content=b"image", content_type="image/png"),),
             )
         )
 

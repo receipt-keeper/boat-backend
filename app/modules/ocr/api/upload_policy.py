@@ -10,5 +10,5 @@ RECEIPT_OCR_UPLOAD_POLICY: Final = UploadValidationPolicy(
         "image/heif",
     ),
     max_upload_bytes=10_485_760,
-    max_upload_count=1,
+    max_upload_count=5,
 )

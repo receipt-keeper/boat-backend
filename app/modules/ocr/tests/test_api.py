@@ -7,7 +7,10 @@ from httpx import AsyncClient
 
 from app.core.config.settings import Settings
 from app.core.domain.exceptions import ValidationError
-from app.modules.ocr.application.ports.receipt_ocr_client import ExtractedReceiptOcrFields
+from app.modules.ocr.application.ports.receipt_ocr_client import (
+    ExtractedReceiptOcrFields,
+    ReceiptOcrImage,
+)
 from app.modules.ocr.dependencies import get_receipt_ocr_client
 from app.modules.ocr.domain.exceptions import ReceiptOcrProviderUnavailableError
 from app.modules.ocr.domain.model import ReceiptOcrResult
@@ -18,9 +21,7 @@ _PNG_BYTES = b"\x89PNG\r\n\x1a\nreceipt-image"
 
 
 class UnreadableReceiptOcrClient:
-    async def extract(
-        self, *, image_content: bytes, content_type: str
-    ) -> ExtractedReceiptOcrFields:
+    async def extract(self, *, images: tuple[ReceiptOcrImage, ...]) -> ExtractedReceiptOcrFields:
         return ExtractedReceiptOcrFields(
             item_name="",
             brand_name=None,
@@ -31,20 +32,37 @@ class UnreadableReceiptOcrClient:
             period_months=None,
             category=None,
             sub_category=None,
+            unreadable_file_indexes=tuple(image.file_index for image in images),
+        )
+
+
+class PartiallyUnreadableReceiptOcrClient:
+    def __init__(self) -> None:
+        self.images: tuple[ReceiptOcrImage, ...] = ()
+
+    async def extract(self, *, images: tuple[ReceiptOcrImage, ...]) -> ExtractedReceiptOcrFields:
+        self.images = images
+        return ExtractedReceiptOcrFields(
+            item_name="삼성 냉장고",
+            brand_name="삼성",
+            serial_number=None,
+            payment_location="전자랜드",
+            payment_date=date.today(),
+            total_amount=129000,
+            period_months=12,
+            category="주방 가전",
+            sub_category="냉장고",
+            unreadable_file_indexes=(1,),
         )
 
 
 class ProviderUnavailableReceiptOcrClient:
-    async def extract(
-        self, *, image_content: bytes, content_type: str
-    ) -> ExtractedReceiptOcrFields:
+    async def extract(self, *, images: tuple[ReceiptOcrImage, ...]) -> ExtractedReceiptOcrFields:
         raise ReceiptOcrProviderUnavailableError()
 
 
 class ZeroTotalAmountReceiptOcrClient:
-    async def extract(
-        self, *, image_content: bytes, content_type: str
-    ) -> ExtractedReceiptOcrFields:
+    async def extract(self, *, images: tuple[ReceiptOcrImage, ...]) -> ExtractedReceiptOcrFields:
         return ExtractedReceiptOcrFields(
             item_name="무상 교체",
             brand_name=None,
@@ -166,7 +184,7 @@ async def test_receipt_ocr_endpoint_uses_request_validation_envelope(
     assert body["data"]["errors"] == [{"field": "file", "message": "Field required"}]
 
 
-async def test_receipt_ocr_endpoint_rejects_multiple_file_parts(client: AsyncClient) -> None:
+async def test_receipt_ocr_endpoint_accepts_multiple_file_parts(client: AsyncClient) -> None:
     response = await client.post(
         "/api/v1/ocr",
         files=[
@@ -175,14 +193,23 @@ async def test_receipt_ocr_endpoint_rejects_multiple_file_parts(client: AsyncCli
         ],
     )
 
+    assert response.status_code == 200
+    assert response.json()["success"] is True
+
+
+async def test_receipt_ocr_endpoint_rejects_more_than_five_file_parts(
+    client: AsyncClient,
+) -> None:
+    response = await client.post(
+        "/api/v1/ocr",
+        files=[("file", (f"receipt-{index}.png", _PNG_BYTES, "image/png")) for index in range(6)],
+    )
+
     body = response.json()
 
     assert response.status_code == 422
-    assert body["success"] is False
-    assert body["status"] == 422
-    assert body["data"]["path"] == "/api/v1/ocr"
     assert body["data"]["errors"] == [
-        {"field": "files", "message": "파일은 최대 1개까지 업로드할 수 있습니다."}
+        {"field": "files", "message": "파일은 최대 5개까지 업로드할 수 있습니다."}
     ]
 
 
@@ -209,10 +236,43 @@ async def test_receipt_ocr_endpoint_returns_unreadable_image_failure(
     assert body["data"]["errors"] == [
         {
             "field": "file",
+            "fileIndex": 0,
             "message": "영수증 이미지를 인식하지 못했습니다. 다시 촬영하거나 수동 입력해 주세요.",
         }
     ]
     assert len(use_recording_credit_reservation_command_use_case.commands) == 1
+    assert use_recording_credit_command_use_case.commands == []
+
+
+async def test_receipt_ocr_endpoint_returns_only_unreadable_file_indexes(
+    client: AsyncClient,
+    override_receipt_ocr_client: Callable[[PartiallyUnreadableReceiptOcrClient], None],
+    use_recording_credit_command_use_case: RecordingUseCreditCommandUseCase,
+) -> None:
+    ocr_client = PartiallyUnreadableReceiptOcrClient()
+    override_receipt_ocr_client(ocr_client)
+
+    response = await client.post(
+        "/api/v1/ocr",
+        files=[
+            ("file", ("receipt-1.png", _PNG_BYTES, "image/png")),
+            ("file", ("receipt-2.png", _PNG_BYTES, "image/png")),
+            ("file", ("receipt-3.png", _PNG_BYTES, "image/png")),
+        ],
+    )
+
+    body = response.json()
+
+    assert response.status_code == 422
+    assert body["data"]["errors"] == [
+        {
+            "field": "file",
+            "fileIndex": 1,
+            "message": "영수증 이미지를 인식하지 못했습니다. 다시 촬영하거나 수동 입력해 주세요.",
+        }
+    ]
+    assert [image.file_index for image in ocr_client.images] == [0, 1, 2]
+    assert [image.content for image in ocr_client.images] == [_PNG_BYTES] * 3
     assert use_recording_credit_command_use_case.commands == []
 
 
@@ -249,7 +309,9 @@ async def test_receipt_ocr_endpoint_openapi_examples(client: AsyncClient) -> Non
 
     operation = response.json()["paths"]["/api/v1/ocr"]["post"]
     success_example = operation["responses"]["200"]["content"]["application/json"]["example"]
-    unreadable_example = operation["responses"]["422"]["content"]["application/json"]["example"]
+    validation_examples = operation["responses"]["422"]["content"]["application/json"]["examples"]
+    unreadable_example = validation_examples["unreadable_images"]["value"]
+    invalid_upload_example = validation_examples["invalid_upload"]["value"]
     insufficient_credit_example = operation["responses"]["409"]["content"]["application/json"][
         "example"
     ]
@@ -264,6 +326,11 @@ async def test_receipt_ocr_endpoint_openapi_examples(client: AsyncClient) -> Non
     assert success_example["data"]["sub_category"] == "냉장고"
     assert success_example["data"]["needs_review"] is True
     assert unreadable_example["data"]["errors"][0]["field"] == "file"
+    assert unreadable_example["data"]["errors"][0]["fileIndex"] == 1
+    assert invalid_upload_example["data"]["errors"][0] == {
+        "field": "files",
+        "message": "파일은 최대 5개까지 업로드할 수 있습니다.",
+    }
     assert insufficient_credit_example["data"]["message"] == "사용 가능한 크레딧이 부족합니다."
     assert provider_unavailable_example["status"] == 503
 
