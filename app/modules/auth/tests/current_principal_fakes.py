@@ -65,6 +65,14 @@ class CredentialStateRepository(CredentialRepository):
         assert identity
         raise AssertionError("attach_external_identity must not be called")
 
+    async def list_external_identities(
+        self,
+        *,
+        credentials_id: UUID,
+    ) -> list[ExternalIdentity]:
+        assert credentials_id
+        raise AssertionError("list_external_identities must not be called")
+
     async def create_session(self, *, credentials_id: UUID) -> UUID:
         assert credentials_id
         raise AssertionError("create_session must not be called")

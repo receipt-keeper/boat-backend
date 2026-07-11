@@ -37,6 +37,10 @@ from app.modules.auth.domain.model import ExternalIdentity
 from app.modules.auth.infrastructure.persistence.credential_repository import (
     SqlAlchemyCredentialRepository,
 )
+from app.modules.auth.infrastructure.persistence.withdrawn_identity_repository import (
+    SqlAlchemyWithdrawnIdentityRegistry,
+)
+from app.modules.auth.infrastructure.security.identity_hasher import HmacIdentityHasher
 from app.modules.auth.tests.service_fakes import (
     NoOpExternalIdentityLoginSynchronizer,
     build_access_token_issuer,
@@ -47,10 +51,13 @@ from app.modules.users.dependencies import (
     build_users_event_registry,
 )
 
+TEST_IDENTITY_HASH_SECRET = "atomicity-test-identity-hash-secret"  # noqa: S105
+
 
 class _NoOpCreditInitializer(CreditInitializer):
-    async def initialize(self, *, user_id: UUID) -> None:
+    async def initialize(self, *, user_id: UUID, identity_hash: str) -> None:
         assert user_id
+        assert identity_hash
 
 
 class _NoOpNotificationSettingsInitializer(NotificationSettingsInitializer):
@@ -88,6 +95,11 @@ def _build_signup_use_case(
         user_provisioner=user_provisioner,
         notification_settings_initializer=_NoOpNotificationSettingsInitializer(),
         credit_initializer=_NoOpCreditInitializer(),
+        identity_hasher=HmacIdentityHasher(secret=TEST_IDENTITY_HASH_SECRET),
+        withdrawn_identity_registry=SqlAlchemyWithdrawnIdentityRegistry(
+            session,
+            retention_days=180,
+        ),
         access_token_issuer=build_access_token_issuer(),
         refresh_token_issuer=build_refresh_token_service(),
         unit_of_work=SqlAlchemyUnitOfWork(session),

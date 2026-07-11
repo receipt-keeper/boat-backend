@@ -20,6 +20,10 @@ from app.modules.auth.application.ports.user_provisioner import (
     UserProvisioner,
     UserProvisioningRequest,
 )
+from app.modules.auth.application.ports.withdrawn_identity import (
+    IdentityHasher,
+    WithdrawnIdentityRegistry,
+)
 from app.modules.auth.domain.exceptions import UserAlreadyExistsError
 from app.modules.auth.domain.model import ExternalIdentity
 
@@ -36,6 +40,8 @@ class SignupCommandUseCase:
         user_provisioner: UserProvisioner,
         notification_settings_initializer: NotificationSettingsInitializer,
         credit_initializer: CreditInitializer,
+        identity_hasher: IdentityHasher,
+        withdrawn_identity_registry: WithdrawnIdentityRegistry,
         access_token_issuer: AccessTokenIssuer,
         refresh_token_issuer: RefreshTokenIssuer,
         unit_of_work: UnitOfWork,
@@ -47,6 +53,8 @@ class SignupCommandUseCase:
         self._user_provisioner = user_provisioner
         self._notification_settings_initializer = notification_settings_initializer
         self._credit_initializer = credit_initializer
+        self._identity_hasher = identity_hasher
+        self._withdrawn_identity_registry = withdrawn_identity_registry
         self._access_token_issuer = access_token_issuer
         self._refresh_token_issuer = refresh_token_issuer
         self._unit_of_work = unit_of_work
@@ -123,7 +131,15 @@ class SignupCommandUseCase:
             user_id=provisioned_user.user_id,
             marketing_consent=command.marketing_consent,
         )
-        await self._credit_initializer.initialize(user_id=provisioned_user.user_id)
+        identity_hash = self._identity_hasher.hash(
+            issuer=identity.issuer.value,
+            subject=identity.subject.value,
+        )
+        if not await self._withdrawn_identity_registry.exists(identity_hash=identity_hash):
+            await self._credit_initializer.initialize(
+                user_id=provisioned_user.user_id,
+                identity_hash=identity_hash,
+            )
         logged_in_at = datetime.now(UTC)
         credentials = await self._credential_repository.create_for_external_identity(
             identity=identity,

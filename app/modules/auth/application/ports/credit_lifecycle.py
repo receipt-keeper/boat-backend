@@ -4,7 +4,7 @@ from uuid import UUID
 
 class CreditInitializer(ABC):
     @abstractmethod
-    async def initialize(self, *, user_id: UUID) -> None:
+    async def initialize(self, *, user_id: UUID, identity_hash: str) -> None:
         raise NotImplementedError
 
 

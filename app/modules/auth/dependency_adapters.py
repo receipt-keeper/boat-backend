@@ -46,12 +46,13 @@ class CreditInitializerAdapter(CreditInitializer):
     def __init__(self, command_use_case: GrantCreditCommandUseCase) -> None:
         self._command_use_case = command_use_case
 
-    async def initialize(self, *, user_id: UUID) -> None:
+    async def initialize(self, *, user_id: UUID, identity_hash: str) -> None:
         await self._command_use_case.execute(
             GrantCreditCommand(
                 user_id=user_id,
                 amount=CreditAmount(value=_INITIAL_MONTHLY_OCR_CREDIT_COUNT),
                 reason=CreditReason.MONTHLY_OCR_ALLOWANCE,
+                idempotency_key=f"signup-bonus:{identity_hash}",
             )
         )
 

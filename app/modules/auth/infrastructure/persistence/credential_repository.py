@@ -113,6 +113,17 @@ class SqlAlchemyCredentialRepository(CredentialRepository):
             )
         )
 
+    async def list_external_identities(
+        self,
+        *,
+        credentials_id: UUID,
+    ) -> list[ExternalIdentity]:
+        statement = select(orm.ExternalIdentity).where(
+            orm.ExternalIdentity.credentials_id == credentials_id,
+        )
+        records = await self._session.scalars(statement)
+        return [mapper.external_identity_to_domain(record) for record in records]
+
     async def create_session(self, *, credentials_id: UUID) -> UUID:
         auth_session = AuthSession.create(credentials_id=credentials_id)
         self._session.add(mapper.auth_session_to_record(auth_session))

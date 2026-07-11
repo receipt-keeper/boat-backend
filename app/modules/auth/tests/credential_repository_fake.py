@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import datetime
 from uuid import UUID, uuid4
 
@@ -16,6 +17,7 @@ class FakeCredentialRepository(CredentialRepository):
         self.credentials_by_user_id: dict[UUID, UserCredential] = {}
         self.refresh_token_hashes: dict[str, SessionCredential] = {}
         self.saved_identities: list[tuple[str, str, str, str | None, str | None]] = []
+        self.identities_by_credentials_id: dict[UUID, list[ExternalIdentity]] = {}
         self.login_records: list[UUID] = []
         self.revoked_hashes: list[str] = []
         self.revoked_session_ids: set[UUID] = set()
@@ -33,6 +35,9 @@ class FakeCredentialRepository(CredentialRepository):
         self.credentials_by_user_id[stored_credentials.user_id] = stored_credentials
         if identity.email_verified and canonical_email is not None:
             self.credentials_by_verified_email[canonical_email] = stored_credentials
+        self.identities_by_credentials_id.setdefault(stored_credentials.credentials_id, []).append(
+            replace(identity, credentials_id=stored_credentials.credentials_id)
+        )
         return stored_credentials
 
     async def find_by_external_identity(
@@ -73,6 +78,9 @@ class FakeCredentialRepository(CredentialRepository):
                 None if identity.email is None else identity.email.value,
                 identity.name,
             )
+        )
+        self.identities_by_credentials_id.setdefault(credentials.credentials_id, []).append(
+            replace(identity, credentials_id=credentials.credentials_id)
         )
         self.login_records.append(credentials.credentials_id)
         return credentials
@@ -123,6 +131,16 @@ class FakeCredentialRepository(CredentialRepository):
                 identity.name,
             )
         )
+        self.identities_by_credentials_id.setdefault(credentials_id, []).append(
+            replace(identity, credentials_id=credentials_id)
+        )
+
+    async def list_external_identities(
+        self,
+        *,
+        credentials_id: UUID,
+    ) -> list[ExternalIdentity]:
+        return list(self.identities_by_credentials_id.get(credentials_id, []))
 
     async def create_session(self, *, credentials_id: UUID) -> UUID:
         assert credentials_id
@@ -226,6 +244,7 @@ class FakeCredentialRepository(CredentialRepository):
             if session_credential.credentials.user_id != user_id
             or session_credential.credentials.credentials_id != credentials_id
         }
+        self.identities_by_credentials_id.pop(credentials_id, None)
 
 
 def _canonical_email(identity: ExternalIdentity) -> str | None:

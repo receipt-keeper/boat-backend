@@ -58,6 +58,14 @@ class CredentialRepository(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    async def list_external_identities(
+        self,
+        *,
+        credentials_id: UUID,
+    ) -> list[ExternalIdentity]:
+        raise NotImplementedError
+
+    @abstractmethod
     async def create_session(self, *, credentials_id: UUID) -> UUID:
         raise NotImplementedError
 

@@ -12,6 +12,7 @@ from app.modules.auth.domain.model import (
 from app.modules.auth.domain.model import (
     UserCredential as DomainUserCredential,
 )
+from app.modules.auth.domain.value_objects import Email, Issuer, Provider, Subject
 from app.modules.auth.infrastructure.persistence import orm
 
 
@@ -47,6 +48,20 @@ def external_identity_to_record(
         email=None if identity.email is None else identity.email.value,
         normalized_email=_canonical_email(identity),
         email_verified=identity.email_verified,
+    )
+
+
+def external_identity_to_domain(record: orm.ExternalIdentity) -> DomainExternalIdentity:
+    # name은 ORM에 영속화하지 않는(external_identity_to_record와 대칭인) 필드라 복원 시 None이다.
+    return DomainExternalIdentity(
+        id=record.id,
+        credentials_id=record.credentials_id,
+        issuer=Issuer(record.issuer),
+        subject=Subject(record.subject),
+        provider=Provider(record.provider),
+        email=None if record.email is None else Email(record.email),
+        email_verified=record.email_verified,
+        name=None,
     )
 
 
