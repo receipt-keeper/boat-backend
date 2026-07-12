@@ -7,12 +7,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.core.db.outbox.orm import OutboxEvent
 from app.core.db.outbox.publisher import OutboxEventPublisher
 from app.core.db.unit_of_work import SqlAlchemyUnitOfWork
-from app.modules.credits.application.commands.delete_user_credits.command import (
-    DeleteUserCreditsCommand,
-)
-from app.modules.credits.application.commands.delete_user_credits.use_case import (
-    DeleteUserCreditsCommandUseCase,
-)
 from app.modules.credits.application.commands.finalize_credit_usage.use_case import (
     FinalizeCreditUsageCommandUseCase,
 )
@@ -235,55 +229,3 @@ async def test_finalize_credit_usage_commits_reserved_credit_and_usage_ledger(
     # finalize가 사용 확정의 유일한 커밋 지점이므로 CreditUsed는 정확히 1건 발행된다.
     assert len(saved_outbox_events) == 1
     assert saved_outbox_events[0].event_type == "CreditUsed"
-
-
-async def test_delete_user_credits_command_removes_snapshot_and_ledger(
-    postgres_session_factory: async_sessionmaker[AsyncSession],
-) -> None:
-    async with postgres_session_factory() as session:
-        session.add(
-            orm.UserCredit(
-                user_id=USER_ID,
-                feature_key="ocr",
-                total_granted_count=5,
-                used_count=1,
-                remaining_count=4,
-            )
-        )
-        session.add(
-            orm.CreditTransaction(
-                user_id=USER_ID,
-                feature_key="ocr",
-                reason=CreditReason.MONTHLY_OCR_ALLOWANCE.value,
-                action=CreditAction.GRANT.value,
-                amount=5,
-            )
-        )
-        await session.commit()
-
-    async with postgres_session_factory() as session:
-        await DeleteUserCreditsCommandUseCase(
-            credit_repository=SqlAlchemyCreditRepository(session),
-            unit_of_work=SqlAlchemyUnitOfWork(session),
-            event_publisher=OutboxEventPublisher(
-                session=session,
-                registry=build_credits_event_registry(),
-            ),
-        ).execute(DeleteUserCreditsCommand(user_id=USER_ID))
-
-    async with postgres_session_factory() as session:
-        saved_credit = await session.get(
-            orm.UserCredit,
-            {"user_id": USER_ID, "feature_key": "ocr"},
-        )
-        saved_transactions = tuple(
-            await session.scalars(
-                select(orm.CreditTransaction).where(orm.CreditTransaction.user_id == USER_ID)
-            )
-        )
-        saved_outbox_events = tuple(await session.scalars(select(OutboxEvent)))
-
-    assert saved_credit is None
-    assert saved_transactions == ()
-    assert len(saved_outbox_events) == 1
-    assert saved_outbox_events[0].event_type == "UserCreditsDeleted"

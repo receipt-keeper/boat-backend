@@ -13,9 +13,6 @@ from app.core.db.unit_of_work import SqlAlchemyUnitOfWork
 from app.modules.credits.application.commands.close_credit_account.use_case import (
     CloseCreditsAccountCommandUseCase,
 )
-from app.modules.credits.application.commands.delete_user_credits.use_case import (
-    DeleteUserCreditsCommandUseCase,
-)
 from app.modules.credits.application.commands.finalize_credit_usage.use_case import (
     FinalizeCreditUsageCommandUseCase,
 )
@@ -61,17 +58,6 @@ def build_grant_credit_command_use_case(
     unit_of_work: UnitOfWork,
 ) -> GrantCreditCommandUseCase:
     return GrantCreditCommandUseCase(
-        credit_repository=SqlAlchemyCreditRepository(session),
-        unit_of_work=unit_of_work,
-        event_publisher=_build_outbox_event_publisher(session),
-    )
-
-
-def build_delete_user_credits_command_use_case(
-    session: AsyncSession,
-    unit_of_work: UnitOfWork,
-) -> DeleteUserCreditsCommandUseCase:
-    return DeleteUserCreditsCommandUseCase(
         credit_repository=SqlAlchemyCreditRepository(session),
         unit_of_work=unit_of_work,
         event_publisher=_build_outbox_event_publisher(session),

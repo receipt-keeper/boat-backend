@@ -24,8 +24,7 @@ class CloseCreditsAccountCommandUseCase:
     삭제한다. signup-allowance claim은 삭제하지 않고 purge_after만
     `now + credit_claim_retention_days`로 채워 파기 폴러(CreditClaimPurger)에 위임한다
     - 보존 기간 내 재가입 시 재지급 없이 재활성화하기 위한 신호로 쓰인다.
-    candidate_handles가 비어 있으면(신원 조회 불가 엣지) 보존 없이 기존
-    DeleteUserCreditsCommandUseCase와 동일하게 전량 삭제한다.
+    candidate_handles가 비어 있으면(신원 조회 불가 엣지) 보존 없이 전량 삭제한다.
     """
 
     def __init__(
