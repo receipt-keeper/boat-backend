@@ -153,12 +153,13 @@ def _due_notification(
 ) -> DueNotification:
     match target_kind:
         case ScheduleRuleTargetKind.WARRANTY_RECEIPT:
+            candidate = warranty_candidate()
             return warranty_expiry_notification(
                 due_rule=_due_rule(warranty_rule(campaign_key="warranty_risk_d7", day_offset=7)),
                 user_id=CONSENT_USER_ID,
-                receipt_id=warranty_candidate().receipt_id,
-                item_name=warranty_candidate().item_name,
-                days_until_expiry=warranty_candidate().days_until_expiry,
+                receipt_id=candidate.receipt_id,
+                item_name=candidate.item_name,
+                sub_category=candidate.sub_category,
             )
         case ScheduleRuleTargetKind.ENGAGEMENT_UNREGISTERED_RECEIPT:
             rule = engagement_rule(

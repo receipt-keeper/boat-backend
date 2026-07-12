@@ -100,16 +100,16 @@ def warranty_candidate(
     receipt_id: UUID = RECEIPT_ID,
     expires_on: date = date(2026, 7, 16),
     created_at: datetime = NOW - timedelta(days=1),
-    days_until_expiry: int = 7,
     item_name: str = "공기청정기",
+    sub_category: str | None = "공기청정기",
 ) -> ExpiringReceipt:
     return ExpiringReceipt(
         user_id=user_id,
         receipt_id=receipt_id,
         item_name=item_name,
+        sub_category=sub_category,
         expires_on=expires_on,
         created_at=created_at,
-        days_until_expiry=days_until_expiry,
     )
 
 

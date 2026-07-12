@@ -367,7 +367,7 @@ def test_warranty_expiry_notification_truncates_255_character_item_name_to_valid
         user_id=UUID("00000000-0000-0000-0000-000000000001"),
         receipt_id=UUID("00000000-0000-0000-0000-000000000002"),
         item_name="A" * 255,
-        days_until_expiry=7,
+        sub_category="공기청정기",
     )
 
     # Then: command text는 notification value object의 길이 제약을 만족한다.

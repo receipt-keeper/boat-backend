@@ -61,8 +61,8 @@ async def test_notifications_match_cursor_paging_contract() -> None:
         "delivery_history": "user_visible_history",
         "landing_target": "user_visible_target",
         "join_based_bucket": "user_visible_bucket",
+        "productName": "receiptUpload",
         "subCategory": "receiptUpload",
-        "daysUntilExpiry": "7",
     }
     payloads = [
         {

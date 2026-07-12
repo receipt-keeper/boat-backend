@@ -58,8 +58,8 @@ async def test_receipt_query_contract_characterization(
             )
         )
 
-    assert [(item.receipt_id, item.days_until_expiry) for item in expiring_page.receipts] == [
-        (WARRANTY_RECEIPT_ID, 30)
+    assert [(item.receipt_id, item.sub_category) for item in expiring_page.receipts] == [
+        (WARRANTY_RECEIPT_ID, None)
     ]
     assert expiring_page.next_cursor_receipt_id is None
     assert expiring_page.has_next is False
