@@ -4,6 +4,13 @@ from typing import Protocol
 
 
 @dataclass(frozen=True, slots=True)
+class ReceiptOcrImage:
+    file_index: int
+    content: bytes
+    content_type: str
+
+
+@dataclass(frozen=True, slots=True)
 class ExtractedReceiptOcrFields:
     item_name: str | None
     brand_name: str | None
@@ -14,12 +21,12 @@ class ExtractedReceiptOcrFields:
     period_months: int | None
     category: str | None
     sub_category: str | None
+    unreadable_file_indexes: tuple[int, ...] = ()
 
 
 class ReceiptOcrClientPort(Protocol):
     async def extract(
         self,
         *,
-        image_content: bytes,
-        content_type: str,
+        images: tuple[ReceiptOcrImage, ...],
     ) -> ExtractedReceiptOcrFields: ...

@@ -14,7 +14,10 @@ from app.modules.credits.application.commands.use_credit.command import UseCredi
 from app.modules.credits.dependencies import get_reserve_credit_command_use_case
 from app.modules.credits.domain import CreditAmount, CreditReason
 from app.modules.credits.domain.exceptions import InsufficientCreditError
-from app.modules.ocr.application.ports.receipt_ocr_client import ExtractedReceiptOcrFields
+from app.modules.ocr.application.ports.receipt_ocr_client import (
+    ExtractedReceiptOcrFields,
+    ReceiptOcrImage,
+)
 from app.modules.ocr.tests.conftest import RecordingUseCreditCommandUseCase
 
 _PNG_BYTES = b"\x89PNG\r\n\x1a\nreceipt-image"
@@ -24,9 +27,7 @@ class CountingReceiptOcrClient:
     def __init__(self) -> None:
         self.calls = 0
 
-    async def extract(
-        self, *, image_content: bytes, content_type: str
-    ) -> ExtractedReceiptOcrFields:
+    async def extract(self, *, images: tuple[ReceiptOcrImage, ...]) -> ExtractedReceiptOcrFields:
         self.calls += 1
         return ExtractedReceiptOcrFields(
             item_name="삼성 냉장고",

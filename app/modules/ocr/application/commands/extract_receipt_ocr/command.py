@@ -1,9 +1,10 @@
 from dataclasses import dataclass
 from uuid import UUID
 
+from app.modules.ocr.application.ports.receipt_ocr_client import ReceiptOcrImage
+
 
 @dataclass(frozen=True, slots=True)
 class ExtractReceiptOcrCommand:
     user_id: UUID
-    image_content: bytes
-    content_type: str
+    images: tuple[ReceiptOcrImage, ...]

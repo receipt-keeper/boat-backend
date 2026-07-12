@@ -20,6 +20,7 @@ from app.core.security.principal import AuthenticatedPrincipal
 from app.main import create_app
 from app.modules.auth.api.security import authenticate_current_principal
 from app.modules.credits.infrastructure.persistence import orm as credit_orm
+from app.modules.ocr.application.ports.receipt_ocr_client import ReceiptOcrImage
 from app.modules.ocr.dependencies import get_receipt_ocr_client
 from app.modules.receipts.infrastructure.persistence import orm as receipt_orm
 
@@ -42,14 +43,14 @@ class _ExtractedReceiptOcrFields:
     period_months: int | None
     category: str | None
     sub_category: str | None
+    unreadable_file_indexes: tuple[int, ...] = ()
 
 
 class _ReceiptOcrClientStub(Protocol):
     async def extract(
         self,
         *,
-        image_content: bytes,
-        content_type: str,
+        images: tuple[ReceiptOcrImage, ...],
     ) -> _ExtractedReceiptOcrFields: ...
 
 
@@ -57,11 +58,11 @@ class UnreadableReceiptOcrClient:
     async def extract(
         self,
         *,
-        image_content: bytes,
-        content_type: str,
+        images: tuple[ReceiptOcrImage, ...],
     ) -> _ExtractedReceiptOcrFields:
-        assert image_content == PNG_BYTES
-        assert content_type == "image/png"
+        assert images == (
+            ReceiptOcrImage(file_index=0, content=PNG_BYTES, content_type="image/png"),
+        )
         return _ExtractedReceiptOcrFields(
             item_name="",
             brand_name=None,
@@ -79,11 +80,11 @@ class CategoryReceiptOcrClient:
     async def extract(
         self,
         *,
-        image_content: bytes,
-        content_type: str,
+        images: tuple[ReceiptOcrImage, ...],
     ) -> _ExtractedReceiptOcrFields:
-        assert image_content == PNG_BYTES
-        assert content_type == "image/png"
+        assert images == (
+            ReceiptOcrImage(file_index=0, content=PNG_BYTES, content_type="image/png"),
+        )
         return _ExtractedReceiptOcrFields(
             item_name="삼성 냉장고 875L",
             brand_name="삼성",
@@ -743,6 +744,7 @@ async def test_ocr_failure_can_fall_back_to_manual_receipt_save(
     assert ocr_body["data"]["errors"] == [
         {
             "field": "file",
+            "fileIndex": 0,
             "message": "영수증 이미지를 인식하지 못했습니다. 다시 촬영하거나 수동 입력해 주세요.",
         }
     ]

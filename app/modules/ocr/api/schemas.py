@@ -1,8 +1,31 @@
-from datetime import date
+from datetime import UTC, date, datetime
 
 from pydantic import ConfigDict, Field
 
 from app.core.http.responses import AppBaseModel
+
+
+class ReceiptOcrFieldError(AppBaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    field: str = "file"
+    file_index: int | None = Field(
+        default=None,
+        alias="fileIndex",
+        ge=0,
+        description="요청 multipart file 배열에서 인식에 실패한 이미지의 0-based 순서.",
+    )
+    message: str
+
+
+class ReceiptOcrErrorData(AppBaseModel):
+    timestamp: str = Field(
+        default_factory=lambda: datetime.now(UTC).replace(tzinfo=None).isoformat(timespec="seconds")
+    )
+    code: str | None = None
+    message: str
+    path: str
+    errors: list[ReceiptOcrFieldError] = Field(default_factory=list)
 
 
 class ReceiptOcrResultResponse(AppBaseModel):
