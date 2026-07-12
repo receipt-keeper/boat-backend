@@ -3,7 +3,7 @@ from typing import Annotated
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.application.event_publisher import EventPublisher, NoOpEventPublisher
+from app.core.application.event_publisher import NoOpEventPublisher
 from app.core.application.unit_of_work import UnitOfWork
 from app.core.db.outbox.publisher import OutboxEventPublisher
 from app.core.db.session import AsyncSessionDep
@@ -53,7 +53,6 @@ from app.modules.notifications.push_dependencies import (
     build_notification_event_dispatcher,
     build_notification_event_registry,
     build_notification_outbox_relay,
-    get_notification_event_publisher,
     get_notification_push_dispatcher,
     get_push_sender,
 )
@@ -133,21 +132,6 @@ def build_delete_user_push_tokens_command_use_case(
     )
 
 
-async def get_create_notification_command_use_case(
-    notification_repository: Annotated[
-        NotificationRepository,
-        Depends(get_notification_repository),
-    ],
-    unit_of_work: Annotated[UnitOfWork, Depends(get_unit_of_work)],
-    event_publisher: Annotated[EventPublisher, Depends(get_notification_event_publisher)],
-) -> CreateNotificationCommandUseCase:
-    return CreateNotificationCommandUseCase(
-        notification_repository=notification_repository,
-        unit_of_work=unit_of_work,
-        event_publisher=event_publisher,
-    )
-
-
 async def get_test_notification_create_use_case(
     notification_repository: Annotated[
         NotificationRepository,
@@ -160,7 +144,7 @@ async def get_test_notification_create_use_case(
     example 모듈의 테스트 푸시 API가 표준 생성 경로(및 그에 연쇄되는
     background 푸시 발송)와 이중 발송되지 않도록, 이벤트를 발행하지 않는
     `NoOpEventPublisher`로 조립한 `CreateNotificationCommandUseCase`를
-    제공한다. 표준 `POST /notifications` 경로에서는 사용하지 않는다.
+    제공한다. 공개 알림 생성 API는 제공하지 않는다.
     """
     return CreateNotificationCommandUseCase(
         notification_repository=notification_repository,
@@ -241,10 +225,6 @@ async def get_unregister_device_token_command_use_case(
     )
 
 
-CreateNotificationCommandUseCaseDep = Annotated[
-    CreateNotificationCommandUseCase,
-    Depends(get_create_notification_command_use_case),
-]
 MarkNotificationReadCommandUseCaseDep = Annotated[
     MarkNotificationReadCommandUseCase,
     Depends(get_mark_notification_read_command_use_case),

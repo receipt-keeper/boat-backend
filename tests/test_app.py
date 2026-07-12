@@ -42,11 +42,11 @@ async def test_openapi_schema_is_available() -> None:
     assert response.json()["info"]["title"] == "Boat Backend"
 
 
-def test_notifications_openapi_exposes_create_without_alias_routes() -> None:
+def test_notifications_openapi_exposes_read_routes_without_alias_routes() -> None:
     schema = create_app(Settings(app_name="Boat Backend")).openapi()
     paths = schema["paths"]
 
-    assert set(paths["/api/v1/notifications"]) == {"get", "post"}
+    assert set(paths["/api/v1/notifications"]) == {"get"}
     assert set(paths["/api/v1/notifications/{notification_id}"]) == {"patch"}
     assert set(paths["/api/v1/notifications/settings"]) == {"get", "patch"}
     assert set(paths["/api/v1/notifications/devices"]) == {"put"}
@@ -60,7 +60,7 @@ def test_notifications_openapi_exposes_create_without_alias_routes() -> None:
         if path.startswith("/api/v1/notifications")
     }
     assert notification_paths == {
-        "/api/v1/notifications": {"get", "post"},
+        "/api/v1/notifications": {"get"},
         "/api/v1/notifications/{notification_id}": {"patch"},
         "/api/v1/notifications/settings": {"get", "patch"},
         "/api/v1/notifications/devices": {"put"},

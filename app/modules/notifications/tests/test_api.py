@@ -438,21 +438,27 @@ async def test_mark_notification_read_persists_for_current_user(
     postgres_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     # Given: 현재 사용자의 읽지 않은 알림이 생성되어 있다.
-    payload = {
-        "messageType": "transactional",
-        "kind": "registration_prompt",
-        "title": "영수증 등록 안내",
-        "message": "보증 관리를 위해 영수증을 등록해 주세요.",
-        "resourceType": None,
-        "resourceId": None,
-        "metadata": {"subCategory": "receiptUpload"},
-    }
+    notification_id = UUID("00000000-0000-0000-0000-000000000701")
+    async with postgres_session_factory() as session:
+        session.add(
+            orm.UserNotification(
+                id=notification_id,
+                user_id=TEST_USER_ID,
+                message_type="transactional",
+                kind="registration_prompt",
+                title="영수증 등록 안내",
+                message="보증 관리를 위해 영수증을 등록해 주세요.",
+                resource_type=None,
+                resource_id=None,
+                metadata_={"subCategory": "receiptUpload"},
+                created_at=datetime(2026, 6, 28, 10, 0, tzinfo=UTC),
+                read_at=None,
+            )
+        )
+        await session.commit()
 
     # When: 읽음 처리 후 목록을 다시 조회한다.
     async with notification_api_client(postgres_session_factory) as client:
-        create_response = await client.post("/api/v1/notifications", json=payload)
-        assert create_response.status_code == 201
-        notification_id = create_response.json()["data"]["notificationId"]
         read_response = await client.patch(f"/api/v1/notifications/{notification_id}")
         list_response = await client.get("/api/v1/notifications?limit=10")
 
@@ -462,11 +468,11 @@ async def test_mark_notification_read_persists_for_current_user(
     persisted = next(
         notification
         for notification in notifications
-        if notification["notificationId"] == notification_id
+        if notification["notificationId"] == str(notification_id)
     )
 
     assert read_response.status_code == 200
-    assert read_body["data"]["notificationId"] == notification_id
+    assert read_body["data"]["notificationId"] == str(notification_id)
     assert read_body["data"]["readAt"] is not None
     assert read_body["data"]["metadata"] == {"subCategory": "receiptUpload"}
     assert persisted["readAt"] == read_body["data"]["readAt"]
@@ -493,27 +499,23 @@ async def test_mark_foreign_notification_returns_not_found_envelope(
     postgres_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     # Given: 다른 사용자에게 알림이 생성되어 있다.
-    payload = {
-        "messageType": "marketing",
-        "kind": "benefit",
-        "title": "혜택 안내",
-        "message": "다른 사용자에게만 보이는 알림입니다.",
-        "resourceType": None,
-        "resourceId": None,
-    }
-
-    async with notification_api_client(
-        postgres_session_factory,
-        OTHER_USER_ID,
-    ) as other_client:
-        settings_response = await other_client.patch(
-            "/api/v1/notifications/settings",
-            json={"marketingConsent": True},
+    notification_id = UUID("00000000-0000-0000-0000-000000000702")
+    async with postgres_session_factory() as session:
+        session.add(
+            orm.UserNotification(
+                id=notification_id,
+                user_id=OTHER_USER_ID,
+                message_type="marketing",
+                kind="benefit",
+                title="혜택 안내",
+                message="다른 사용자에게만 보이는 알림입니다.",
+                resource_type=None,
+                resource_id=None,
+                created_at=datetime(2026, 6, 28, 10, 0, tzinfo=UTC),
+                read_at=None,
+            )
         )
-        assert settings_response.status_code == 200
-        create_response = await other_client.post("/api/v1/notifications", json=payload)
-        assert create_response.status_code == 201
-        notification_id = create_response.json()["data"]["notificationId"]
+        await session.commit()
 
     # When: 현재 사용자가 그 알림을 읽음 처리하려고 한다.
     async with notification_api_client(
