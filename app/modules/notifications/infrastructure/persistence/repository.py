@@ -3,9 +3,10 @@ from datetime import datetime
 from typing import Any, cast
 from uuid import UUID
 
-from sqlalchemy import CursorResult, and_, delete, func, or_, select
+from sqlalchemy import CursorResult, and_, delete, exists, func, or_, select, true
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.modules.notifications.application.ports.notification_repository import (
     NotificationListCursor,
@@ -67,37 +68,61 @@ class SqlAlchemyNotificationRepository(NotificationRepository):
         cursor: NotificationListCursor | None,
         limit: int,
     ) -> NotificationListResult:
-        total_count = await self._session.scalar(
-            select(func.count())
-            .select_from(UserNotificationRecord)
-            .where(UserNotificationRecord.user_id == user_id)
+        marketing_visible = exists(
+            select(NotificationSettingsRecord.user_id).where(
+                NotificationSettingsRecord.user_id == user_id,
+                NotificationSettingsRecord.marketing_consent.is_(True),
+            )
         )
-        query = (
-            select(UserNotificationRecord)
-            .where(UserNotificationRecord.user_id == user_id)
+        filters = [
+            UserNotificationRecord.user_id == user_id,
+            or_(UserNotificationRecord.message_type != "marketing", marketing_visible),
+        ]
+        visible_notifications = (
+            select(UserNotificationRecord).where(*filters).cte("visible_notifications")
+        )
+        notification = aliased(UserNotificationRecord, visible_notifications)
+        total = (
+            select(func.count().label("total_count")).select_from(visible_notifications).subquery()
+        )
+        page = (
+            select(notification)
             .order_by(
-                UserNotificationRecord.created_at.desc(),
-                UserNotificationRecord.id.desc(),
+                notification.created_at.desc(),
+                notification.id.desc(),
             )
             .limit(limit + 1)
         )
         if cursor is not None:
-            query = query.where(
+            page = page.where(
                 or_(
-                    UserNotificationRecord.created_at < cursor.created_at,
+                    notification.created_at < cursor.created_at,
                     and_(
-                        UserNotificationRecord.created_at == cursor.created_at,
-                        UserNotificationRecord.id < cursor.notification_id,
+                        notification.created_at == cursor.created_at,
+                        notification.id < cursor.notification_id,
                     ),
                 )
             )
-        records = tuple(await self._session.scalars(query))
+        page_notification = aliased(UserNotificationRecord, page.subquery())
+        rows = tuple(
+            (
+                await self._session.execute(
+                    select(page_notification, total.c.total_count)
+                    .select_from(total.outerjoin(page_notification, true()))
+                    .order_by(
+                        page_notification.created_at.desc(),
+                        page_notification.id.desc(),
+                    )
+                )
+            ).tuples()
+        )
+        records = tuple(row[0] for row in rows if row[0] is not None)
         return NotificationListResult(
             notifications=tuple(
                 mapper.notification_to_domain(record) for record in records[:limit]
             ),
             has_next=len(records) > limit,
-            total_count=total_count or 0,
+            total_count=rows[0][1],
         )
 
     async def find_by_id_for_user(
@@ -133,6 +158,16 @@ class SqlAlchemyNotificationRepository(NotificationRepository):
 
     async def get_settings(self, *, user_id: UUID) -> NotificationSettings:
         record = await self._session.get(NotificationSettingsRecord, user_id)
+        if record is None:
+            return NotificationSettings.create(user_id=user_id)
+        return mapper.settings_to_domain(record)
+
+    async def get_settings_for_update(self, *, user_id: UUID) -> NotificationSettings:
+        record = await self._session.scalar(
+            select(NotificationSettingsRecord)
+            .where(NotificationSettingsRecord.user_id == user_id)
+            .with_for_update()
+        )
         if record is None:
             return NotificationSettings.create(user_id=user_id)
         return mapper.settings_to_domain(record)
@@ -181,12 +216,18 @@ class SqlAlchemyNotificationRepository(NotificationRepository):
         notification_id: UUID,
         user_id: UUID,
     ) -> UserNotificationRecord | None:
-        return await self._session.scalar(
-            select(UserNotificationRecord).where(
-                UserNotificationRecord.id == notification_id,
-                UserNotificationRecord.user_id == user_id,
+        marketing_visible = exists(
+            select(NotificationSettingsRecord.user_id).where(
+                NotificationSettingsRecord.user_id == user_id,
+                NotificationSettingsRecord.marketing_consent.is_(True),
             )
         )
+        filters = [
+            UserNotificationRecord.id == notification_id,
+            UserNotificationRecord.user_id == user_id,
+            or_(UserNotificationRecord.message_type != "marketing", marketing_visible),
+        ]
+        return await self._session.scalar(select(UserNotificationRecord).where(*filters))
 
 
 class SqlAlchemyPushTokenRepository(PushTokenRepository):

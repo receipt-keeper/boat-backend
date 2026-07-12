@@ -58,6 +58,10 @@ class NotificationRepository(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    async def get_settings_for_update(self, *, user_id: UUID) -> NotificationSettings:
+        raise NotImplementedError
+
+    @abstractmethod
     async def update_settings(
         self,
         *,

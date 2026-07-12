@@ -22,7 +22,7 @@ from app.modules.notifications.domain.model import (
     UserNotification,
     UserPushToken,
 )
-from app.modules.notifications.domain.value_objects import DevicePlatform
+from app.modules.notifications.domain.value_objects import DevicePlatform, NotificationMessageType
 
 TEST_USER_ID = UUID("00000000-0000-0000-0000-000000000101")
 OTHER_USER_ID = UUID("00000000-0000-0000-0000-000000000201")
@@ -37,6 +37,7 @@ class InMemoryNotificationRepository(NotificationRepository):
         self.create_count = 0
         self.mark_read_count = 0
         self.update_settings_count = 0
+        self.settings_for_update_count = 0
 
     async def create(self, *, notification: UserNotification) -> UserNotification:
         self.create_count += 1
@@ -50,11 +51,18 @@ class InMemoryNotificationRepository(NotificationRepository):
         cursor: NotificationListCursor | None,
         limit: int,
     ) -> NotificationListResult:
+        include_marketing = self.settings.get(
+            user_id, NotificationSettings.create(user_id=user_id)
+        ).marketing_consent
         user_notifications = sorted(
             (
                 notification
                 for notification in self.notifications.values()
                 if notification.user_id == user_id
+                and (
+                    include_marketing
+                    or notification.message_type != NotificationMessageType.MARKETING
+                )
             ),
             key=lambda notification: (notification.created_at, notification.id.int),
             reverse=True,
@@ -96,6 +104,13 @@ class InMemoryNotificationRepository(NotificationRepository):
             notification_id=notification_id,
             user_id=user_id,
         )
+        settings = self.settings.get(user_id, NotificationSettings.create(user_id=user_id))
+        if (
+            notification is not None
+            and not settings.marketing_consent
+            and (notification.message_type == NotificationMessageType.MARKETING)
+        ):
+            return None
         if notification is None:
             return None
         read_notification = notification.mark_read(read_at=read_at)
@@ -104,6 +119,10 @@ class InMemoryNotificationRepository(NotificationRepository):
 
     async def get_settings(self, *, user_id: UUID) -> NotificationSettings:
         return self.settings.get(user_id, NotificationSettings.create(user_id=user_id))
+
+    async def get_settings_for_update(self, *, user_id: UUID) -> NotificationSettings:
+        self.settings_for_update_count += 1
+        return await self.get_settings(user_id=user_id)
 
     async def update_settings(
         self,

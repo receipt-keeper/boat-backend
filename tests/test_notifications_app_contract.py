@@ -194,6 +194,27 @@ def test_notifications_openapi_uses_camel_case_contract() -> None:
     assert NOTIFICATION_SNAKE_CASE_FIELDS.isdisjoint(update_settings_fields)
 
 
+def test_create_notification_openapi_documents_marketing_consent_skip() -> None:
+    schema = create_app(TEST_SETTINGS).openapi()
+    post_operation = schema["paths"]["/api/v1/notifications"]["post"]
+    skip_schema = schema["components"]["schemas"]["SkippedMarketingConsentResponse"]
+
+    assert set(skip_schema["properties"]) == {"status", "reason"}
+    assert skip_schema["properties"]["status"]["const"] == "skipped"
+    assert skip_schema["properties"]["reason"]["const"] == "marketingConsentRequired"
+    assert post_operation["responses"]["200"]["description"] == (
+        "마케팅 수신 동의가 없어 알림 생성 생략"
+    )
+    assert post_operation["responses"]["200"]["content"]["application/json"]["example"] == {
+        "success": True,
+        "status": 200,
+        "data": {"status": "skipped", "reason": "marketingConsentRequired"},
+    }
+    assert post_operation["responses"]["201"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/CommonResponse_NotificationResponse_"
+    }
+
+
 def test_notifications_retired_paths_are_absent_from_openapi() -> None:
     paths = set(create_app(TEST_SETTINGS).openapi()["paths"])
 

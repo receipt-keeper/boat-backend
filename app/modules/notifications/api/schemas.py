@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import ConfigDict, Field
@@ -104,6 +105,13 @@ class NotificationResponse(AppBaseModel):
     )
     created_at: datetime = Field(alias="createdAt", description="알림 생성 시각.")
     read_at: datetime | None = Field(alias="readAt", description="알림 읽음 시각.")
+
+
+class SkippedMarketingConsentResponse(AppBaseModel):
+    status: Literal["skipped"] = Field(description="알림 생성 결과 상태.")
+    reason: Literal["marketingConsentRequired"] = Field(
+        description="마케팅 수신 동의가 없어 생성하지 않은 이유."
+    )
 
 
 class NotificationListQuery(AppBaseModel):

@@ -45,7 +45,9 @@ class SendNotificationPushCommandUseCase:
     async def execute(self, command: SendNotificationPushCommand) -> None:
         # 푸시는 best-effort — 이미 생성된 알림이 발송/정리 실패의 영향을 받으면 안 된다.
         try:
-            settings = await self._notification_repository.get_settings(user_id=command.user_id)
+            settings = await self._notification_repository.get_settings_for_update(
+                user_id=command.user_id
+            )
             if not settings.push_enabled:
                 return
             is_unconsented_marketing = (

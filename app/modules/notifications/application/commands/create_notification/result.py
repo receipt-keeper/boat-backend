@@ -17,3 +17,11 @@ class CreateNotificationResult:
     metadata: dict[str, str]
     created_at: datetime
     read_at: datetime | None
+
+
+@dataclass(frozen=True, slots=True)
+class SkippedMarketingConsent:
+    pass
+
+
+type NotificationCreationResult = CreateNotificationResult | SkippedMarketingConsent

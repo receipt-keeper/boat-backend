@@ -92,6 +92,10 @@ async def test_scheduler_filters_marketing_candidates_without_marketing_consent(
     assert created.metadata == {"receiptCount": "0"}
     assert_no_scheduler_internal_metadata(created.metadata)
     assert fixture.receipt_activity_reader.queries[0].recent_since is None
+    assert set(fixture.notification_repository.settings_for_update_calls) == {
+        CONSENT_USER_ID,
+        NO_CONSENT_USER_ID,
+    }
 
 
 async def test_scheduler_dry_run_does_not_write_notifications_or_occurrences() -> None:

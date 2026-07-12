@@ -1,8 +1,9 @@
 from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core.db.outbox.orm import OutboxEvent
 from app.modules.notifications.application.ports.push_sender import PushSendReport
 from app.modules.notifications.dependencies import get_push_sender
 from app.modules.notifications.infrastructure.persistence import orm
@@ -59,6 +60,11 @@ async def test_create_notification_persists_to_current_user_list(
     }
 
     async with notification_api_client(postgres_session_factory) as client:
+        settings_response = await client.patch(
+            "/api/v1/notifications/settings",
+            json={"marketingConsent": True},
+        )
+        assert settings_response.status_code == 200
         create_response = await client.post("/api/v1/notifications", json=payload)
         assert create_response.status_code == 201
         created = create_response.json()["data"]
@@ -200,7 +206,7 @@ async def test_create_notification_sends_push_to_registered_device(
     assert sent_message.data["kind"] == "credit_prompt"
 
 
-async def test_create_marketing_notification_skips_push_without_marketing_consent(
+async def test_create_marketing_notification_skips_without_marketing_consent(
     postgres_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     # Given: 로그인한 사용자가 디바이스를 등록해 두었지만 마케팅 수신에는 동의하지 않았다.
@@ -225,9 +231,60 @@ async def test_create_marketing_notification_skips_push_without_marketing_consen
             },
         )
 
-    # Then: 알림 생성은 성공하지만 마케팅 동의가 없어 푸시는 발송되지 않는다.
-    assert response.status_code == 201
+    # Then: 알림, outbox, FCM 모두 생성하지 않은 명시적 skip 결과를 반환한다.
+    assert response.status_code == 200
+    assert response.json() == {
+        "success": True,
+        "status": 200,
+        "data": {"status": "skipped", "reason": "marketingConsentRequired"},
+    }
     assert push_sender.calls == []
+    async with postgres_session_factory() as session:
+        notification_count = await session.scalar(
+            select(func.count()).select_from(orm.UserNotification)
+        )
+        outbox_count = await session.scalar(select(func.count()).select_from(OutboxEvent))
+    assert notification_count == 0
+    assert outbox_count == 0
+
+
+async def test_create_consented_marketing_notification_persists_and_dispatches_push(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    push_sender = FakePushSender()
+    async with notification_api_client(
+        postgres_session_factory,
+        dependency_overrides={get_push_sender: lambda: push_sender},
+    ) as client:
+        settings_response = await client.patch(
+            "/api/v1/notifications/settings",
+            json={"marketingConsent": True},
+        )
+        device_response = await client.put(
+            "/api/v1/notifications/devices",
+            json={"token": "token-1", "platform": "android"},
+        )
+        response = await client.post(
+            "/api/v1/notifications",
+            json={
+                "messageType": "marketing",
+                "kind": "benefit",
+                "title": "혜택 안내",
+                "message": "이번 달 혜택을 확인해 보세요.",
+            },
+        )
+
+    assert settings_response.status_code == 200
+    assert device_response.status_code == 204
+    assert response.status_code == 201
+    assert len(push_sender.calls) == 1
+    async with postgres_session_factory() as session:
+        notification_count = await session.scalar(
+            select(func.count()).select_from(orm.UserNotification)
+        )
+        outbox_count = await session.scalar(select(func.count()).select_from(OutboxEvent))
+    assert notification_count == 1
+    assert outbox_count == 0
 
 
 async def test_create_notification_removes_registration_rejected_by_fcm(

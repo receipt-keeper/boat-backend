@@ -7,6 +7,9 @@ from app.core.domain.exceptions import NotFoundError, ValidationError
 from app.modules.notifications.application.commands.create_notification.command import (
     CreateNotificationCommand,
 )
+from app.modules.notifications.application.commands.create_notification.result import (
+    CreateNotificationResult,
+)
 from app.modules.notifications.application.commands.create_notification.use_case import (
     CreateNotificationCommandUseCase,
 )
@@ -161,6 +164,7 @@ async def test_create_notification_commits_once_and_returns_expected_result() ->
             metadata={"subCategory": "receiptUpload"},
         )
     )
+    assert isinstance(result, CreateNotificationResult)
 
     # Then: 저장된 알림 결과를 반환하고 commit은 한 번만 수행된다.
     saved = repository.notifications[result.notification_id]
@@ -590,6 +594,7 @@ async def test_send_marketing_push_skips_without_marketing_consent() -> None:
 
     # Then: 마케팅 동의가 없어 발송은 시도되지 않는다.
     assert push_sender.calls == []
+    assert repository.settings_for_update_count == 1
 
 
 async def test_send_service_push_sends_without_marketing_consent() -> None:
@@ -659,6 +664,7 @@ async def test_send_marketing_push_sends_with_marketing_consent() -> None:
     assert len(push_sender.calls) == 1
     _, sent_message = push_sender.calls[0]
     assert sent_message.title == "혜택 안내"
+    assert repository.settings_for_update_count == 1
 
 
 async def test_mark_notification_read_commits_once_and_returns_expected_result() -> None:
@@ -692,6 +698,7 @@ async def test_mark_notification_read_commits_once_and_returns_expected_result()
     saved = repository.notifications[notification.id]
     assert unit_of_work.commit_count == 1
     assert repository.mark_read_count == 1
+    assert repository.settings_for_update_count == 1
     assert result.notification_id == notification.id
     assert result.message_type == NotificationMessageType.TRANSACTIONAL
     assert result.kind == "warranty_notice"
