@@ -1,10 +1,13 @@
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, File, UploadFile, status
 
+from app.core.domain.exceptions import ValidationError
 from app.core.http.auth import CurrentPrincipalDep
 from app.core.http.responses import ApiErrorData, CommonResponse
 from app.modules.files.api.upload_validation import read_and_validate_uploads
+from app.modules.ocr.api.diagnostic_route import OcrDiagnosticRoute
 from app.modules.ocr.api.schemas import ReceiptOcrErrorData, ReceiptOcrResultResponse
 from app.modules.ocr.api.upload_policy import RECEIPT_OCR_UPLOAD_POLICY
 from app.modules.ocr.application.commands.extract_receipt_ocr.command import (
@@ -12,6 +15,8 @@ from app.modules.ocr.application.commands.extract_receipt_ocr.command import (
 )
 from app.modules.ocr.application.ports.receipt_ocr_client import ReceiptOcrImage
 from app.modules.ocr.dependencies import ExtractReceiptOcrCommandUseCaseDep
+
+logger = logging.getLogger(__name__)
 
 _UNREADABLE_RECEIPT_MESSAGE = (
     "영수증 이미지를 인식하지 못했습니다. 다시 촬영하거나 수동 입력해 주세요."
@@ -89,6 +94,7 @@ _INSUFFICIENT_CREDIT_EXAMPLE = {
 router = APIRouter(
     prefix="/ocr",
     tags=["ocr"],
+    route_class=OcrDiagnosticRoute,
     responses={
         status.HTTP_422_UNPROCESSABLE_CONTENT: {
             "model": CommonResponse[ReceiptOcrErrorData],
@@ -177,10 +183,23 @@ async def extract_receipt_ocr(
     ],
     use_case: ExtractReceiptOcrCommandUseCaseDep,
 ) -> CommonResponse[ReceiptOcrResultResponse]:
-    validated_uploads = await read_and_validate_uploads(
-        files=files,
-        policy=RECEIPT_OCR_UPLOAD_POLICY,
-    )
+    try:
+        validated_uploads = await read_and_validate_uploads(
+            files=files,
+            policy=RECEIPT_OCR_UPLOAD_POLICY,
+        )
+    except ValidationError as exception:
+        logger.warning(
+            "ocr_upload_validation_failed user_id=%s image_count=%d "
+            "content_types=%s sizes=%s exception_type=%s",
+            principal.user_id,
+            len(files),
+            tuple(file.content_type or "unknown" for file in files),
+            tuple(file.size for file in files),
+            type(exception).__name__,
+        )
+        raise
+
     result = await use_case.execute(
         ExtractReceiptOcrCommand(
             user_id=principal.user_id,

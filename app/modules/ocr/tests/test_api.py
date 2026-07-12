@@ -7,6 +7,8 @@ from httpx import AsyncClient
 
 from app.core.config.settings import Settings
 from app.core.domain.exceptions import ValidationError
+from app.modules.ocr.api.diagnostic_route import OcrDiagnosticRoute
+from app.modules.ocr.api.router import router as ocr_router
 from app.modules.ocr.application.ports.receipt_ocr_client import (
     ExtractedReceiptOcrFields,
     ReceiptOcrImage,
@@ -171,7 +173,10 @@ async def test_receipt_ocr_endpoint_keeps_zero_total_amount(
 
 async def test_receipt_ocr_endpoint_uses_request_validation_envelope(
     client: AsyncClient,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
+    caplog.set_level("WARNING")
+
     response = await client.post("/api/v1/ocr", data={})
 
     body = response.json()
@@ -182,6 +187,10 @@ async def test_receipt_ocr_endpoint_uses_request_validation_envelope(
     assert body["data"]["message"] == "요청 값이 올바르지 않습니다."
     assert body["data"]["path"] == "/api/v1/ocr"
     assert body["data"]["errors"] == [{"field": "file", "message": "Field required"}]
+    assert "ocr_request_validation_failed" in caplog.text
+    assert "fields=('file',)" in caplog.text
+    assert "error_types=('missing',)" in caplog.text
+    assert "RequestValidationError" in caplog.text
 
 
 async def test_receipt_ocr_endpoint_accepts_multiple_file_parts(client: AsyncClient) -> None:
@@ -199,7 +208,10 @@ async def test_receipt_ocr_endpoint_accepts_multiple_file_parts(client: AsyncCli
 
 async def test_receipt_ocr_endpoint_rejects_more_than_five_file_parts(
     client: AsyncClient,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
+    caplog.set_level("WARNING")
+
     response = await client.post(
         "/api/v1/ocr",
         files=[("file", (f"receipt-{index}.png", _PNG_BYTES, "image/png")) for index in range(6)],
@@ -211,6 +223,12 @@ async def test_receipt_ocr_endpoint_rejects_more_than_five_file_parts(
     assert body["data"]["errors"] == [
         {"field": "files", "message": "파일은 최대 5개까지 업로드할 수 있습니다."}
     ]
+    assert "ocr_upload_validation_failed" in caplog.text
+    assert "image_count=6" in caplog.text
+    assert "content_types=('image/png', 'image/png'" in caplog.text
+    assert "exception_type=ValidationError" in caplog.text
+    assert "receipt-0.png" not in caplog.text
+    assert repr(_PNG_BYTES) not in caplog.text
 
 
 async def test_receipt_ocr_endpoint_returns_unreadable_image_failure(
@@ -218,7 +236,9 @@ async def test_receipt_ocr_endpoint_returns_unreadable_image_failure(
     override_receipt_ocr_client: Callable[[UnreadableReceiptOcrClient], None],
     use_recording_credit_reservation_command_use_case: RecordingUseCreditCommandUseCase,
     use_recording_credit_command_use_case: RecordingUseCreditCommandUseCase,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
+    caplog.set_level("WARNING")
     override_receipt_ocr_client(UnreadableReceiptOcrClient())
 
     response = await client.post(
@@ -242,6 +262,12 @@ async def test_receipt_ocr_endpoint_returns_unreadable_image_failure(
     ]
     assert len(use_recording_credit_reservation_command_use_case.commands) == 1
     assert use_recording_credit_command_use_case.commands == []
+    assert "ocr_analysis_failed reason=unreadable_image" in caplog.text
+    assert "image_count=1" in caplog.text
+    assert "content_types=('image/png',)" in caplog.text
+    assert "file_indexes=(0,)" in caplog.text
+    assert "exception_type=ReceiptImageUnreadableError" in caplog.text
+    assert repr(_PNG_BYTES) not in caplog.text
 
 
 async def test_receipt_ocr_endpoint_returns_only_unreadable_file_indexes(
@@ -281,7 +307,9 @@ async def test_receipt_ocr_endpoint_returns_provider_unavailable_failure(
     override_receipt_ocr_client: Callable[[ProviderUnavailableReceiptOcrClient], None],
     use_recording_credit_reservation_command_use_case: RecordingUseCreditCommandUseCase,
     use_recording_credit_command_use_case: RecordingUseCreditCommandUseCase,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
+    caplog.set_level("WARNING")
     override_receipt_ocr_client(ProviderUnavailableReceiptOcrClient())
 
     response = await client.post(
@@ -302,6 +330,10 @@ async def test_receipt_ocr_endpoint_returns_provider_unavailable_failure(
     assert body["data"]["errors"] == []
     assert len(use_recording_credit_reservation_command_use_case.commands) == 1
     assert use_recording_credit_command_use_case.commands == []
+    assert "ocr_analysis_failed reason=provider_unavailable" in caplog.text
+    assert "file_indexes=()" in caplog.text
+    assert "exception_type=ReceiptOcrProviderUnavailableError" in caplog.text
+    assert repr(_PNG_BYTES) not in caplog.text
 
 
 async def test_receipt_ocr_endpoint_openapi_examples(client: AsyncClient) -> None:
@@ -343,3 +375,7 @@ async def test_receipt_ocr_endpoint_openapi_uses_multipart_file(client: AsyncCli
 
     assert "multipart/form-data" in request_content
     assert "application/json" not in request_content
+
+
+def test_receipt_ocr_router_owns_request_validation_logging() -> None:
+    assert ocr_router.route_class is OcrDiagnosticRoute

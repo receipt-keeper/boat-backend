@@ -120,11 +120,14 @@ async def handle_request_validation_error(request: Request, exception: Exception
     if not isinstance(exception, RequestValidationError):
         raise exception
 
+    validation_errors = exception.errors()
+    field_errors = [FieldError.from_pydantic_error(error) for error in validation_errors]
+
     return _failure_response(
         status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         message="요청 값이 올바르지 않습니다.",
         path=request.url.path,
-        errors=[FieldError.from_pydantic_error(error) for error in exception.errors()],
+        errors=field_errors,
     )
 
 
