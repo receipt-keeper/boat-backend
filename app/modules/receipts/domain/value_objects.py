@@ -21,6 +21,58 @@ class ReceiptSort(StrEnum):
     PURCHASE_DATE = "purchaseDate"
 
 
+class ReceiptCategory(StrEnum):
+    KITCHEN_APPLIANCE = "kitchen_appliance"
+    LAUNDRY_CLEANING = "laundry_cleaning"
+    LIVING_CLIMATE = "living_climate"
+    IT_DEVICE = "it_device"
+    OTHER_DEVICE = "other_device"
+
+    @property
+    def api_label(self) -> str:
+        return _CATEGORY_API_LABELS[self]
+
+    @classmethod
+    def _missing_(cls, value: object) -> "ReceiptCategory | None":
+        if not isinstance(value, str):
+            return None
+        return _CATEGORY_ALIASES.get(_category_alias_key(value))
+
+
+_CATEGORY_API_LABELS: dict[ReceiptCategory, str] = {
+    ReceiptCategory.KITCHEN_APPLIANCE: "주방 가전",
+    ReceiptCategory.LAUNDRY_CLEANING: "세탁/청소",
+    ReceiptCategory.LIVING_CLIMATE: "리빙/냉난방",
+    ReceiptCategory.IT_DEVICE: "IT 기기",
+    ReceiptCategory.OTHER_DEVICE: "기타 기기",
+}
+
+
+def _category_alias_key(value: str) -> str:
+    return "".join(value.split()).lower()
+
+
+_CATEGORY_ALIASES: dict[str, ReceiptCategory] = {
+    _category_alias_key(category.value): category for category in ReceiptCategory
+}
+_CATEGORY_ALIASES.update(
+    {
+        "주방가전": ReceiptCategory.KITCHEN_APPLIANCE,
+        "세탁/청소": ReceiptCategory.LAUNDRY_CLEANING,
+        "세탁청소": ReceiptCategory.LAUNDRY_CLEANING,
+        "리빙/냉난방": ReceiptCategory.LIVING_CLIMATE,
+        "리빙냉난방": ReceiptCategory.LIVING_CLIMATE,
+        "it기기": ReceiptCategory.IT_DEVICE,
+        "it제품": ReceiptCategory.IT_DEVICE,
+        "영상/it제품": ReceiptCategory.IT_DEVICE,
+        "영상it제품": ReceiptCategory.IT_DEVICE,
+        "기타기기": ReceiptCategory.OTHER_DEVICE,
+        "기타제품": ReceiptCategory.OTHER_DEVICE,
+        "기타": ReceiptCategory.OTHER_DEVICE,
+    }
+)
+
+
 @dataclass(frozen=True, slots=True)
 class ItemName(ValueObject[str]):
     MAX_LENGTH: ClassVar[int] = 255

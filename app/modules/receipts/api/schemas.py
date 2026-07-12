@@ -2,17 +2,39 @@ from datetime import date, datetime
 from typing import Any, cast
 from uuid import UUID
 
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, field_validator
 
 from app.core.http.responses import AppBaseModel, CursorPaginationResponse
 from app.modules.receipts.api.examples import (
     CREATE_RECEIPT_REQUEST_EXAMPLES,
     UPDATE_RECEIPT_REQUEST_EXAMPLES,
 )
-from app.modules.receipts.domain.value_objects import ReceiptSort, ReceiptStatusFilter
+from app.modules.receipts.domain.value_objects import (
+    ReceiptCategory,
+    ReceiptSort,
+    ReceiptStatusFilter,
+)
 
 
-class ReceiptListQuery(AppBaseModel):
+class _ReceiptCategoryInputModel(AppBaseModel):
+    @field_validator("category", mode="before", check_fields=False)
+    @classmethod
+    def normalize_category(cls, value: object) -> ReceiptCategory | None:
+        if value is None or isinstance(value, ReceiptCategory):
+            return value
+        if not isinstance(value, str):
+            raise ValueError("지원하지 않는 대분류 카테고리입니다.")
+
+        stripped = value.strip()
+        if not stripped:
+            return None
+        try:
+            return ReceiptCategory(stripped)
+        except ValueError as exception:
+            raise ValueError("지원하지 않는 대분류 카테고리입니다.") from exception
+
+
+class ReceiptListQuery(_ReceiptCategoryInputModel):
     model_config = ConfigDict(frozen=True)
 
     status: ReceiptStatusFilter = Field(
@@ -36,11 +58,9 @@ class ReceiptListQuery(AppBaseModel):
         min_length=1,
         max_length=200,
     )
-    category: str | None = Field(
+    category: ReceiptCategory | None = Field(
         default=None,
-        description="카테고리 완전 일치 필터.",
-        min_length=1,
-        max_length=100,
+        description=("영수증 대분류 필터. 영문 Enum과 기존 앱의 한글 카테고리 별칭을 지원한다."),
     )
     q: str | None = Field(
         default=None,
@@ -50,7 +70,7 @@ class ReceiptListQuery(AppBaseModel):
     )
 
 
-class CreateReceiptRequest(AppBaseModel):
+class CreateReceiptRequest(_ReceiptCategoryInputModel):
     model_config = ConfigDict(
         extra="forbid",
         json_schema_extra=cast(dict[str, Any], {"examples": CREATE_RECEIPT_REQUEST_EXAMPLES}),
@@ -93,10 +113,9 @@ class CreateReceiptRequest(AppBaseModel):
             "미전달 시 구매일과 무상 AS 기간으로 계산한다."
         ),
     )
-    category: str | None = Field(
+    category: ReceiptCategory | None = Field(
         default=None,
-        description="대분류 카테고리.",
-        max_length=100,
+        description="영수증 대분류. 영문 Enum 또는 기존 한글 카테고리 별칭을 받는다.",
     )
     sub_category: str | None = Field(
         default=None,
@@ -201,7 +220,7 @@ class ReceiptListResponse(AppBaseModel):
     pagination: CursorPaginationResponse = Field(description="커서 기반 목록 정보.")
 
 
-class UpdateReceiptRequest(AppBaseModel):
+class UpdateReceiptRequest(_ReceiptCategoryInputModel):
     model_config = ConfigDict(
         extra="forbid",
         json_schema_extra=cast(dict[str, Any], {"examples": UPDATE_RECEIPT_REQUEST_EXAMPLES}),
@@ -236,7 +255,10 @@ class UpdateReceiptRequest(AppBaseModel):
             "사용자가 확인한 보장 만료일. null이면 현재 구매일과 무상 AS 기간으로 다시 계산한다."
         ),
     )
-    category: str | None = Field(default=None, description="대분류 카테고리.", max_length=100)
+    category: ReceiptCategory | None = Field(
+        default=None,
+        description="영수증 대분류. 영문 Enum 또는 기존 한글 카테고리 별칭을 받는다.",
+    )
     sub_category: str | None = Field(
         default=None,
         description="소분류 대표 기기명.",

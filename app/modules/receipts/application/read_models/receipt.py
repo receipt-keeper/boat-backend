@@ -3,7 +3,7 @@ from datetime import date, datetime
 from uuid import UUID
 
 from app.modules.receipts.domain.model import warranty_d_day, warranty_status
-from app.modules.receipts.domain.value_objects import ReceiptStatusFilter
+from app.modules.receipts.domain.value_objects import ReceiptCategory, ReceiptStatusFilter
 
 
 @dataclass(frozen=True, slots=True)
@@ -18,7 +18,7 @@ class ReceiptReadModel:
     total_amount: int | None
     period_months: int
     expires_on: date
-    category: str | None
+    category: ReceiptCategory | None
     sub_category: str | None
     memo: str | None
     requires_physical_receipt: bool

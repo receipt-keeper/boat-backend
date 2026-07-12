@@ -22,8 +22,8 @@ def test_notification_schedule_migrations_have_single_head() -> None:
     heads = script_directory.get_heads()
     revisions = {revision.revision for revision in script_directory.walk_revisions()}
 
-    # Then: scheduler migration graph는 0022를 단일 head로 두고 이전 revisions를 포함한다.
-    assert heads == ["20260710_0022"]
+    # Then: 전체 migration graph는 단일 head를 유지하고 scheduler revisions를 포함한다.
+    assert len(heads) == 1
     assert {"20260709_0020", "20260709_0021", "20260710_0022"} <= revisions
 
 

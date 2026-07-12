@@ -4,9 +4,11 @@ import pytest
 
 from app.modules.ocr.application.ports.receipt_ocr_client import ReceiptOcrImage
 from app.modules.ocr.infrastructure.receipt_ocr_client import (
+    OcrReceiptCategory,
     ReceiptOcrStructuredOutput,
     _build_openrouter_multimodal_content,
 )
+from app.modules.receipts.domain.value_objects import ReceiptCategory
 
 
 def test_openrouter_multimodal_content_keeps_image_order_and_indexes() -> None:
@@ -66,8 +68,10 @@ def test_structured_output_keeps_explicit_serial_number() -> None:
     assert extracted.serial_number == "F2LX1234ABCD"
 
     schema = ReceiptOcrStructuredOutput.model_json_schema()["properties"]
-    assert "그중 하나에서라도" in schema["serial_number"]["description"]
-    assert "구매 또는 제품과 무관한" in schema["unreadable_file_indexes"]["description"]
+    assert "in any input image" in schema["serial_number"]["description"]
+    assert (
+        "unrelated to the purchase or product" in schema["unreadable_file_indexes"]["description"]
+    )
 
 
 def test_structured_output_keeps_explicit_expiration_date() -> None:
@@ -81,7 +85,38 @@ def test_structured_output_keeps_explicit_expiration_date() -> None:
     assert extracted.expires_on == date(2027, 9, 30)
 
     schema = ReceiptOcrStructuredOutput.model_json_schema()["properties"]
-    assert "직접 계산하거나 추측하지 않음" in schema["expires_on"]["description"]
+    assert "Do not calculate or guess" in schema["expires_on"]["description"]
+
+
+def test_structured_output_uses_english_category_enum_and_korean_api_label() -> None:
+    structured_output = ReceiptOcrStructuredOutput(
+        item_name="Apple iPhone",
+        category=OcrReceiptCategory.IT_DEVICE,
+        sub_category="핸드폰",
+    )
+
+    extracted = structured_output.to_extracted_fields(image_count=1)
+    schema = ReceiptOcrStructuredOutput.model_json_schema()["properties"]
+    category_schema = schema["category"]["anyOf"][0]
+    enum_reference = category_schema["$ref"].split("/")[-1]
+    category_values = ReceiptOcrStructuredOutput.model_json_schema()["$defs"][enum_reference][
+        "enum"
+    ]
+
+    assert extracted.category == "IT 기기"
+    assert category_values == [
+        "kitchen_appliance",
+        "laundry_cleaning",
+        "living_climate",
+        "it_device",
+        "other_device",
+    ]
+
+
+def test_ocr_and_receipt_categories_share_the_same_api_labels() -> None:
+    assert {category.value: category.api_label for category in OcrReceiptCategory} == {
+        category.value: category.api_label for category in ReceiptCategory
+    }
 
 
 def test_multimodal_prompt_classifies_coverage_by_covered_device() -> None:

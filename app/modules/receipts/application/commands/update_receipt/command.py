@@ -2,6 +2,8 @@ from dataclasses import dataclass
 from datetime import date
 from uuid import UUID
 
+from app.modules.receipts.domain.value_objects import ReceiptCategory
+
 
 @dataclass(frozen=True, slots=True)
 class UpdateReceiptCommand:
@@ -16,7 +18,7 @@ class UpdateReceiptCommand:
     total_amount: int | None = None
     period_months: int | None = None
     expires_on: date | None = None
-    category: str | None = None
+    category: ReceiptCategory | None = None
     sub_category: str | None = None
     memo: str | None = None
     requires_physical_receipt: bool | None = None

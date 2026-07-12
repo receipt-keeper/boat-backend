@@ -14,10 +14,21 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
+from sqlalchemy import (
+    Enum as SQLAlchemyEnum,
+)
 from sqlalchemy.dialects.postgresql import UUID as PostgreSQLUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db.base import Base
+from app.modules.receipts.domain.value_objects import ReceiptCategory
+
+_RECEIPT_CATEGORY_ENUM = SQLAlchemyEnum(
+    ReceiptCategory,
+    name="receipt_category",
+    values_callable=lambda enum_type: [category.value for category in enum_type],
+    validate_strings=True,
+)
 
 
 class Receipt(Base):
@@ -57,7 +68,10 @@ class Receipt(Base):
         server_default="12",
     )
     expires_on: Mapped[date] = mapped_column(type_=Date, nullable=False)
-    category: Mapped[str | None] = mapped_column(type_=String(100), nullable=True)
+    category: Mapped[ReceiptCategory | None] = mapped_column(
+        type_=_RECEIPT_CATEGORY_ENUM,
+        nullable=True,
+    )
     sub_category: Mapped[str | None] = mapped_column(type_=String(100), nullable=True)
     memo: Mapped[str | None] = mapped_column(type_=String(1000), nullable=True)
     requires_physical_receipt: Mapped[bool] = mapped_column(

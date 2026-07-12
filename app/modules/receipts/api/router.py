@@ -39,6 +39,7 @@ from app.modules.receipts.dependencies import (
     UpdateReceiptCommandUseCaseDep,
 )
 from app.modules.receipts.domain.service_centers import resolve_service_center_url
+from app.modules.receipts.domain.value_objects import ReceiptCategory
 
 _ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
     status.HTTP_401_UNAUTHORIZED: {
@@ -174,7 +175,7 @@ async def create_receipt(
             totalAmount=result.total_amount,
             periodMonths=result.period_months,
             expiresOn=result.expires_on,
-            category=result.category,
+            category=_category_api_label(result.category),
             subCategory=result.sub_category,
             memo=result.memo,
             requiresPhysicalReceipt=result.requires_physical_receipt,
@@ -310,7 +311,7 @@ def _receipt_response(http_request: Request, receipt: ReceiptReadModel) -> Recei
         totalAmount=receipt.total_amount,
         periodMonths=receipt.period_months,
         expiresOn=receipt.expires_on,
-        category=receipt.category,
+        category=_category_api_label(receipt.category),
         subCategory=receipt.sub_category,
         memo=receipt.memo,
         requiresPhysicalReceipt=receipt.requires_physical_receipt,
@@ -342,3 +343,7 @@ def _receipt_file_responses(
 def _with_api_prefix(http_request: Request, path: str) -> str:
     api_prefix = http_request.app.state.settings.api_prefix.rstrip("/")
     return f"{api_prefix}{path}"
+
+
+def _category_api_label(category: ReceiptCategory | None) -> str | None:
+    return None if category is None else category.api_label
