@@ -39,13 +39,19 @@ async def insert_signup_promotion_and_redemption(database_url: str) -> None:
         await engine.dispose()
 
 
-async def read_signup_data(database_url: str) -> tuple[str | None, int, bool]:
+async def read_signup_data(database_url: str) -> tuple[str | None, bool, int, bool]:
     engine = build_engine(database_url)
     try:
         async with engine.connect() as connection:
             context = await connection.scalar(
                 text(
                     "SELECT context FROM promotions "
+                    "WHERE id = '00000000-0000-0000-0000-000000000601'"
+                )
+            )
+            active = await connection.scalar(
+                text(
+                    "SELECT active FROM promotions "
                     "WHERE id = '00000000-0000-0000-0000-000000000601'"
                 )
             )
@@ -66,8 +72,9 @@ async def read_signup_data(database_url: str) -> tuple[str | None, int, bool]:
                 )
             )
             assert isinstance(context, str | None)
+            assert isinstance(active, bool)
             assert isinstance(redemptions, int)
             assert isinstance(beneficiary_column, bool)
-            return context, redemptions, beneficiary_column
+            return context, active, redemptions, beneficiary_column
     finally:
         await engine.dispose()

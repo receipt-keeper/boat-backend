@@ -42,7 +42,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.execute("UPDATE promotions SET context = NULL WHERE context = 'signup'")
+    op.execute("UPDATE promotions SET active = false, context = NULL WHERE context = 'signup'")
     op.drop_constraint(
         op.f("ck_promotions_context_allowed"),
         "promotions",

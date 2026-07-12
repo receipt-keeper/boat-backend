@@ -152,7 +152,7 @@ def test_promotion_contents_reject_duplicate_promotion_content(
         get_settings.cache_clear()
 
 
-def test_promotion_migration_downgrade_preserves_rows_and_clears_signup_context(
+def test_promotion_migration_downgrade_preserves_rows_and_hides_signup_campaign(
     postgres_async_database_url: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -173,9 +173,9 @@ def test_promotion_migration_downgrade_preserves_rows_and_clears_signup_context(
         command.upgrade(config, "head")
         reupgraded = anyio.run(read_signup_data, postgres_async_database_url)
 
-        # Then: 행/redemption은 보존되고 signup context만 legacy NULL로 정규화된다.
-        assert downgraded == (None, 1, False)
-        assert reupgraded == (None, 1, True)
+        # Then: 행/redemption은 보존하되 signup 캠페인은 legacy 공개 경로에서 비활성 상태다.
+        assert downgraded == (None, False, 1, False)
+        assert reupgraded == (None, False, 1, True)
     finally:
         if upgraded:
             command.downgrade(config, "base")
