@@ -47,6 +47,7 @@ def test_multimodal_prompt_extracts_explicit_serial_number_from_any_image() -> N
 
     prompt = content[0]["text"]
 
+    assert isinstance(prompt, str)
     assert "Extract serial_number from any input image" in prompt
     assert '"S/N"' in prompt
     assert "Do not use an order number" in prompt
