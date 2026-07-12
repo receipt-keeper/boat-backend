@@ -5,10 +5,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.application.event_publisher import EventPublisher
 from app.core.application.unit_of_work import DeferredCommitUnitOfWork, UnitOfWork
+from app.core.config.settings import get_settings
 from app.core.db.outbox.publisher import OutboxEventPublisher
 from app.core.db.outbox.serialization import EventTypeRegistry
 from app.core.db.session import AsyncSessionDep
 from app.core.db.unit_of_work import SqlAlchemyUnitOfWork
+from app.modules.credits.application.commands.close_credit_account.use_case import (
+    CloseCreditsAccountCommandUseCase,
+)
 from app.modules.credits.application.commands.delete_user_credits.use_case import (
     DeleteUserCreditsCommandUseCase,
 )
@@ -17,6 +21,9 @@ from app.modules.credits.application.commands.finalize_credit_usage.use_case imp
 )
 from app.modules.credits.application.commands.grant_credit.use_case import (
     GrantCreditCommandUseCase,
+)
+from app.modules.credits.application.commands.issue_signup_allowance.use_case import (
+    IssueSignupAllowanceCommandUseCase,
 )
 from app.modules.credits.application.commands.reserve_credit.use_case import (
     ReserveCreditCommandUseCase,
@@ -68,6 +75,35 @@ def build_delete_user_credits_command_use_case(
         credit_repository=SqlAlchemyCreditRepository(session),
         unit_of_work=unit_of_work,
         event_publisher=_build_outbox_event_publisher(session),
+    )
+
+
+def build_issue_signup_allowance_command_use_case(
+    session: AsyncSession,
+    unit_of_work: UnitOfWork,
+) -> IssueSignupAllowanceCommandUseCase:
+    credit_repository = SqlAlchemyCreditRepository(session)
+    grant_credit_command_use_case = GrantCreditCommandUseCase(
+        credit_repository=credit_repository,
+        unit_of_work=unit_of_work,
+        event_publisher=_build_outbox_event_publisher(session),
+    )
+    return IssueSignupAllowanceCommandUseCase(
+        credit_repository=credit_repository,
+        grant_credit_command_use_case=grant_credit_command_use_case,
+        unit_of_work=unit_of_work,
+    )
+
+
+def build_close_credit_account_command_use_case(
+    session: AsyncSession,
+    unit_of_work: UnitOfWork,
+) -> CloseCreditsAccountCommandUseCase:
+    return CloseCreditsAccountCommandUseCase(
+        credit_repository=SqlAlchemyCreditRepository(session),
+        unit_of_work=unit_of_work,
+        event_publisher=_build_outbox_event_publisher(session),
+        retention_days=get_settings().credit_claim_retention_days,
     )
 
 

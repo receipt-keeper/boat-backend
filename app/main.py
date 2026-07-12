@@ -26,9 +26,9 @@ from app.modules.auth.api.router import router as auth_router
 from app.modules.auth.api.security import authenticate_current_principal
 from app.modules.auth.dependencies import build_auth_event_registry
 from app.modules.auth.domain.exceptions import AuthenticationError, AuthorizationError
-from app.modules.auth.purge_dependencies import build_withdrawn_identity_purger
 from app.modules.credits.api.router import router as credits_router
 from app.modules.credits.dependencies import build_credits_event_registry
+from app.modules.credits.purge_dependencies import build_credit_claim_purger
 from app.modules.example.api.router import router as example_router
 from app.modules.files.api.router import router as files_router
 from app.modules.files.dependencies import build_files_event_registry, get_file_reference_guard
@@ -131,12 +131,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
 
         purge_task: asyncio.Task[None] | None = None
-        if resolved_settings.withdrawn_identity_purge_enabled:
-            purger = build_withdrawn_identity_purger()
+        if resolved_settings.credit_claim_purge_enabled:
+            purger = build_credit_claim_purger()
             purge_task = asyncio.create_task(
                 purger.run_forever(
                     session_factory,
-                    interval_seconds=resolved_settings.withdrawn_identity_purge_interval_seconds,
+                    interval_seconds=resolved_settings.credit_claim_purge_interval_seconds,
                 )
             )
 

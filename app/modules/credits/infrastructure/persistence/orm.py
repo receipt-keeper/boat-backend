@@ -131,6 +131,11 @@ class CreditTransaction(Base):
             unique=True,
             postgresql_where=text("source_type IS NOT NULL AND source_id IS NOT NULL"),
         ),
+        Index(
+            "ix_credit_transactions_purge_after",
+            "purge_after",
+            postgresql_where=text("purge_after IS NOT NULL"),
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(
@@ -152,6 +157,10 @@ class CreditTransaction(Base):
         nullable=True,
     )
     idempotency_key: Mapped[str | None] = mapped_column(type_=String(255), nullable=True)
+    purge_after: Mapped[datetime | None] = mapped_column(
+        type_=DateTime(timezone=True),
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         type_=DateTime(timezone=True),
         nullable=False,

@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
@@ -67,6 +68,12 @@ class CreditTransactionListResult:
     total_count: int
 
 
+@dataclass(frozen=True, slots=True)
+class CreditTransactionHandle:
+    transaction_id: UUID
+    idempotency_key: str
+
+
 class CreditTransactionWriteConflictError(RuntimeError):
     pass
 
@@ -114,6 +121,32 @@ class CreditRepository(ABC):
 
     @abstractmethod
     async def delete_by_user_id(self, *, user_id: UUID) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def find_transaction_by_idempotency_keys(
+        self,
+        *,
+        idempotency_keys: Sequence[str],
+    ) -> CreditTransactionHandle | None:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def set_transaction_purge_after(
+        self,
+        *,
+        transaction_id: UUID,
+        purge_after: datetime | None,
+    ) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def delete_user_credit_state_except_transactions(
+        self,
+        *,
+        user_id: UUID,
+        preserved_transaction_ids: Sequence[UUID],
+    ) -> None:
         raise NotImplementedError
 
     @abstractmethod

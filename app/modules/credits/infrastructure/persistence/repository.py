@@ -1,6 +1,8 @@
+from collections.abc import Sequence
+from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import and_, delete, func, or_, select
+from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -8,6 +10,7 @@ from app.modules.credits.application.ports.credit_repository import (
     CreditRepository,
     CreditTransactionAppend,
     CreditTransactionCursor,
+    CreditTransactionHandle,
     CreditTransactionListResult,
     CreditTransactionSourceKey,
     CreditTransactionWriteConflictError,
@@ -133,6 +136,56 @@ class SqlAlchemyCreditRepository(CreditRepository):
         await self._session.execute(
             delete(orm.CreditTransaction).where(orm.CreditTransaction.user_id == user_id)
         )
+        await self._session.execute(delete(orm.UserCredit).where(orm.UserCredit.user_id == user_id))
+
+    async def find_transaction_by_idempotency_keys(
+        self,
+        *,
+        idempotency_keys: Sequence[str],
+    ) -> CreditTransactionHandle | None:
+        if not idempotency_keys:
+            return None
+        row = (
+            await self._session.execute(
+                select(orm.CreditTransaction.id, orm.CreditTransaction.idempotency_key)
+                .where(orm.CreditTransaction.idempotency_key.in_(idempotency_keys))
+                .limit(1)
+            )
+        ).first()
+        if row is None:
+            return None
+        transaction_id, idempotency_key = row
+        return CreditTransactionHandle(
+            transaction_id=transaction_id,
+            idempotency_key=idempotency_key,
+        )
+
+    async def set_transaction_purge_after(
+        self,
+        *,
+        transaction_id: UUID,
+        purge_after: datetime | None,
+    ) -> None:
+        await self._session.execute(
+            update(orm.CreditTransaction)
+            .where(orm.CreditTransaction.id == transaction_id)
+            .values(purge_after=purge_after)
+        )
+
+    async def delete_user_credit_state_except_transactions(
+        self,
+        *,
+        user_id: UUID,
+        preserved_transaction_ids: Sequence[UUID],
+    ) -> None:
+        delete_transactions = delete(orm.CreditTransaction).where(
+            orm.CreditTransaction.user_id == user_id
+        )
+        if preserved_transaction_ids:
+            delete_transactions = delete_transactions.where(
+                orm.CreditTransaction.id.notin_(preserved_transaction_ids)
+            )
+        await self._session.execute(delete_transactions)
         await self._session.execute(delete(orm.UserCredit).where(orm.UserCredit.user_id == user_id))
 
     async def list_transactions(

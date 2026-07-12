@@ -1,4 +1,4 @@
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from datetime import UTC, datetime
 from typing import Final
 from uuid import UUID
@@ -14,6 +14,7 @@ from app.modules.credits.application.ports.credit_repository import (
     CreditRepository,
     CreditTransactionAppend,
     CreditTransactionCursor,
+    CreditTransactionHandle,
     CreditTransactionListItem,
     CreditTransactionListResult,
     CreditTransactionSourceKey,
@@ -173,6 +174,29 @@ class CreditRepositoryStub(CreditRepository):
         raise AssertionError("contract read app should not check credit source")
 
     async def delete_by_user_id(self, *, user_id: UUID) -> None:
+        raise AssertionError("contract read app should not delete credit state")
+
+    async def find_transaction_by_idempotency_keys(
+        self,
+        *,
+        idempotency_keys: Sequence[str],
+    ) -> CreditTransactionHandle | None:
+        raise AssertionError("contract read app should not look up credit claims")
+
+    async def set_transaction_purge_after(
+        self,
+        *,
+        transaction_id: UUID,
+        purge_after: datetime | None,
+    ) -> None:
+        raise AssertionError("contract read app should not mutate credit claim purge state")
+
+    async def delete_user_credit_state_except_transactions(
+        self,
+        *,
+        user_id: UUID,
+        preserved_transaction_ids: Sequence[UUID],
+    ) -> None:
         raise AssertionError("contract read app should not delete credit state")
 
     async def list_transactions(

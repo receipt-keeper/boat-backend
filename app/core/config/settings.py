@@ -105,19 +105,30 @@ class Settings(BaseSettings):
 
     identity_hash_secret: str = Field(
         default=DEFAULT_IDENTITY_HASH_SECRET,
-        description="탈퇴 신원(external identity) HMAC 해시 계산에 사용하는 서버 secret.",
+        description="가입 신원(benefit subject handle) HMAC 해시 계산에 사용하는 현행 서버 secret.",
     )
-    withdrawn_identity_retention_days: int = Field(
+    identity_hash_secret_version: str = Field(
+        default="v1",
+        description="identity_hash_secret 현재 버전 태그. handle 문자열의 버전 프리픽스로 쓰인다.",
+    )
+    identity_hash_retired_secrets: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "키 회전으로 은퇴한 버전→secret 매핑. 신규 발급에는 쓰이지 않고, "
+            "회전 중 중복 판정을 위한 과거 버전 handle 계산에만 쓰인다."
+        ),
+    )
+    credit_claim_retention_days: int = Field(
         default=180,
-        description="탈퇴 신원 해시(tombstone) 보존 기간(일). 경과분은 백그라운드로 자동 파기된다.",
+        description="가입 보너스 claim 보존 기간(일). 탈퇴 시 이 기간이 지나면 자동 파기된다.",
     )
-    withdrawn_identity_purge_enabled: bool = Field(
+    credit_claim_purge_enabled: bool = Field(
         default=True,
-        description="lifespan에서 만료된 탈퇴 신원 tombstone 파기 폴러를 시작할지 여부.",
+        description="lifespan에서 만료된 가입 보너스 claim 파기 폴러를 시작할지 여부.",
     )
-    withdrawn_identity_purge_interval_seconds: float = Field(
+    credit_claim_purge_interval_seconds: float = Field(
         default=3600.0,
-        description="탈퇴 신원 tombstone 파기 폴러가 만료 row를 조회하는 주기(초).",
+        description="가입 보너스 claim 파기 폴러가 만료 row를 조회하는 주기(초).",
     )
 
     default_profile_image_url: str | None = None
