@@ -44,6 +44,7 @@ class ReceiptOcrResult:
         period_months: int | None,
         category: str | None,
         sub_category: str | None,
+        expires_on: date | None = None,
     ) -> "ReceiptOcrResult":
         warnings: list[str] = []
         resolved_payment_date = payment_date
@@ -92,7 +93,11 @@ class ReceiptOcrResult:
             payment_date=new_payment_date,
             total_amount=new_total_amount,
             period_months=new_period_months,
-            expires_on=_add_months(new_payment_date.value, new_period_months.value),
+            expires_on=(
+                expires_on
+                if expires_on is not None
+                else _add_months(new_payment_date.value, new_period_months.value)
+            ),
             category=normalized_category,
             sub_category=normalized_sub_category,
             warnings=tuple(warnings),

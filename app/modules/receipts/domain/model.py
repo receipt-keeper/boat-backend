@@ -48,6 +48,7 @@ class Receipt(Entity[UUID]):
         payment_location: str | None = None,
         total_amount: int | None = None,
         period_months: int | None = None,
+        expires_on: date | None = None,
         category: str | None = None,
         sub_category: str | None = None,
         memo: str | None = None,
@@ -139,7 +140,11 @@ class Receipt(Entity[UUID]):
             payment_date=new_payment_date,
             total_amount=new_total_amount,
             period_months=new_period_months,
-            expires_on=_add_months(new_payment_date.value, new_period_months.value),
+            expires_on=(
+                expires_on
+                if expires_on is not None
+                else _add_months(new_payment_date.value, new_period_months.value)
+            ),
             category=new_category,
             sub_category=new_sub_category,
             memo=new_memo,

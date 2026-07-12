@@ -21,6 +21,7 @@ class ExtractedReceiptOcrFields:
     period_months: int | None
     category: str | None
     sub_category: str | None
+    expires_on: date | None = None
     unreadable_file_indexes: tuple[int, ...] = ()
 
 

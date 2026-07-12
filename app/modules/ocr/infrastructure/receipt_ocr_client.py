@@ -38,7 +38,11 @@ If a field other than category or sub_category is not visible or uncertain, retu
 Suggest category and sub_category only from the configured schema descriptions.
 If a product does not fit a listed primary category, use category "기타 기기".
 If a product does not fit a listed sub-category, use sub_category "기타".
+For protection plans or warranty documents such as AppleCare, classify category and
+sub_category by the covered device, not by the protection service itself.
 Normalize dates to YYYY-MM-DD when clearly readable.
+Extract expires_on only when the document clearly states a coverage, warranty, or
+protection expiration/end date. Do not calculate or guess expires_on.
 Normalize total_amount as an integer number only when clearly readable.
 Extract serial_number from any input image only when it is explicitly identified as a serial
 number, such as "Serial Number", "Serial No.", "S/N", or "제조번호".
@@ -109,6 +113,13 @@ class ReceiptOcrStructuredOutput(BaseModel):
         default=None,
         description="무상 AS/보증 기간 개월 수. 영수증에서 명확히 확인되지 않으면 null.",
     )
+    expires_on: date | None = Field(
+        default=None,
+        description=(
+            "문서에 명시된 보장/보증 만료일. 종료일 또는 만료일이 YYYY-MM-DD로 "
+            "명확히 확인될 때만 입력하고 직접 계산하거나 추측하지 않음."
+        ),
+    )
     category: CategoryLiteral | None = Field(
         default=None,
         description=(
@@ -148,6 +159,7 @@ class ReceiptOcrStructuredOutput(BaseModel):
             payment_date=self.payment_date,
             total_amount=self.total_amount,
             period_months=self.period_months,
+            expires_on=self.expires_on,
             category=blank_to_none(self.category) or DEFAULT_CATEGORY,
             sub_category=blank_to_none(self.sub_category) or DEFAULT_SUB_CATEGORY,
             unreadable_file_indexes=unreadable_file_indexes,
@@ -173,6 +185,7 @@ class ReceiptOcrClient(ReceiptOcrClientPort):
             payment_date=date.today(),
             total_amount=129000,
             period_months=None,
+            expires_on=None,
             category="주방 가전",
             sub_category="냉장고",
         )

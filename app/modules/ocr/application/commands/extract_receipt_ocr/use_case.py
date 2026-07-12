@@ -56,6 +56,7 @@ class ExtractReceiptOcrCommandUseCase:
                 payment_date=extracted.payment_date,
                 total_amount=extracted.total_amount,
                 period_months=extracted.period_months,
+                expires_on=extracted.expires_on,
                 category=extracted.category,
                 sub_category=extracted.sub_category,
             )

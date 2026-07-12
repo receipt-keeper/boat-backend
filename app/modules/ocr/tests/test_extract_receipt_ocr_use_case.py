@@ -43,6 +43,7 @@ class ReadableReceiptOcrClient:
             period_months=12,
             category="주방 가전",
             sub_category="냉장고",
+            expires_on=date(2028, 7, 1),
         )
 
 
@@ -97,6 +98,7 @@ async def test_extract_receipt_ocr_use_case_consumes_credit_after_success() -> N
 
     # Then: OCR 결과가 만들어진 뒤 OCR 사용 크레딧 1회가 차감된다.
     assert result.item_name.value == "삼성 냉장고"
+    assert result.expires_on == date(2028, 7, 1)
     expected_command = UseCreditCommand(
         user_id=USER_ID,
         amount=CreditAmount(value=1, field_name="amount"),

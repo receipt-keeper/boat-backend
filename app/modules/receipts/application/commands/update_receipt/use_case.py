@@ -1,3 +1,5 @@
+from datetime import date
+
 from app.core.application.unit_of_work import UnitOfWork
 from app.core.domain.exceptions import ErrorDetail, ValidationError
 from app.modules.receipts.application.commands.update_receipt.command import (
@@ -51,6 +53,7 @@ class UpdateReceiptCommandUseCase:
                 current.period_months,
                 "무상 AS 기간",
             ),
+            expires_on=_resolved_expires_on(command, current),
             category=command.category if _has_update(command, "category") else current.category,
             sub_category=(
                 command.sub_category
@@ -78,6 +81,17 @@ class UpdateReceiptCommandUseCase:
 
 def _has_update(command: UpdateReceiptCommand, field: str) -> bool:
     return field in command.updated_fields
+
+
+def _resolved_expires_on(
+    command: UpdateReceiptCommand,
+    current: ReceiptReadModel,
+) -> date | None:
+    if _has_update(command, "expires_on"):
+        return command.expires_on
+    if _has_update(command, "payment_date") or _has_update(command, "period_months"):
+        return None
+    return current.expires_on
 
 
 def _updated_value[T](command: UpdateReceiptCommand, field: str, current_value: T) -> T:

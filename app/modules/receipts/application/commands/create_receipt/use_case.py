@@ -20,6 +20,7 @@ class CreateReceiptCommandUseCase:
             payment_date=command.payment_date,
             total_amount=command.total_amount,
             period_months=command.period_months,
+            expires_on=command.expires_on,
             category=command.category,
             sub_category=command.sub_category,
             memo=command.memo,
