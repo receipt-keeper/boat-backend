@@ -17,6 +17,9 @@ from app.modules.auth.application.commands.logout.use_case import LogoutCommandU
 from app.modules.auth.application.commands.refresh.use_case import RefreshTokenCommandUseCase
 from app.modules.auth.application.commands.signup.use_case import SignupCommandUseCase
 from app.modules.auth.application.commands.withdraw.use_case import WithdrawAccountCommandUseCase
+from app.modules.auth.application.ports.benefit_subject_handle import (
+    BenefitSubjectHandleProvider,
+)
 from app.modules.auth.application.ports.credential_repository import (
     ActiveSessionChecker,
     CredentialRepository,
@@ -46,10 +49,6 @@ from app.modules.auth.application.ports.user_provisioner import (
     UserProvisioner,
     UserProvisioningRequest,
 )
-from app.modules.auth.application.ports.withdrawn_identity import (
-    IdentityHasher,
-    WithdrawnIdentityRegistry,
-)
 from app.modules.auth.application.queries.current_principal.use_case import (
     CurrentPrincipalQueryUseCase,
 )
@@ -70,15 +69,14 @@ from app.modules.auth.infrastructure.persistence.credential_repository import (
 from app.modules.auth.infrastructure.persistence.external_identity_login_synchronizer import (
     SqlAlchemyExternalIdentityLoginSynchronizer,
 )
-from app.modules.auth.infrastructure.persistence.withdrawn_identity_repository import (
-    SqlAlchemyWithdrawnIdentityRegistry,
+from app.modules.auth.infrastructure.security.identity_hasher import (
+    HmacBenefitSubjectHandleProvider,
 )
-from app.modules.auth.infrastructure.security.identity_hasher import HmacIdentityHasher
 from app.modules.auth.infrastructure.tokens.jwt import JwtAccessTokenService
 from app.modules.auth.infrastructure.tokens.opaque_refresh_token import OpaqueRefreshTokenIssuer
 from app.modules.credits.dependencies import (
-    build_delete_user_credits_command_use_case,
-    build_grant_credit_command_use_case,
+    build_close_credit_account_command_use_case,
+    build_issue_signup_allowance_command_use_case,
 )
 from app.modules.notifications.dependencies import (
     build_delete_user_push_tokens_command_use_case,
@@ -206,7 +204,7 @@ async def get_notification_settings_initializer(
 
 async def get_credit_initializer(session: AsyncSessionDep) -> CreditInitializer:
     return CreditInitializerAdapter(
-        build_grant_credit_command_use_case(
+        build_issue_signup_allowance_command_use_case(
             session,
             DeferredCommitUnitOfWork(),
         )
@@ -217,7 +215,7 @@ async def get_credit_withdrawal_cleaner(
     session: AsyncSessionDep,
 ) -> CreditWithdrawalCleaner:
     return CreditWithdrawalCleanerAdapter(
-        build_delete_user_credits_command_use_case(
+        build_close_credit_account_command_use_case(
             session,
             DeferredCommitUnitOfWork(),
         )
@@ -241,17 +239,14 @@ async def get_withdrawal_cleanup_command_use_case(
     return build_withdrawal_cleanup_command_use_case(session, DeferredCommitUnitOfWork())
 
 
-async def get_identity_hasher(settings: SettingsDep) -> IdentityHasher:
-    return HmacIdentityHasher(secret=settings.identity_hash_secret)
-
-
-async def get_withdrawn_identity_registry(
-    session: AsyncSessionDep,
+async def get_benefit_subject_handle_provider(
     settings: SettingsDep,
-) -> WithdrawnIdentityRegistry:
-    return SqlAlchemyWithdrawnIdentityRegistry(
-        session,
-        retention_days=settings.withdrawn_identity_retention_days,
+) -> BenefitSubjectHandleProvider:
+    return HmacBenefitSubjectHandleProvider(
+        namespace=settings.identity_hash_namespace,
+        current_version=settings.identity_hash_secret_version,
+        current_secret=settings.identity_hash_secret,
+        retired_secrets=settings.identity_hash_retired_secrets,
     )
 
 
@@ -290,10 +285,9 @@ WithdrawalCleanupUseCaseDep = Annotated[
     Depends(get_withdrawal_cleanup_command_use_case),
 ]
 AuthEventPublisherDep = Annotated[EventPublisher, Depends(get_auth_event_publisher)]
-IdentityHasherDep = Annotated[IdentityHasher, Depends(get_identity_hasher)]
-WithdrawnIdentityRegistryDep = Annotated[
-    WithdrawnIdentityRegistry,
-    Depends(get_withdrawn_identity_registry),
+BenefitSubjectHandleProviderDep = Annotated[
+    BenefitSubjectHandleProvider,
+    Depends(get_benefit_subject_handle_provider),
 ]
 
 
@@ -322,8 +316,7 @@ async def get_signup_command_use_case(
     user_provisioner: UserProvisionerDep,
     notification_settings_initializer: NotificationInitializerDep,
     credit_initializer: CreditInitializerDep,
-    identity_hasher: IdentityHasherDep,
-    withdrawn_identity_registry: WithdrawnIdentityRegistryDep,
+    benefit_subject_handle_provider: BenefitSubjectHandleProviderDep,
     access_token_issuer: AccessTokenIssuerDep,
     refresh_token_issuer: RefreshTokenIssuerDep,
     unit_of_work: UnitOfWorkDep,
@@ -336,8 +329,7 @@ async def get_signup_command_use_case(
         user_provisioner=user_provisioner,
         notification_settings_initializer=notification_settings_initializer,
         credit_initializer=credit_initializer,
-        identity_hasher=identity_hasher,
-        withdrawn_identity_registry=withdrawn_identity_registry,
+        benefit_subject_handle_provider=benefit_subject_handle_provider,
         access_token_issuer=access_token_issuer,
         refresh_token_issuer=refresh_token_issuer,
         unit_of_work=unit_of_work,
@@ -388,8 +380,7 @@ async def get_withdraw_account_command_use_case(
     withdrawal_cleanup_command_use_case: WithdrawalCleanupUseCaseDep,
     credit_withdrawal_cleaner: CreditWithdrawalCleanerDep,
     push_token_withdrawal_cleaner: PushTokenWithdrawalCleanerDep,
-    identity_hasher: IdentityHasherDep,
-    withdrawn_identity_registry: WithdrawnIdentityRegistryDep,
+    benefit_subject_handle_provider: BenefitSubjectHandleProviderDep,
     unit_of_work: UnitOfWorkDep,
     event_publisher: AuthEventPublisherDep,
 ) -> WithdrawAccountCommandUseCase:
@@ -398,8 +389,7 @@ async def get_withdraw_account_command_use_case(
         withdrawal_cleanup_command_use_case=withdrawal_cleanup_command_use_case,
         credit_withdrawal_cleaner=credit_withdrawal_cleaner,
         push_token_withdrawal_cleaner=push_token_withdrawal_cleaner,
-        identity_hasher=identity_hasher,
-        withdrawn_identity_registry=withdrawn_identity_registry,
+        benefit_subject_handle_provider=benefit_subject_handle_provider,
         unit_of_work=unit_of_work,
         event_publisher=event_publisher,
     )

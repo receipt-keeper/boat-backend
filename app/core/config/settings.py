@@ -103,6 +103,14 @@ class Settings(BaseSettings):
         description="Server-side pepper used when hashing opaque refresh tokens.",
     )
 
+    identity_hash_namespace: str = Field(
+        default="boat-backend-firebase",
+        description=(
+            "benefit subject handle HMAC 입력에 포함되는 Firebase 프로젝트 namespace. "
+            "비밀값이 아니다 - firebase_project_id와 별도로 관리해, 운영 환경에서 "
+            "firebase_project_id를 나중에 채워도 기존에 발급된 handle이 바뀌지 않게 한다."
+        ),
+    )
     identity_hash_secret: str = Field(
         default=DEFAULT_IDENTITY_HASH_SECRET,
         description="가입 신원(benefit subject handle) HMAC 해시 계산에 사용하는 현행 서버 secret.",

@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from uuid import UUID
 
 from fastapi import Request
@@ -17,15 +18,18 @@ from app.modules.auth.application.ports.push_token_lifecycle import (
 from app.modules.auth.infrastructure.persistence.credential_repository import (
     SqlAlchemyCredentialRepository,
 )
-from app.modules.credits.application.commands.delete_user_credits.command import (
-    DeleteUserCreditsCommand,
+from app.modules.credits.application.commands.close_credit_account.command import (
+    CloseCreditsAccountCommand,
 )
-from app.modules.credits.application.commands.delete_user_credits.use_case import (
-    DeleteUserCreditsCommandUseCase,
+from app.modules.credits.application.commands.close_credit_account.use_case import (
+    CloseCreditsAccountCommandUseCase,
 )
-from app.modules.credits.application.commands.grant_credit.command import GrantCreditCommand
-from app.modules.credits.application.commands.grant_credit.use_case import GrantCreditCommandUseCase
-from app.modules.credits.domain import CreditAmount, CreditReason
+from app.modules.credits.application.commands.issue_signup_allowance.command import (
+    IssueSignupAllowanceCommand,
+)
+from app.modules.credits.application.commands.issue_signup_allowance.use_case import (
+    IssueSignupAllowanceCommandUseCase,
+)
 from app.modules.notifications.application.commands.delete_user_push_tokens.command import (
     DeleteUserPushTokensCommand,
 )
@@ -39,30 +43,43 @@ from app.modules.notifications.application.commands.update_notification_settings
     UpdateNotificationSettingsCommandUseCase,
 )
 
-_INITIAL_MONTHLY_OCR_CREDIT_COUNT = 5
-
 
 class CreditInitializerAdapter(CreditInitializer):
-    def __init__(self, command_use_case: GrantCreditCommandUseCase) -> None:
+    """가입 보너스 지급/재활성화 정책은 credits가 소유한다 - 이 어댑터는 auth가 계산한
+    handle을 그대로 전달할 뿐, 수량/reason/idempotency 전략은 갖지 않는다."""
+
+    def __init__(self, command_use_case: IssueSignupAllowanceCommandUseCase) -> None:
         self._command_use_case = command_use_case
 
-    async def initialize(self, *, user_id: UUID, identity_hash: str) -> None:
+    async def initialize(
+        self,
+        *,
+        user_id: UUID,
+        subject_handle: str,
+        candidate_handles: Sequence[str],
+    ) -> None:
         await self._command_use_case.execute(
-            GrantCreditCommand(
+            IssueSignupAllowanceCommand(
                 user_id=user_id,
-                amount=CreditAmount(value=_INITIAL_MONTHLY_OCR_CREDIT_COUNT),
-                reason=CreditReason.MONTHLY_OCR_ALLOWANCE,
-                idempotency_key=f"signup-bonus:{identity_hash}",
+                subject_handle=subject_handle,
+                candidate_handles=candidate_handles,
             )
         )
 
 
 class CreditWithdrawalCleanerAdapter(CreditWithdrawalCleaner):
-    def __init__(self, command_use_case: DeleteUserCreditsCommandUseCase) -> None:
+    def __init__(self, command_use_case: CloseCreditsAccountCommandUseCase) -> None:
         self._command_use_case = command_use_case
 
-    async def delete_account_state(self, *, user_id: UUID) -> None:
-        await self._command_use_case.execute(DeleteUserCreditsCommand(user_id=user_id))
+    async def delete_account_state(
+        self,
+        *,
+        user_id: UUID,
+        candidate_handles: Sequence[str],
+    ) -> None:
+        await self._command_use_case.execute(
+            CloseCreditsAccountCommand(user_id=user_id, candidate_handles=candidate_handles)
+        )
 
 
 class PushTokenWithdrawalCleanerAdapter(PushTokenWithdrawalCleaner):

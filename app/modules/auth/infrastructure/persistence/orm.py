@@ -145,19 +145,3 @@ class RefreshToken(Base):
         nullable=False,
         server_default=func.now(),
     )
-
-
-class WithdrawnIdentity(Base):
-    """탈퇴한 external identity의 HMAC 해시만 기간 한정 보존하는 tombstone.
-
-    user_id·이메일·원본 subject 등 재식별 가능한 컬럼은 두지 않는다. signup이
-    재가입 신원 여부를 판정할 때만 조회하고, 만료된 row는 백그라운드 폴러가
-    자동 파기한다.
-    """
-
-    __tablename__ = "withdrawn_identities"
-    __table_args__ = (Index("ix_withdrawn_identities_expires_at", "expires_at"),)
-
-    identity_hash: Mapped[str] = mapped_column(type_=String(64), primary_key=True)
-    withdrawn_at: Mapped[datetime] = mapped_column(type_=DateTime(timezone=True), nullable=False)
-    expires_at: Mapped[datetime] = mapped_column(type_=DateTime(timezone=True), nullable=False)

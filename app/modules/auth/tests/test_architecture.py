@@ -46,7 +46,7 @@ EXPECTED_AUTH_FILES = {
     "application/ports/notification_settings_initializer.py",
     "application/ports/token_issuer.py",
     "application/ports/user_provisioner.py",
-    "application/ports/withdrawn_identity.py",
+    "application/ports/benefit_subject_handle.py",
     "domain/events.py",
     "infrastructure/persistence/orm.py",
     "infrastructure/persistence/mapper.py",
@@ -76,8 +76,12 @@ FORBIDDEN_AUTH_FILES = {
     "application/withdraw/use_case.py",
     "application/ports/access_token.py",
     "application/ports/refresh_token_generator.py",
+    "application/ports/withdrawn_identity.py",
     "infrastructure/persistence/repository.py",
+    "infrastructure/persistence/withdrawn_identity_repository.py",
+    "infrastructure/persistence/withdrawn_identity_purger.py",
     "infrastructure/tokens/refresh_token.py",
+    "purge_dependencies.py",
 }
 
 FORBIDDEN_APPLICATION_IMPORT_PREFIXES = (

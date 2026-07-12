@@ -9,6 +9,9 @@ from app.core.domain.events import DomainEvent
 from app.core.domain.exceptions import ValidationError
 from app.modules.auth.application.commands.signup.command import SignupCommand
 from app.modules.auth.application.commands.signup.use_case import SignupCommandUseCase
+from app.modules.auth.application.ports.benefit_subject_handle import (
+    BenefitSubjectHandleProvider,
+)
 from app.modules.auth.application.ports.credit_lifecycle import CreditInitializer
 from app.modules.auth.application.ports.external_identity_login_synchronizer import (
     ExternalIdentityLoginSynchronizer,
@@ -20,10 +23,6 @@ from app.modules.auth.application.ports.user_provisioner import (
     ProvisionedUser,
     UserProvisioner,
     UserProvisioningRequest,
-)
-from app.modules.auth.application.ports.withdrawn_identity import (
-    IdentityHasher,
-    WithdrawnIdentityRegistry,
 )
 from app.modules.auth.domain.events import UserCredentialCreated
 from app.modules.auth.domain.exceptions import UserAlreadyExistsError
@@ -54,7 +53,8 @@ class InitializedSettings:
 @dataclass(frozen=True, slots=True)
 class InitializedCredits:
     user_id: UUID
-    identity_hash: str
+    subject_handle: str
+    candidate_handles: tuple[str, ...]
 
 
 class FakeUserProvisioner(UserProvisioner):
@@ -84,26 +84,30 @@ class FakeCreditInitializer(CreditInitializer):
     def __init__(self) -> None:
         self.initialized: list[InitializedCredits] = []
 
-    async def initialize(self, *, user_id: UUID, identity_hash: str) -> None:
-        self.initialized.append(InitializedCredits(user_id=user_id, identity_hash=identity_hash))
+    async def initialize(
+        self,
+        *,
+        user_id: UUID,
+        subject_handle: str,
+        candidate_handles: Sequence[str],
+    ) -> None:
+        self.initialized.append(
+            InitializedCredits(
+                user_id=user_id,
+                subject_handle=subject_handle,
+                candidate_handles=tuple(candidate_handles),
+            )
+        )
 
 
-class FakeIdentityHasher(IdentityHasher):
-    def hash(self, *, issuer: str, subject: str) -> str:
-        return f"{issuer}:{subject}"
+class FakeBenefitSubjectHandleProvider(BenefitSubjectHandleProvider):
+    """issuer는 입력에서 제외되고 subject(firebase uid)만 handle에 반영된다."""
 
+    def handle(self, *, subject: str) -> str:
+        return f"handle:{subject}"
 
-class FakeWithdrawnIdentityRegistry(WithdrawnIdentityRegistry):
-    def __init__(self, *, withdrawn_hashes: frozenset[str] = frozenset()) -> None:
-        self._withdrawn_hashes = withdrawn_hashes
-        self.checked: list[str] = []
-
-    async def mark_withdrawn(self, *, identity_hashes: Sequence[str]) -> None:
-        raise AssertionError("signup must not call mark_withdrawn")
-
-    async def exists(self, *, identity_hash: str) -> bool:
-        self.checked.append(identity_hash)
-        return identity_hash in self._withdrawn_hashes
+    def candidate_handles(self, *, subject: str) -> Sequence[str]:
+        return [self.handle(subject=subject), f"retired-handle:{subject}"]
 
 
 class RecordingExternalIdentityLoginSynchronizer(ExternalIdentityLoginSynchronizer):
@@ -122,7 +126,6 @@ class SignupUseCaseFixture:
     notification_initializer: FakeNotificationSettingsInitializer
     credit_initializer: FakeCreditInitializer
     identity_synchronizer: RecordingExternalIdentityLoginSynchronizer
-    withdrawn_identity_registry: FakeWithdrawnIdentityRegistry
     unit_of_work: FakeUnitOfWork
     event_publisher: RecordingEventPublisher
 
@@ -138,17 +141,12 @@ def _new_identity() -> ExternalIdentity:
     )
 
 
-def _build_signup_use_case(
-    identity: ExternalIdentity,
-    *,
-    withdrawn_hashes: frozenset[str] = frozenset(),
-) -> SignupUseCaseFixture:
+def _build_signup_use_case(identity: ExternalIdentity) -> SignupUseCaseFixture:
     repository = FakeCredentialRepository()
     provisioner = FakeUserProvisioner()
     notification_initializer = FakeNotificationSettingsInitializer()
     credit_initializer = FakeCreditInitializer()
     identity_synchronizer = RecordingExternalIdentityLoginSynchronizer()
-    withdrawn_identity_registry = FakeWithdrawnIdentityRegistry(withdrawn_hashes=withdrawn_hashes)
     unit_of_work = FakeUnitOfWork()
     refresh_token_service = build_refresh_token_service()
     event_publisher = RecordingEventPublisher()
@@ -160,8 +158,7 @@ def _build_signup_use_case(
             user_provisioner=provisioner,
             notification_settings_initializer=notification_initializer,
             credit_initializer=credit_initializer,
-            identity_hasher=FakeIdentityHasher(),
-            withdrawn_identity_registry=withdrawn_identity_registry,
+            benefit_subject_handle_provider=FakeBenefitSubjectHandleProvider(),
             access_token_issuer=build_access_token_issuer(),
             refresh_token_issuer=refresh_token_service,
             unit_of_work=unit_of_work,
@@ -172,7 +169,6 @@ def _build_signup_use_case(
         notification_initializer=notification_initializer,
         credit_initializer=credit_initializer,
         identity_synchronizer=identity_synchronizer,
-        withdrawn_identity_registry=withdrawn_identity_registry,
         unit_of_work=unit_of_work,
         event_publisher=event_publisher,
     )
@@ -222,7 +218,8 @@ async def test_signup_creates_new_credentials_tokens_and_marketing_settings() ->
     assert fixture.credit_initializer.initialized == [
         InitializedCredits(
             user_id=fixture.provisioner.user_id,
-            identity_hash="google:firebase-uid",
+            subject_handle="handle:firebase-uid",
+            candidate_handles=("handle:firebase-uid", "retired-handle:firebase-uid"),
         )
     ]
     assert fixture.identity_synchronizer.identities == [identity]
@@ -261,7 +258,8 @@ async def test_signup_defaults_marketing_settings_to_false() -> None:
     assert fixture.credit_initializer.initialized == [
         InitializedCredits(
             user_id=fixture.provisioner.user_id,
-            identity_hash="google:firebase-uid",
+            subject_handle="handle:firebase-uid",
+            candidate_handles=("handle:firebase-uid", "retired-handle:firebase-uid"),
         )
     ]
 
@@ -393,33 +391,19 @@ async def test_signup_rejects_verified_email_existing_credential_without_attach_
     assert fixture.identity_synchronizer.identities == []
 
 
-async def test_signup_skips_credit_grant_for_previously_withdrawn_identity() -> None:
-    identity = _new_identity()
-    identity_hash = "google:firebase-uid"
-    fixture = _build_signup_use_case(identity, withdrawn_hashes=frozenset({identity_hash}))
-
-    tokens = await fixture.use_case.execute(_signup_command())
-
-    # 재가입 신원이므로 보너스 크레딧 지급은 스킵되지만 계정 생성/세션 발급은 정상 진행된다.
-    assert tokens.access_token
-    assert tokens.refresh_token
-    assert fixture.credit_initializer.initialized == []
-    assert fixture.withdrawn_identity_registry.checked == [identity_hash]
-    assert len(fixture.provisioner.requests) == 1
-    assert len(fixture.repository.credentials_by_identity) == 1
-    assert fixture.unit_of_work.commit_count == 1
-
-
-async def test_signup_grants_credit_with_identity_hash_for_first_time_identity() -> None:
+async def test_signup_unconditionally_calls_credit_initializer_regardless_of_history() -> None:
+    """재가입 신원 여부 판정은 더 이상 auth의 책임이 아니다(credits의 claim-first
+    로직으로 이동) - signup은 항상 발급 포트를 호출하고 재지급 차단은 credits가
+    담당한다."""
     identity = _new_identity()
     fixture = _build_signup_use_case(identity)
 
     await fixture.use_case.execute(_signup_command())
 
-    assert fixture.withdrawn_identity_registry.checked == ["google:firebase-uid"]
     assert fixture.credit_initializer.initialized == [
         InitializedCredits(
             user_id=fixture.provisioner.user_id,
-            identity_hash="google:firebase-uid",
+            subject_handle="handle:firebase-uid",
+            candidate_handles=("handle:firebase-uid", "retired-handle:firebase-uid"),
         )
     ]

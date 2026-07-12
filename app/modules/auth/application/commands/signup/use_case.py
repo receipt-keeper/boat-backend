@@ -6,6 +6,9 @@ from app.core.application.unit_of_work import UnitOfWork
 from app.core.domain.exceptions import ErrorDetail, ValidationError
 from app.modules.auth.application.commands.signup.command import SignupCommand
 from app.modules.auth.application.commands.signup.result import SignupResult
+from app.modules.auth.application.ports.benefit_subject_handle import (
+    BenefitSubjectHandleProvider,
+)
 from app.modules.auth.application.ports.credential_repository import CredentialRepository
 from app.modules.auth.application.ports.credit_lifecycle import CreditInitializer
 from app.modules.auth.application.ports.external_identity_login_synchronizer import (
@@ -19,10 +22,6 @@ from app.modules.auth.application.ports.token_issuer import AccessTokenIssuer, R
 from app.modules.auth.application.ports.user_provisioner import (
     UserProvisioner,
     UserProvisioningRequest,
-)
-from app.modules.auth.application.ports.withdrawn_identity import (
-    IdentityHasher,
-    WithdrawnIdentityRegistry,
 )
 from app.modules.auth.domain.exceptions import UserAlreadyExistsError
 from app.modules.auth.domain.model import ExternalIdentity
@@ -40,8 +39,7 @@ class SignupCommandUseCase:
         user_provisioner: UserProvisioner,
         notification_settings_initializer: NotificationSettingsInitializer,
         credit_initializer: CreditInitializer,
-        identity_hasher: IdentityHasher,
-        withdrawn_identity_registry: WithdrawnIdentityRegistry,
+        benefit_subject_handle_provider: BenefitSubjectHandleProvider,
         access_token_issuer: AccessTokenIssuer,
         refresh_token_issuer: RefreshTokenIssuer,
         unit_of_work: UnitOfWork,
@@ -53,8 +51,7 @@ class SignupCommandUseCase:
         self._user_provisioner = user_provisioner
         self._notification_settings_initializer = notification_settings_initializer
         self._credit_initializer = credit_initializer
-        self._identity_hasher = identity_hasher
-        self._withdrawn_identity_registry = withdrawn_identity_registry
+        self._benefit_subject_handle_provider = benefit_subject_handle_provider
         self._access_token_issuer = access_token_issuer
         self._refresh_token_issuer = refresh_token_issuer
         self._unit_of_work = unit_of_work
@@ -131,15 +128,19 @@ class SignupCommandUseCase:
             user_id=provisioned_user.user_id,
             marketing_consent=command.marketing_consent,
         )
-        identity_hash = self._identity_hasher.hash(
-            issuer=identity.issuer.value,
+        subject_handle = self._benefit_subject_handle_provider.handle(
             subject=identity.subject.value,
         )
-        if not await self._withdrawn_identity_registry.exists(identity_hash=identity_hash):
-            await self._credit_initializer.initialize(
-                user_id=provisioned_user.user_id,
-                identity_hash=identity_hash,
-            )
+        candidate_handles = self._benefit_subject_handle_provider.candidate_handles(
+            subject=identity.subject.value,
+        )
+        # 재가입 신원 판정은 credits(claim 원장)가 소유한다 - auth는 항상 무조건
+        # 발급 포트를 호출하고, 재지급 여부는 credits의 claim-first 로직이 결정한다.
+        await self._credit_initializer.initialize(
+            user_id=provisioned_user.user_id,
+            subject_handle=subject_handle,
+            candidate_handles=candidate_handles,
+        )
         logged_in_at = datetime.now(UTC)
         credentials = await self._credential_repository.create_for_external_identity(
             identity=identity,
