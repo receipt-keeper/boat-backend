@@ -9,6 +9,7 @@ from app.core.domain.validation import Notification
 from app.modules.receipts.domain.value_objects import (
     ItemName,
     PaymentDate,
+    ReceiptCategory,
     ReceiptFileReferences,
     ReceiptStatusFilter,
     TotalAmount,
@@ -29,7 +30,7 @@ class Receipt(Entity[UUID]):
     total_amount: TotalAmount | None
     period_months: WarrantyPeriodMonths
     expires_on: date
-    category: str | None
+    category: ReceiptCategory | None
     sub_category: str | None
     memo: str | None
     requires_physical_receipt: bool
@@ -49,7 +50,7 @@ class Receipt(Entity[UUID]):
         total_amount: int | None = None,
         period_months: int | None = None,
         expires_on: date | None = None,
-        category: str | None = None,
+        category: ReceiptCategory | str | None = None,
         sub_category: str | None = None,
         memo: str | None = None,
         requires_physical_receipt: bool | None = False,
@@ -94,14 +95,7 @@ class Receipt(Entity[UUID]):
                 max_length=500,
             )
         )
-        new_category = notification.collect(
-            lambda: _optional_text(
-                value=category,
-                field="category",
-                label="대분류 카테고리",
-                max_length=100,
-            )
-        )
+        new_category = notification.collect(lambda: _optional_category(category))
         new_sub_category = notification.collect(
             lambda: _optional_text(
                 value=sub_category,
@@ -228,6 +222,26 @@ def _optional_text(
             ]
         )
     return stripped
+
+
+def _optional_category(value: ReceiptCategory | str | None) -> ReceiptCategory | None:
+    if value is None or isinstance(value, ReceiptCategory):
+        return value
+
+    stripped = value.strip()
+    if not stripped:
+        return None
+    try:
+        return ReceiptCategory(stripped)
+    except ValueError as exception:
+        raise ValidationError(
+            [
+                ErrorDetail(
+                    field="category",
+                    message="지원하지 않는 대분류 카테고리입니다.",
+                )
+            ]
+        ) from exception
 
 
 def _topic_particle(label: str) -> str:

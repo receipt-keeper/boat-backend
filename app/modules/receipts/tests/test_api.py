@@ -22,6 +22,7 @@ from app.modules.auth.api.security import authenticate_current_principal
 from app.modules.credits.infrastructure.persistence import orm as credit_orm
 from app.modules.ocr.application.ports.receipt_ocr_client import ReceiptOcrImage
 from app.modules.ocr.dependencies import get_receipt_ocr_client
+from app.modules.receipts.domain.value_objects import ReceiptCategory
 from app.modules.receipts.infrastructure.persistence import orm as receipt_orm
 
 TEST_USER_ID = UUID("00000000-0000-0000-0000-000000000101")
@@ -294,6 +295,7 @@ async def test_create_receipt_persists_final_values(
     assert record.serial_number == "SN-20240526-001"
     assert record.payment_location == "전자랜드"
     assert record.total_amount == 5137000
+    assert record.category is ReceiptCategory.KITCHEN_APPLIANCE
     assert record.requires_physical_receipt is True
     registered_at = datetime.fromisoformat(data["registeredAt"].replace("Z", "+00:00"))
     assert registered_at == record.created_at
@@ -301,6 +303,48 @@ async def test_create_receipt_persists_final_values(
         TEST_FILE_ID,
         SECOND_TEST_FILE_ID,
     }
+
+
+async def test_category_aliases_are_normalized_for_save_filter_and_response(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with _client(postgres_session_factory) as client:
+        created = await _create_receipt(
+            client,
+            item_name="맥북 프로",
+            payment_date=date(2026, 7, 12),
+            category="IT 제품",
+        )
+
+        filtered = await client.get(
+            "/api/v1/receipts",
+            params={"category": "영상/IT 제품"},
+        )
+        updated = await client.patch(
+            f"/api/v1/receipts/{created['receiptId']}",
+            json={"category": "기타 제품"},
+        )
+        invalid = await client.post(
+            "/api/v1/receipts",
+            json={
+                "item_name": "알 수 없는 제품",
+                "payment_date": "2026-07-12",
+                "category": "새로운 임의 카테고리",
+                "receipt_file_ids": [str(uuid4())],
+            },
+        )
+
+    assert created["category"] == "IT 기기"
+    assert filtered.status_code == 200
+    assert [item["category"] for item in filtered.json()["data"]["receipts"]] == ["IT 기기"]
+    assert updated.status_code == 200
+    assert updated.json()["data"]["category"] == "기타 기기"
+    assert invalid.status_code == 422
+
+    async with postgres_session_factory() as session:
+        record = await session.get(receipt_orm.Receipt, UUID(str(created["receiptId"])))
+    assert record is not None
+    assert record.category is ReceiptCategory.OTHER_DEVICE
 
 
 async def test_explicit_expiration_is_preserved_until_warranty_inputs_change(

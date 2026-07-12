@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 from datetime import date
+from enum import StrEnum
 from typing import Literal
 
 import httpx
@@ -36,7 +37,7 @@ Extract only information that is clearly supported by the input images.
 Do not guess missing or ambiguous values.
 If a field other than category or sub_category is not visible or uncertain, return null.
 Suggest category and sub_category only from the configured schema descriptions.
-If a product does not fit a listed primary category, use category "기타 기기".
+If a product does not fit a listed primary category, use category "other_device".
 If a product does not fit a listed sub-category, use sub_category "기타".
 For protection plans or warranty documents such as AppleCare, classify category and
 sub_category by the covered device, not by the protection service itself.
@@ -53,7 +54,26 @@ Write text values in Korean when applicable.
 """
 _HTTP_TIMEOUT_SECONDS = 10.0
 _OPENROUTER_CHAT_COMPLETIONS_URL = "https://openrouter.ai/api/v1/chat/completions"
-CategoryLiteral = Literal["주방 가전", "세탁/청소", "리빙/냉난방", "IT 기기", "기타 기기"]
+
+
+class OcrReceiptCategory(StrEnum):
+    KITCHEN_APPLIANCE = "kitchen_appliance"
+    LAUNDRY_CLEANING = "laundry_cleaning"
+    LIVING_CLIMATE = "living_climate"
+    IT_DEVICE = "it_device"
+    OTHER_DEVICE = "other_device"
+
+    @property
+    def api_label(self) -> str:
+        return {
+            OcrReceiptCategory.KITCHEN_APPLIANCE: "주방 가전",
+            OcrReceiptCategory.LAUNDRY_CLEANING: "세탁/청소",
+            OcrReceiptCategory.LIVING_CLIMATE: "리빙/냉난방",
+            OcrReceiptCategory.IT_DEVICE: "IT 기기",
+            OcrReceiptCategory.OTHER_DEVICE: "기타 기기",
+        }[self]
+
+
 SubCategoryLiteral = Literal[
     "냉장고",
     "전자레인지",
@@ -83,66 +103,85 @@ SubCategoryLiteral = Literal[
 class ReceiptOcrStructuredOutput(BaseModel):
     item_name: str | None = Field(
         default=None,
-        description="구매/진료/수리 대상이 되는 제품명 또는 항목명. 명확하지 않으면 null.",
+        description=(
+            "The product or line-item name being purchased, treated, or repaired. "
+            "Return null when it is not clearly identifiable."
+        ),
     )
     brand_name: str | None = Field(
         default=None,
-        description="제조사 또는 브랜드명. 영수증에서 확인되지 않으면 null.",
+        description=(
+            "The manufacturer or brand name. Return null when it is not shown in the input."
+        ),
     )
     serial_number: str | None = Field(
         default=None,
         description=(
-            "첨부 이미지 전체를 검토하여 그중 하나에서라도 Serial Number, Serial No., "
-            "S/N, 제조번호 등으로 명시된 제품 시리얼 넘버. 주문번호, 영수증 번호, "
-            "제품 코드, 모델명과 혼동하지 말고 명확히 확인되지 않으면 null."
+            "The product serial number explicitly labeled as Serial Number, Serial No., S/N, "
+            "or the Korean label 제조번호 in any input image. Do not confuse it with an order "
+            "number, receipt number, product code, or model name. Return null when uncertain."
         ),
     )
     payment_location: str | None = Field(
         default=None,
-        description="구매처, 결제처, 병원명, 매장명 또는 온라인몰 이름. 명확하지 않으면 null.",
+        description=(
+            "The merchant, payment recipient, hospital, store, or online marketplace name. "
+            "Return null when it is not clearly identifiable."
+        ),
     )
     payment_date: date | None = Field(
         default=None,
-        description="구매일 또는 결제일. YYYY-MM-DD 형식으로 변환 가능할 때만 입력.",
+        description=(
+            "The purchase or payment date. Return it only when it can be normalized to YYYY-MM-DD."
+        ),
     )
     total_amount: int | None = Field(
         default=None,
-        description="총 결제 금액. 숫자로 명확히 확인될 때만 입력하고 통화기호/쉼표는 제거.",
+        description=(
+            "The total paid amount as an integer. Return it only when clearly readable and "
+            "remove currency symbols and thousands separators."
+        ),
     )
     period_months: int | None = Field(
         default=None,
-        description="무상 AS/보증 기간 개월 수. 영수증에서 명확히 확인되지 않으면 null.",
+        description=(
+            "The free service or warranty period in months. Return null when the period is not "
+            "clearly stated."
+        ),
     )
     expires_on: date | None = Field(
         default=None,
         description=(
-            "문서에 명시된 보장/보증 만료일. 종료일 또는 만료일이 YYYY-MM-DD로 "
-            "명확히 확인될 때만 입력하고 직접 계산하거나 추측하지 않음."
+            "The coverage, protection, or warranty expiration date explicitly stated in the "
+            "document. Return it only when it can be normalized to YYYY-MM-DD. Do not calculate "
+            "or guess this value."
         ),
     )
-    category: CategoryLiteral | None = Field(
+    category: OcrReceiptCategory | None = Field(
         default=None,
         description=(
-            "대분류 카테고리 추천값. 다음 중 하나만 사용: 주방 가전, 세탁/청소, "
-            "리빙/냉난방, IT 기기, 기타 기기. 명확히 맞지 않으면 기타 기기."
+            "The primary category suggestion. Use exactly one of kitchen_appliance, "
+            "laundry_cleaning, living_climate, it_device, or other_device. Classify protection "
+            "plans by the covered device and use other_device when no category clearly matches."
         ),
     )
     sub_category: SubCategoryLiteral | None = Field(
         default=None,
         description=(
-            "소분류 대표 기기명 추천값. 주방 가전: 냉장고, 전자레인지, 밥솥, 정수기. "
-            "세탁/청소: 세탁기, 건조기, 청소기, 로봇청소기. "
-            "리빙/냉난방: 에어컨, 선풍기, 공기청정기, 가습기. "
-            "IT 기기: 태블릿, 게임기, 카메라, 스피커, 무선 이어폰, 노트북, 헤드셋, "
-            "스마트워치, 핸드폰. 없거나 불명확하면 기타."
+            "The representative device sub-category suggestion. Allowed values are grouped as "
+            "follows: kitchen_appliance uses 냉장고, 전자레인지, 밥솥, 정수기; "
+            "laundry_cleaning uses 세탁기, 건조기, 청소기, 로봇청소기; living_climate uses "
+            "에어컨, 선풍기, 공기청정기, 가습기; it_device uses 태블릿, 게임기, 카메라, "
+            "스피커, 무선 이어폰, 노트북, 헤드셋, 스마트워치, 핸드폰. Use 기타 when no "
+            "listed device clearly matches."
         ),
     )
     unreadable_file_indexes: list[int] = Field(
         default_factory=list,
         description=(
-            "읽을 수 없거나 손상되었거나 구매 또는 제품과 무관한 이미지의 0-based "
-            "IMAGE_INDEX 목록. 읽을 수 있는 영수증, 관련 보증서, 제품 라벨 이미지는 "
-            "포함하지 않는다."
+            "The zero-based IMAGE_INDEX values for images that are unreadable, corrupted, or "
+            "unrelated to the purchase or product. Do not include readable receipts, relevant "
+            "warranty documents, or product labels."
         ),
     )
 
@@ -160,7 +199,7 @@ class ReceiptOcrStructuredOutput(BaseModel):
             total_amount=self.total_amount,
             period_months=self.period_months,
             expires_on=self.expires_on,
-            category=blank_to_none(self.category) or DEFAULT_CATEGORY,
+            category=(self.category.api_label if self.category is not None else DEFAULT_CATEGORY),
             sub_category=blank_to_none(self.sub_category) or DEFAULT_SUB_CATEGORY,
             unreadable_file_indexes=unreadable_file_indexes,
         )
@@ -186,7 +225,7 @@ class ReceiptOcrClient(ReceiptOcrClientPort):
             total_amount=129000,
             period_months=None,
             expires_on=None,
-            category="주방 가전",
+            category=OcrReceiptCategory.KITCHEN_APPLIANCE,
             sub_category="냉장고",
         )
         return structured_output.to_extracted_fields(image_count=len(images))

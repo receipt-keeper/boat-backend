@@ -9,7 +9,11 @@ from app.modules.receipts.api.examples import (
     CREATE_RECEIPT_REQUEST_EXAMPLES,
     UPDATE_RECEIPT_REQUEST_EXAMPLES,
 )
-from app.modules.receipts.domain.value_objects import ReceiptSort, ReceiptStatusFilter
+from app.modules.receipts.domain.value_objects import (
+    ReceiptCategory,
+    ReceiptSort,
+    ReceiptStatusFilter,
+)
 
 
 class ReceiptListQuery(AppBaseModel):
@@ -36,11 +40,9 @@ class ReceiptListQuery(AppBaseModel):
         min_length=1,
         max_length=200,
     )
-    category: str | None = Field(
+    category: ReceiptCategory | None = Field(
         default=None,
-        description="카테고리 완전 일치 필터.",
-        min_length=1,
-        max_length=100,
+        description=("영수증 대분류 필터. 영문 Enum과 기존 앱의 한글 카테고리 별칭을 지원한다."),
     )
     q: str | None = Field(
         default=None,
@@ -93,10 +95,9 @@ class CreateReceiptRequest(AppBaseModel):
             "미전달 시 구매일과 무상 AS 기간으로 계산한다."
         ),
     )
-    category: str | None = Field(
+    category: ReceiptCategory | None = Field(
         default=None,
-        description="대분류 카테고리.",
-        max_length=100,
+        description="영수증 대분류. 영문 Enum 또는 기존 한글 카테고리 별칭을 받는다.",
     )
     sub_category: str | None = Field(
         default=None,
@@ -236,7 +237,10 @@ class UpdateReceiptRequest(AppBaseModel):
             "사용자가 확인한 보장 만료일. null이면 현재 구매일과 무상 AS 기간으로 다시 계산한다."
         ),
     )
-    category: str | None = Field(default=None, description="대분류 카테고리.", max_length=100)
+    category: ReceiptCategory | None = Field(
+        default=None,
+        description="영수증 대분류. 영문 Enum 또는 기존 한글 카테고리 별칭을 받는다.",
+    )
     sub_category: str | None = Field(
         default=None,
         description="소분류 대표 기기명.",

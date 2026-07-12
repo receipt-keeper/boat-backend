@@ -1,7 +1,11 @@
 from dataclasses import dataclass
 from uuid import UUID
 
-from app.modules.receipts.domain.value_objects import ReceiptSort, ReceiptStatusFilter
+from app.modules.receipts.domain.value_objects import (
+    ReceiptCategory,
+    ReceiptSort,
+    ReceiptStatusFilter,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -11,7 +15,7 @@ class ListReceiptsQuery:
     sort: ReceiptSort = ReceiptSort.RECENT
     limit: int = 20
     cursor: str | None = None
-    category: str | None = None
+    category: ReceiptCategory | None = None
     q: str | None = None
 
     def __post_init__(self) -> None:
