@@ -23,15 +23,16 @@ from app.modules.ocr.domain.model import (
 _RECEIPT_OCR_PROMPT = """
 You are an information extraction specialist for receipts.
 
-The input contains one or more images of the same receipt in transmission order.
-Images may show different, consecutive, or overlapping sections of that single receipt.
+The input contains one or more images related to the same purchase in transmission order.
+Images may show different, consecutive, or overlapping sections of a receipt, or a related
+warranty document or product label.
 Treat a readable partial section as valid even when it does not contain all receipt fields
 by itself.
-Extract one combined receipt result from all readable images.
+Treat all readable images as one evidence set and extract one combined receipt result.
 Return unreadable_file_indexes only for images that are unreadable, corrupted, or unrelated
-to the receipt.
+to the purchase or product.
 The indexes are zero-based and match the IMAGE_INDEX labels in the input.
-Extract only information that is clearly supported by the receipt images.
+Extract only information that is clearly supported by the input images.
 Do not guess missing or ambiguous values.
 If a field other than category or sub_category is not visible or uncertain, return null.
 Suggest category and sub_category only from the configured schema descriptions.
@@ -39,7 +40,10 @@ If a product does not fit a listed primary category, use category "기타 기기
 If a product does not fit a listed sub-category, use sub_category "기타".
 Normalize dates to YYYY-MM-DD when clearly readable.
 Normalize total_amount as an integer number only when clearly readable.
-Extract serial_number only when it is clearly visible on the receipt image.
+Extract serial_number from any input image only when it is explicitly identified as a serial
+number, such as "Serial Number", "Serial No.", "S/N", or "제조번호".
+Do not use an order number, receipt number, product code, or model name as serial_number unless
+the image explicitly identifies it as the product serial number.
 Respond only with the configured structured output.
 Write text values in Korean when applicable.
 """
@@ -83,7 +87,11 @@ class ReceiptOcrStructuredOutput(BaseModel):
     )
     serial_number: str | None = Field(
         default=None,
-        description="제품 시리얼 넘버. 영수증에서 명확히 확인되지 않으면 null.",
+        description=(
+            "첨부 이미지 전체를 검토하여 그중 하나에서라도 Serial Number, Serial No., "
+            "S/N, 제조번호 등으로 명시된 제품 시리얼 넘버. 주문번호, 영수증 번호, "
+            "제품 코드, 모델명과 혼동하지 말고 명확히 확인되지 않으면 null."
+        ),
     )
     payment_location: str | None = Field(
         default=None,
@@ -121,8 +129,9 @@ class ReceiptOcrStructuredOutput(BaseModel):
     unreadable_file_indexes: list[int] = Field(
         default_factory=list,
         description=(
-            "읽을 수 없거나 손상되었거나 영수증과 무관한 이미지의 0-based IMAGE_INDEX 목록. "
-            "읽을 수 있는 영수증 일부 이미지는 포함하지 않는다."
+            "읽을 수 없거나 손상되었거나 구매 또는 제품과 무관한 이미지의 0-based "
+            "IMAGE_INDEX 목록. 읽을 수 있는 영수증, 관련 보증서, 제품 라벨 이미지는 "
+            "포함하지 않는다."
         ),
     )
 
