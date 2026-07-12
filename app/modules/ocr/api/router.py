@@ -7,6 +7,7 @@ from app.core.domain.exceptions import ValidationError
 from app.core.http.auth import CurrentPrincipalDep
 from app.core.http.responses import ApiErrorData, CommonResponse
 from app.modules.files.api.upload_validation import read_and_validate_uploads
+from app.modules.ocr.api.diagnostic_route import OcrDiagnosticRoute
 from app.modules.ocr.api.schemas import ReceiptOcrErrorData, ReceiptOcrResultResponse
 from app.modules.ocr.api.upload_policy import RECEIPT_OCR_UPLOAD_POLICY
 from app.modules.ocr.application.commands.extract_receipt_ocr.command import (
@@ -93,6 +94,7 @@ _INSUFFICIENT_CREDIT_EXAMPLE = {
 router = APIRouter(
     prefix="/ocr",
     tags=["ocr"],
+    route_class=OcrDiagnosticRoute,
     responses={
         status.HTTP_422_UNPROCESSABLE_CONTENT: {
             "model": CommonResponse[ReceiptOcrErrorData],

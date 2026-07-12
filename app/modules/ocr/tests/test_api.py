@@ -7,6 +7,8 @@ from httpx import AsyncClient
 
 from app.core.config.settings import Settings
 from app.core.domain.exceptions import ValidationError
+from app.modules.ocr.api.diagnostic_route import OcrDiagnosticRoute
+from app.modules.ocr.api.router import router as ocr_router
 from app.modules.ocr.application.ports.receipt_ocr_client import (
     ExtractedReceiptOcrFields,
     ReceiptOcrImage,
@@ -373,3 +375,7 @@ async def test_receipt_ocr_endpoint_openapi_uses_multipart_file(client: AsyncCli
 
     assert "multipart/form-data" in request_content
     assert "application/json" not in request_content
+
+
+def test_receipt_ocr_router_owns_request_validation_logging() -> None:
+    assert ocr_router.route_class is OcrDiagnosticRoute
