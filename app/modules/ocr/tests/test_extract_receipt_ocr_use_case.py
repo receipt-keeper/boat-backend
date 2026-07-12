@@ -235,7 +235,10 @@ async def test_extract_receipt_ocr_use_case_validates_expiration_against_default
     )
 
 
-async def test_extract_receipt_ocr_use_case_rolls_back_when_provider_fails() -> None:
+async def test_extract_receipt_ocr_use_case_rolls_back_when_provider_fails(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level("WARNING")
     reserve_credit_use_case = FakeUseCreditCommandUseCase(commands=[])
     finalize_credit_use_case = FakeUseCreditCommandUseCase(commands=[])
     unit_of_work = FakeUnitOfWork()
@@ -263,6 +266,10 @@ async def test_extract_receipt_ocr_use_case_rolls_back_when_provider_fails() -> 
     ]
     assert finalize_credit_use_case.commands == []
     assert unit_of_work.rollback_count == 1
+    assert "ocr_analysis_failed reason=unexpected" in caplog.text
+    assert "file_indexes=()" in caplog.text
+    assert "exception_type=RuntimeError" in caplog.text
+    assert "ocr provider failed" not in caplog.text
 
 
 async def test_extract_receipt_ocr_use_case_rolls_back_when_finalize_fails() -> None:

@@ -120,11 +120,24 @@ async def handle_request_validation_error(request: Request, exception: Exception
     if not isinstance(exception, RequestValidationError):
         raise exception
 
+    validation_errors = exception.errors()
+    field_errors = [FieldError.from_pydantic_error(error) for error in validation_errors]
+    if request.url.path.rstrip("/") == "/api/v1/ocr":
+        fields = tuple(error.field for error in field_errors)
+        error_types = tuple(str(error.get("type", "unknown")) for error in validation_errors)
+        logger.warning(
+            "ocr_request_validation_failed path=%s fields=%s error_types=%s exception_type=%s",
+            request.url.path,
+            fields,
+            error_types,
+            type(exception).__name__,
+        )
+
     return _failure_response(
         status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         message="요청 값이 올바르지 않습니다.",
         path=request.url.path,
-        errors=[FieldError.from_pydantic_error(error) for error in exception.errors()],
+        errors=field_errors,
     )
 
 

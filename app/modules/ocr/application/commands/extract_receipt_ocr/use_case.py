@@ -1,3 +1,5 @@
+import logging
+from time import perf_counter
 from typing import Protocol
 
 from app.core.application.unit_of_work import UnitOfWork
@@ -7,8 +9,13 @@ from app.modules.ocr.application.commands.extract_receipt_ocr.command import (
     ExtractReceiptOcrCommand,
 )
 from app.modules.ocr.application.ports.receipt_ocr_client import ReceiptOcrClientPort
-from app.modules.ocr.domain.exceptions import ReceiptImageUnreadableError
+from app.modules.ocr.domain.exceptions import (
+    ReceiptImageUnreadableError,
+    ReceiptOcrProviderUnavailableError,
+)
 from app.modules.ocr.domain.model import ReceiptOcrResult
+
+logger = logging.getLogger(__name__)
 
 
 class UseCreditCommandExecutor(Protocol):
@@ -30,6 +37,7 @@ class ExtractReceiptOcrCommandUseCase:
         self._unit_of_work = unit_of_work
 
     async def execute(self, command: ExtractReceiptOcrCommand) -> ReceiptOcrResult:
+        started_at = perf_counter()
         ocr_credit_amount = CreditAmount(value=1, field_name="amount")
         use_credit_command = UseCreditCommand(
             user_id=command.user_id,
@@ -61,7 +69,70 @@ class ExtractReceiptOcrCommandUseCase:
                 sub_category=extracted.sub_category,
             )
             await self._finalize_credit_usage_command_use_case.execute(use_credit_command)
+            logger.info(
+                "ocr_analysis_succeeded user_id=%s image_count=%d content_types=%s "
+                "sizes=%s elapsed_ms=%d",
+                command.user_id,
+                len(command.images),
+                tuple(image.content_type for image in command.images),
+                tuple(len(image.content) for image in command.images),
+                _elapsed_ms(started_at),
+            )
             return result
-        except Exception:
+        except ReceiptImageUnreadableError as exception:
             await self._unit_of_work.rollback()
+            _log_ocr_failure(
+                command=command,
+                reason="unreadable_image",
+                exception=exception,
+                file_indexes=exception.file_indexes,
+                started_at=started_at,
+            )
             raise
+        except ReceiptOcrProviderUnavailableError as exception:
+            await self._unit_of_work.rollback()
+            _log_ocr_failure(
+                command=command,
+                reason="provider_unavailable",
+                exception=exception,
+                file_indexes=(),
+                started_at=started_at,
+            )
+            raise
+        except Exception as exception:
+            await self._unit_of_work.rollback()
+            _log_ocr_failure(
+                command=command,
+                reason="unexpected",
+                exception=exception,
+                file_indexes=(),
+                started_at=started_at,
+            )
+            raise
+
+
+def _log_ocr_failure(
+    *,
+    command: ExtractReceiptOcrCommand,
+    reason: str,
+    exception: Exception,
+    file_indexes: tuple[int, ...],
+    started_at: float,
+) -> None:
+    root_exception = exception.__cause__ or exception
+    logger.warning(
+        "ocr_analysis_failed reason=%s user_id=%s image_count=%d content_types=%s "
+        "sizes=%s file_indexes=%s exception_type=%s elapsed_ms=%d",
+        reason,
+        command.user_id,
+        len(command.images),
+        tuple(image.content_type for image in command.images),
+        tuple(len(image.content) for image in command.images),
+        file_indexes,
+        type(root_exception).__name__,
+        _elapsed_ms(started_at),
+    )
+
+
+def _elapsed_ms(started_at: float) -> int:
+    return round((perf_counter() - started_at) * 1000)
