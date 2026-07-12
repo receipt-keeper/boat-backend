@@ -2,7 +2,7 @@ from datetime import date, datetime
 from typing import Any, cast
 from uuid import UUID
 
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, field_validator
 
 from app.core.http.responses import AppBaseModel, CursorPaginationResponse
 from app.modules.receipts.api.examples import (
@@ -16,7 +16,25 @@ from app.modules.receipts.domain.value_objects import (
 )
 
 
-class ReceiptListQuery(AppBaseModel):
+class _ReceiptCategoryInputModel(AppBaseModel):
+    @field_validator("category", mode="before", check_fields=False)
+    @classmethod
+    def normalize_category(cls, value: object) -> ReceiptCategory | None:
+        if value is None or isinstance(value, ReceiptCategory):
+            return value
+        if not isinstance(value, str):
+            raise ValueError("지원하지 않는 대분류 카테고리입니다.")
+
+        stripped = value.strip()
+        if not stripped:
+            return None
+        try:
+            return ReceiptCategory(stripped)
+        except ValueError as exception:
+            raise ValueError("지원하지 않는 대분류 카테고리입니다.") from exception
+
+
+class ReceiptListQuery(_ReceiptCategoryInputModel):
     model_config = ConfigDict(frozen=True)
 
     status: ReceiptStatusFilter = Field(
@@ -52,7 +70,7 @@ class ReceiptListQuery(AppBaseModel):
     )
 
 
-class CreateReceiptRequest(AppBaseModel):
+class CreateReceiptRequest(_ReceiptCategoryInputModel):
     model_config = ConfigDict(
         extra="forbid",
         json_schema_extra=cast(dict[str, Any], {"examples": CREATE_RECEIPT_REQUEST_EXAMPLES}),
@@ -202,7 +220,7 @@ class ReceiptListResponse(AppBaseModel):
     pagination: CursorPaginationResponse = Field(description="커서 기반 목록 정보.")
 
 
-class UpdateReceiptRequest(AppBaseModel):
+class UpdateReceiptRequest(_ReceiptCategoryInputModel):
     model_config = ConfigDict(
         extra="forbid",
         json_schema_extra=cast(dict[str, Any], {"examples": UPDATE_RECEIPT_REQUEST_EXAMPLES}),

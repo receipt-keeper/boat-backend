@@ -340,6 +340,12 @@ async def test_category_aliases_are_normalized_for_save_filter_and_response(
     assert updated.status_code == 200
     assert updated.json()["data"]["category"] == "기타 기기"
     assert invalid.status_code == 422
+    assert invalid.json()["data"]["errors"] == [
+        {
+            "field": "category",
+            "message": "지원하지 않는 대분류 카테고리입니다.",
+        }
+    ]
 
     async with postgres_session_factory() as session:
         record = await session.get(receipt_orm.Receipt, UUID(str(created["receiptId"])))

@@ -8,6 +8,7 @@ from app.modules.ocr.infrastructure.receipt_ocr_client import (
     ReceiptOcrStructuredOutput,
     _build_openrouter_multimodal_content,
 )
+from app.modules.receipts.domain.value_objects import ReceiptCategory
 
 
 def test_openrouter_multimodal_content_keeps_image_order_and_indexes() -> None:
@@ -110,6 +111,12 @@ def test_structured_output_uses_english_category_enum_and_korean_api_label() -> 
         "it_device",
         "other_device",
     ]
+
+
+def test_ocr_and_receipt_categories_share_the_same_api_labels() -> None:
+    assert {category.value: category.api_label for category in OcrReceiptCategory} == {
+        category.value: category.api_label for category in ReceiptCategory
+    }
 
 
 def test_multimodal_prompt_classifies_coverage_by_covered_device() -> None:
