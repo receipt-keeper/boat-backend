@@ -79,6 +79,23 @@ class InvalidExpirationReceiptOcrClient:
         )
 
 
+@dataclass(slots=True)
+class MissingPurchaseDateWithPastExpirationReceiptOcrClient:
+    async def extract(self, *, images: tuple[ReceiptOcrImage, ...]) -> ExtractedReceiptOcrFields:
+        return ExtractedReceiptOcrFields(
+            item_name="Apple iPhone",
+            brand_name="Apple",
+            serial_number=None,
+            payment_location="Apple Store",
+            payment_date=None,
+            total_amount=129000,
+            period_months=12,
+            category="IT 기기",
+            sub_category="핸드폰",
+            expires_on=date(2025, 7, 1),
+        )
+
+
 class FailingReceiptOcrClient:
     async def extract(self, *, images: tuple[ReceiptOcrImage, ...]) -> ExtractedReceiptOcrFields:
         raise RuntimeError("ocr provider failed")
@@ -185,6 +202,37 @@ async def test_extract_receipt_ocr_use_case_recalculates_invalid_explicit_expira
         "보장 만료일이 구매일보다 빨라 구매일과 무상 AS 기간으로 다시 계산했습니다.",
     )
     assert len(finalize_credit_use_case.commands) == 1
+
+
+async def test_extract_receipt_ocr_use_case_validates_expiration_against_default_payment_date(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FixedDate(date):
+        @classmethod
+        def today(cls) -> "FixedDate":
+            return cls(2026, 7, 12)
+
+    monkeypatch.setattr("app.modules.ocr.domain.model.date", FixedDate)
+    use_case = ExtractReceiptOcrCommandUseCase(
+        ocr_client=MissingPurchaseDateWithPastExpirationReceiptOcrClient(),
+        reserve_credit_command_use_case=FakeUseCreditCommandUseCase(commands=[]),
+        finalize_credit_usage_command_use_case=FakeUseCreditCommandUseCase(commands=[]),
+        unit_of_work=FakeUnitOfWork(),
+    )
+
+    result = await use_case.execute(
+        ExtractReceiptOcrCommand(
+            user_id=USER_ID,
+            images=(ReceiptOcrImage(file_index=0, content=b"image", content_type="image/png"),),
+        )
+    )
+
+    assert result.payment_date.value == date(2026, 7, 12)
+    assert result.expires_on == date(2027, 7, 12)
+    assert result.warnings == (
+        "구매일을 찾지 못해 오늘 날짜 기본값을 적용했습니다.",
+        "보장 만료일이 구매일보다 빨라 구매일과 무상 AS 기간으로 다시 계산했습니다.",
+    )
 
 
 async def test_extract_receipt_ocr_use_case_rolls_back_when_provider_fails() -> None:
