@@ -1,4 +1,4 @@
-from typing import Annotated, Final
+from typing import Annotated, Final, assert_never
 
 from fastapi import APIRouter, Depends, status
 
@@ -10,6 +10,10 @@ from app.modules.example.api.schemas import (
 )
 from app.modules.notifications.application.commands.create_notification.command import (
     CreateNotificationCommand,
+)
+from app.modules.notifications.application.commands.create_notification.result import (
+    CreateNotificationResult,
+    SkippedMarketingConsent,
 )
 from app.modules.notifications.application.commands.create_notification.use_case import (
     CreateNotificationCommandUseCase,
@@ -90,6 +94,13 @@ async def send_test_push(
             message=request.body,
         )
     )
+    match notification_result:
+        case CreateNotificationResult():
+            notification_id = notification_result.notification_id
+        case SkippedMarketingConsent():
+            raise RuntimeError("거래성 테스트 푸시는 마케팅 동의로 생략될 수 없습니다.")
+        case unreachable:
+            assert_never(unreachable)
     tokens = await push_token_repository.list_by_user(user_id=principal.user_id)
     report = PushSendReport()
     if tokens:
@@ -105,7 +116,7 @@ async def send_test_push(
         success=True,
         status=status.HTTP_200_OK,
         data=TestPushResponse(
-            notificationId=notification_result.notification_id,
+            notificationId=notification_id,
             targetedDeviceCount=len(tokens),
             invalidDeviceCount=len(report.invalid_tokens),
         ),

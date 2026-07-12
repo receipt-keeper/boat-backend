@@ -123,8 +123,146 @@ async def test_list_notifications_returns_persisted_current_user_notifications(
         "nextCursor": None,
         "hasNext": False,
         "limit": 1,
-        "totalCount": 3,
+        "totalCount": 2,
     }
+
+
+async def test_list_hides_marketing_when_consent_is_withdrawn_and_restores_it_when_granted(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    # Given: 거래성 두 건과 마케팅 두 건이 시간순으로 저장되어 있고 마케팅 동의가 있다.
+    newest_marketing_id = UUID("00000000-0000-0000-0000-000000000651")
+    transactional_id = UUID("00000000-0000-0000-0000-000000000652")
+    oldest_marketing_id = UUID("00000000-0000-0000-0000-000000000653")
+    oldest_transactional_id = UUID("00000000-0000-0000-0000-000000000654")
+    async with postgres_session_factory() as session:
+        session.add_all(
+            [
+                orm.UserNotification(
+                    id=newest_marketing_id,
+                    user_id=TEST_USER_ID,
+                    message_type="marketing",
+                    kind="benefit",
+                    title="새 혜택",
+                    message="최신 마케팅 알림입니다.",
+                    resource_type=None,
+                    resource_id=None,
+                    created_at=datetime(2026, 6, 28, 12, 0, tzinfo=UTC),
+                    read_at=None,
+                ),
+                orm.UserNotification(
+                    id=transactional_id,
+                    user_id=TEST_USER_ID,
+                    message_type="transactional",
+                    kind="receipt",
+                    title="거래성 알림",
+                    message="읽음 상태를 보존합니다.",
+                    resource_type=None,
+                    resource_id=None,
+                    created_at=datetime(2026, 6, 28, 11, 0, tzinfo=UTC),
+                    read_at=datetime(2026, 6, 28, 11, 30, tzinfo=UTC),
+                ),
+                orm.UserNotification(
+                    id=oldest_marketing_id,
+                    user_id=TEST_USER_ID,
+                    message_type="marketing",
+                    kind="benefit",
+                    title="이전 혜택",
+                    message="이전 마케팅 알림입니다.",
+                    resource_type=None,
+                    resource_id=None,
+                    created_at=datetime(2026, 6, 28, 10, 0, tzinfo=UTC),
+                    read_at=None,
+                ),
+                orm.UserNotification(
+                    id=oldest_transactional_id,
+                    user_id=TEST_USER_ID,
+                    message_type="transactional",
+                    kind="credit",
+                    title="이전 거래성 알림",
+                    message="마케팅 동의와 무관합니다.",
+                    resource_type=None,
+                    resource_id=None,
+                    created_at=datetime(2026, 6, 28, 9, 0, tzinfo=UTC),
+                    read_at=None,
+                ),
+            ]
+        )
+        await session.commit()
+
+    async with notification_api_client(postgres_session_factory) as client:
+        # When: 동의를 철회한 뒤 첫 페이지와 cursor 다음 페이지를 조회한다.
+        withdraw_response = await client.patch(
+            "/api/v1/notifications/settings",
+            json={"marketingConsent": False},
+        )
+        first_response = await client.get("/api/v1/notifications?limit=1")
+        second_response = await client.get(
+            "/api/v1/notifications",
+            params={
+                "limit": 1,
+                "cursor": first_response.json()["data"]["pagination"]["nextCursor"],
+            },
+        )
+        hidden_mark_response = await client.patch(f"/api/v1/notifications/{newest_marketing_id}")
+        empty_page_response = await client.get(
+            "/api/v1/notifications",
+            params={
+                "limit": 1,
+                "cursor": f"2026-06-28T09:00:00Z|{oldest_transactional_id}",
+            },
+        )
+
+        # And: 다시 동의한 뒤 목록을 조회한다.
+        grant_response = await client.patch(
+            "/api/v1/notifications/settings",
+            json={"marketingConsent": True},
+        )
+        restored_response = await client.get("/api/v1/notifications?limit=10")
+
+    # Then: 철회 중에는 거래성만 total/cursor에 남고, 재동의하면 저장 행이 다시 노출된다.
+    assert withdraw_response.status_code == 200
+    first_notification = first_response.json()["data"]["notifications"][0]
+    assert first_notification["notificationId"] == str(transactional_id)
+    assert first_response.json()["data"]["notifications"][0]["readAt"] == "2026-06-28T11:30:00Z"
+    assert first_response.json()["data"]["pagination"] == {
+        "nextCursor": f"2026-06-28T11:00:00Z|{transactional_id}",
+        "hasNext": True,
+        "limit": 1,
+        "totalCount": 2,
+    }
+    assert second_response.status_code == 200
+    assert second_response.json()["data"]["notifications"][0]["notificationId"] == str(
+        oldest_transactional_id
+    )
+    assert second_response.json()["data"]["pagination"] == {
+        "nextCursor": None,
+        "hasNext": False,
+        "limit": 1,
+        "totalCount": 2,
+    }
+    assert hidden_mark_response.status_code == 404
+    assert empty_page_response.status_code == 200
+    assert empty_page_response.json()["data"] == {
+        "notifications": [],
+        "pagination": {
+            "nextCursor": None,
+            "hasNext": False,
+            "limit": 1,
+            "totalCount": 2,
+        },
+    }
+    assert grant_response.status_code == 200
+    restored_notifications = restored_response.json()["data"]["notifications"]
+    assert [item["notificationId"] for item in restored_notifications] == [
+        str(newest_marketing_id),
+        str(transactional_id),
+        str(oldest_marketing_id),
+        str(oldest_transactional_id),
+    ]
+    assert restored_response.json()["data"]["pagination"]["totalCount"] == 4
+    restored_newest_marketing = restored_notifications[0]
+    assert restored_newest_marketing["readAt"] is None
 
 
 async def test_list_notifications_uses_id_tiebreaker_for_same_created_at_cursor(
@@ -193,10 +331,10 @@ async def test_list_notifications_uses_id_tiebreaker_for_same_created_at_cursor(
     assert second_response.status_code == 200
     assert second_body["data"]["notifications"][0]["notificationId"] == str(lower_notification_id)
     assert second_body["data"]["pagination"] == {
-        "nextCursor": f"2026-06-28T10:00:00Z|{lower_notification_id}",
-        "hasNext": True,
+        "nextCursor": None,
+        "hasNext": False,
         "limit": 1,
-        "totalCount": 3,
+        "totalCount": 2,
     }
 
 
@@ -296,25 +434,87 @@ async def test_update_notification_settings_preserves_concurrent_partial_update(
     assert updated_settings.marketing_consent is True
 
 
+async def test_get_settings_for_update_materializes_default_settings_record(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    # Given: 아직 notification_settings 행이 없는 사용자가 있다.
+    async with postgres_session_factory() as session:
+        repository = SqlAlchemyNotificationRepository(session)
+
+        # When: 생성 경계가 사용할 설정 잠금을 획득한다.
+        settings = await repository.get_settings_for_update(user_id=TEST_USER_ID)
+        await session.commit()
+
+    async with postgres_session_factory() as session:
+        record = await session.get(orm.NotificationSettings, TEST_USER_ID)
+
+        # Then: 기본 미동의 설정 행을 실제로 만든 뒤 잠금 경로의 기준으로 사용한다.
+        assert settings.push_enabled is True
+        assert settings.marketing_consent is False
+        assert record is not None
+
+
+async def test_get_settings_for_update_refreshes_preloaded_settings(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    # Given: 한 세션이 설정을 preload한 뒤 다른 세션이 마케팅 동의를 철회한다.
+    async with postgres_session_factory() as setup_session:
+        setup_session.add(
+            orm.NotificationSettings(
+                user_id=TEST_USER_ID,
+                push_enabled=True,
+                marketing_consent=True,
+            )
+        )
+        await setup_session.commit()
+
+    async with (
+        postgres_session_factory() as stale_session,
+        postgres_session_factory() as withdrawal_session,
+    ):
+        stale_repository = SqlAlchemyNotificationRepository(stale_session)
+        withdrawal_repository = SqlAlchemyNotificationRepository(withdrawal_session)
+        preloaded = await stale_repository.get_settings(user_id=TEST_USER_ID)
+        await withdrawal_repository.update_settings(
+            user_id=TEST_USER_ID,
+            push_enabled=None,
+            marketing_consent=False,
+        )
+        await withdrawal_session.commit()
+
+        # When: preload했던 세션이 FOR UPDATE로 다시 읽는다.
+        locked = await stale_repository.get_settings_for_update(user_id=TEST_USER_ID)
+
+        # Then: identity map의 stale 값이 아니라 최신 철회 값을 반환한다.
+        assert preloaded.marketing_consent is True
+        assert locked.marketing_consent is False
+
+
 async def test_mark_notification_read_persists_for_current_user(
     postgres_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     # Given: 현재 사용자의 읽지 않은 알림이 생성되어 있다.
-    payload = {
-        "messageType": "transactional",
-        "kind": "registration_prompt",
-        "title": "영수증 등록 안내",
-        "message": "보증 관리를 위해 영수증을 등록해 주세요.",
-        "resourceType": None,
-        "resourceId": None,
-        "metadata": {"subCategory": "receiptUpload"},
-    }
+    notification_id = UUID("00000000-0000-0000-0000-000000000701")
+    async with postgres_session_factory() as session:
+        session.add(
+            orm.UserNotification(
+                id=notification_id,
+                user_id=TEST_USER_ID,
+                message_type="transactional",
+                kind="registration_prompt",
+                title="영수증 등록 안내",
+                message="보증 관리를 위해 영수증을 등록해 주세요.",
+                resource_type=None,
+                resource_id=None,
+                metadata_={"subCategory": "receiptUpload"},
+                created_at=datetime(2026, 6, 28, 10, 0, tzinfo=UTC),
+                read_at=None,
+            )
+        )
+        await session.commit()
 
     # When: 읽음 처리 후 목록을 다시 조회한다.
     async with notification_api_client(postgres_session_factory) as client:
-        create_response = await client.post("/api/v1/notifications", json=payload)
-        assert create_response.status_code == 201
-        notification_id = create_response.json()["data"]["notificationId"]
         read_response = await client.patch(f"/api/v1/notifications/{notification_id}")
         list_response = await client.get("/api/v1/notifications?limit=10")
 
@@ -324,11 +524,11 @@ async def test_mark_notification_read_persists_for_current_user(
     persisted = next(
         notification
         for notification in notifications
-        if notification["notificationId"] == notification_id
+        if notification["notificationId"] == str(notification_id)
     )
 
     assert read_response.status_code == 200
-    assert read_body["data"]["notificationId"] == notification_id
+    assert read_body["data"]["notificationId"] == str(notification_id)
     assert read_body["data"]["readAt"] is not None
     assert read_body["data"]["metadata"] == {"subCategory": "receiptUpload"}
     assert persisted["readAt"] == read_body["data"]["readAt"]
@@ -355,22 +555,23 @@ async def test_mark_foreign_notification_returns_not_found_envelope(
     postgres_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     # Given: 다른 사용자에게 알림이 생성되어 있다.
-    payload = {
-        "messageType": "marketing",
-        "kind": "benefit",
-        "title": "혜택 안내",
-        "message": "다른 사용자에게만 보이는 알림입니다.",
-        "resourceType": None,
-        "resourceId": None,
-    }
-
-    async with notification_api_client(
-        postgres_session_factory,
-        OTHER_USER_ID,
-    ) as other_client:
-        create_response = await other_client.post("/api/v1/notifications", json=payload)
-        assert create_response.status_code == 201
-        notification_id = create_response.json()["data"]["notificationId"]
+    notification_id = UUID("00000000-0000-0000-0000-000000000702")
+    async with postgres_session_factory() as session:
+        session.add(
+            orm.UserNotification(
+                id=notification_id,
+                user_id=OTHER_USER_ID,
+                message_type="marketing",
+                kind="benefit",
+                title="혜택 안내",
+                message="다른 사용자에게만 보이는 알림입니다.",
+                resource_type=None,
+                resource_id=None,
+                created_at=datetime(2026, 6, 28, 10, 0, tzinfo=UTC),
+                read_at=None,
+            )
+        )
+        await session.commit()
 
     # When: 현재 사용자가 그 알림을 읽음 처리하려고 한다.
     async with notification_api_client(

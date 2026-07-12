@@ -28,6 +28,7 @@ class NotificationRepositoryFake(NotificationRepository):
         self._create_exception = create_exception
         self._create_exceptions = create_exceptions or []
         self.created: list[CreatedNotification] = []
+        self.settings_for_update_calls: list[UUID] = []
 
     async def create(self, *, notification: UserNotification) -> UserNotification:
         if self._create_exceptions:
@@ -82,6 +83,10 @@ class NotificationRepositoryFake(NotificationRepository):
 
     async def get_settings(self, *, user_id: UUID) -> NotificationSettings:
         return self.settings.get(user_id, NotificationSettings.create(user_id=user_id))
+
+    async def get_settings_for_update(self, *, user_id: UUID) -> NotificationSettings:
+        self.settings_for_update_calls.append(user_id)
+        return await self.get_settings(user_id=user_id)
 
     async def update_settings(
         self,

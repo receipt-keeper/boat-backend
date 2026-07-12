@@ -7,16 +7,12 @@ from fastapi import APIRouter, Query, Response, status
 from app.core.http.auth import CurrentPrincipalDep
 from app.core.http.responses import ApiErrorData, CommonResponse, CursorPaginationResponse
 from app.modules.notifications.api.schemas import (
-    CreateNotificationRequest,
     NotificationListQuery,
     NotificationListResponse,
     NotificationResponse,
     NotificationSettingsResponse,
     RegisterDeviceRequest,
     UpdateNotificationSettingsRequest,
-)
-from app.modules.notifications.application.commands.create_notification.command import (
-    CreateNotificationCommand,
 )
 from app.modules.notifications.application.commands.mark_notification_read.command import (
     MarkNotificationReadCommand,
@@ -37,7 +33,6 @@ from app.modules.notifications.application.queries.list_notifications.query impo
     ListNotificationsQuery,
 )
 from app.modules.notifications.dependencies import (
-    CreateNotificationCommandUseCaseDep,
     GetNotificationSettingsQueryUseCaseDep,
     ListNotificationsQueryUseCaseDep,
     MarkNotificationReadCommandUseCaseDep,
@@ -130,44 +125,6 @@ async def list_notifications(
                 totalCount=result.total_count,
             ),
         ),
-    )
-
-
-@router.post(
-    "/notifications",
-    status_code=status.HTTP_201_CREATED,
-    response_model=CommonResponse[NotificationResponse],
-    summary="알림 생성",
-    description=(
-        "현재 사용자에게 표시할 앱 알림을 생성한다. resourceType과 resourceId는 "
-        "함께 있거나 함께 없어야 하며, messageType이 marketing인 알림은 사용자가 마케팅 "
-        "수신에 동의한 경우에만 발송된다(transactional=거래성, marketing=광고성). "
-        "metadata는 발신자 소유 부가 정보이며 서버는 "
-        "형식만 검증하고 내용은 해석하지 않는다. 등록된 디바이스로의 푸시 발송은 응답 반환 "
-        "이후 백그라운드에서 진행된다."
-    ),
-)
-async def create_notification(
-    request: CreateNotificationRequest,
-    principal: CurrentPrincipalDep,
-    command_use_case: CreateNotificationCommandUseCaseDep,
-) -> CommonResponse[NotificationResponse]:
-    result = await command_use_case.execute(
-        CreateNotificationCommand(
-            user_id=principal.user_id,
-            message_type=request.message_type,
-            kind=request.kind,
-            title=request.title,
-            message=request.message,
-            resource_type=request.resource_type,
-            resource_id=request.resource_id,
-            metadata=request.metadata,
-        )
-    )
-    return CommonResponse(
-        success=True,
-        status=status.HTTP_201_CREATED,
-        data=_notification_response(result),
     )
 
 

@@ -16,11 +16,10 @@ from app.modules.notifications.application.commands.create_notification.command 
 )
 from app.modules.notifications.application.commands.create_notification.result import (
     CreateNotificationResult,
+    NotificationCreationResult,
+    SkippedMarketingConsent,
 )
 from app.modules.notifications.application.due_notification import DueNotification
-from app.modules.notifications.application.ports.notification_repository import (
-    NotificationRepository,
-)
 from app.modules.notifications.application.ports.schedule_occurrence_repository import (
     ScheduleOccurrenceRepository,
 )
@@ -55,7 +54,7 @@ type DueNotificationAction = Literal["created", "skipped", "failed", "dry_run"]
 
 
 class NotificationCreator(Protocol):
-    async def create(self, command: CreateNotificationCommand) -> CreateNotificationResult: ...
+    async def create(self, command: CreateNotificationCommand) -> NotificationCreationResult: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,7 +84,6 @@ class CreateDueNotificationsCommandUseCase:
         *,
         schedule_rule_repository: NotificationScheduleRuleRepository,
         occurrence_repository: ScheduleOccurrenceRepository,
-        notification_repository: NotificationRepository,
         list_receipts_expiring_on: ListReceiptsExpiringOnQueryUseCase,
         get_receipt_activity_for_users: GetReceiptActivityForUsersQueryUseCase,
         list_user_registration_facts: ListUserRegistrationFactsQueryUseCase,
@@ -95,7 +93,6 @@ class CreateDueNotificationsCommandUseCase:
     ) -> None:
         self._schedule_rule_repository = schedule_rule_repository
         self._occurrence_repository = occurrence_repository
-        self._notification_repository = notification_repository
         self._warranty_expiry_notifications = WarrantyExpiryNotifications(
             list_receipts_expiring_on=list_receipts_expiring_on,
             get_existing_user_ids=get_existing_user_ids,
@@ -148,7 +145,6 @@ class CreateDueNotificationsCommandUseCase:
             totals = totals.add(
                 await self._create_notification(
                     notification=notification,
-                    due_rule=due_rule,
                     command=command,
                 )
             )
@@ -186,39 +182,30 @@ class CreateDueNotificationsCommandUseCase:
         self,
         *,
         notification: DueNotification,
-        due_rule: DueNotificationRule,
         command: CreateDueNotificationsCommand,
     ) -> DueNotificationAction:
-        if await self._requires_marketing_consent(due_rule=due_rule, notification=notification):
-            return "skipped"
         if command.dry_run:
             return "dry_run"
         if not await self._occurrence_repository.reserve(occurrence=notification.occurrence):
             return "skipped"
         try:
             result = await self._notification_creator.create(notification.command)
-            await self._occurrence_repository.bind_notification(
-                occurrence=notification.occurrence,
-                notification_id=result.notification_id,
-            )
-            await self._unit_of_work.commit()
         except ValidationError:
             await self._unit_of_work.rollback()
             return "failed"
-        return "created"
-
-    async def _requires_marketing_consent(
-        self,
-        *,
-        due_rule: DueNotificationRule,
-        notification: DueNotification,
-    ) -> bool:
-        if not due_rule.rule.requires_marketing_consent:
-            return False
-        settings = await self._notification_repository.get_settings(
-            user_id=notification.command.user_id
-        )
-        return not settings.marketing_consent
+        match result:
+            case CreateNotificationResult():
+                await self._occurrence_repository.bind_notification(
+                    occurrence=notification.occurrence,
+                    notification_id=result.notification_id,
+                )
+                await self._unit_of_work.commit()
+                return "created"
+            case SkippedMarketingConsent():
+                await self._unit_of_work.rollback()
+                return "skipped"
+            case unreachable:
+                assert_never(unreachable)
 
 
 def _result(

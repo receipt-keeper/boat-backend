@@ -104,7 +104,6 @@ class SchedulerFixture:
         return CreateDueNotificationsCommandUseCase(
             schedule_rule_repository=self.schedule_rule_repository,
             occurrence_repository=self.occurrence_repository,
-            notification_repository=self.notification_repository,
             list_receipts_expiring_on=ListReceiptsExpiringOnQueryUseCase(
                 reader=self.expiring_receipts_reader
             ),

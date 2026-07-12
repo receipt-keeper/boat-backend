@@ -1,6 +1,7 @@
 from datetime import UTC, date, datetime
 from uuid import UUID, uuid4
 
+import anyio
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -16,13 +17,20 @@ from app.modules.notifications.application.commands.create_due_notifications.use
 from app.modules.notifications.application.commands.create_notification.command import (
     CreateNotificationCommand,
 )
+from app.modules.notifications.application.commands.create_notification.result import (
+    CreateNotificationResult,
+    SkippedMarketingConsent,
+)
 from app.modules.notifications.application.commands.create_notification.use_case import (
     CreateNotificationCommandUseCase,
     NotificationCreator,
 )
 from app.modules.notifications.dependencies import build_notification_event_registry
 from app.modules.notifications.domain.value_objects import NotificationMessageType
-from app.modules.notifications.infrastructure.persistence.orm import UserNotification
+from app.modules.notifications.infrastructure.persistence.orm import (
+    NotificationSettings,
+    UserNotification,
+)
 from app.modules.notifications.infrastructure.persistence.repository import (
     SqlAlchemyNotificationRepository,
     SqlAlchemyScheduleOccurrenceRepository,
@@ -77,10 +85,71 @@ async def test_ad_hoc_notifications_remain_repeatable(
         second = await use_case.execute(_ad_hoc_command(receipt_id=receipt_id))
 
     async with postgres_session_factory() as session:
+        assert isinstance(first, CreateNotificationResult)
+        assert isinstance(second, CreateNotificationResult)
         assert first.notification_id != second.notification_id
         assert await _notification_count(session) == 2
         assert await _outbox_count(session) == 2
         assert await _occurrence_count(session) == 0
+
+
+async def test_marketing_creation_skips_after_concurrent_consent_withdrawal(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with postgres_session_factory() as setup_session:
+        setup_session.add(
+            NotificationSettings(
+                user_id=TEST_USER_ID,
+                push_enabled=True,
+                marketing_consent=True,
+            )
+        )
+        await setup_session.commit()
+
+    completed = anyio.Event()
+    result: CreateNotificationResult | SkippedMarketingConsent | None = None
+
+    async def create_marketing_notification() -> None:
+        nonlocal result
+        async with postgres_session_factory() as creation_session:
+            result = await _ad_hoc_use_case(creation_session).execute(
+                CreateNotificationCommand(
+                    user_id=TEST_USER_ID,
+                    message_type=NotificationMessageType.MARKETING,
+                    kind="benefit",
+                    title="혜택 안내",
+                    message="이번 달 혜택을 확인해 보세요.",
+                )
+            )
+        completed.set()
+
+    async with postgres_session_factory() as withdrawal_session:
+        transaction = await withdrawal_session.begin()
+        try:
+            settings = await withdrawal_session.scalar(
+                select(NotificationSettings)
+                .where(NotificationSettings.user_id == TEST_USER_ID)
+                .with_for_update()
+            )
+            assert settings is not None
+            settings.marketing_consent = False
+            await withdrawal_session.flush()
+
+            async with anyio.create_task_group() as task_group:
+                task_group.start_soon(create_marketing_notification)
+                with anyio.move_on_after(0.1) as cancellation_scope:
+                    await completed.wait()
+                assert cancellation_scope.cancel_called
+                await transaction.commit()
+                await completed.wait()
+        finally:
+            if transaction.is_active:
+                await transaction.rollback()
+
+    assert isinstance(result, SkippedMarketingConsent)
+    async with postgres_session_factory() as session:
+        assert await _notification_count(session) == 0
+        assert await _outbox_count(session) == 0
 
 
 async def test_identical_scheduler_run_creates_one_occurrence_notification_and_outbox(
@@ -166,7 +235,6 @@ def _scheduler_use_case(
             (warranty_rule(campaign_key="warranty_risk_d7", day_offset=7),)
         ),
         occurrence_repository=SqlAlchemyScheduleOccurrenceRepository(session),
-        notification_repository=notification_repository,
         list_receipts_expiring_on=ListReceiptsExpiringOnQueryUseCase(
             reader=ExpiringReceiptsReaderFake(candidates)
         ),

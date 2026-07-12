@@ -43,7 +43,6 @@ from app.modules.notifications.application.queries.list_notifications.result imp
     NotificationListItemResult,
 )
 from app.modules.notifications.dependencies import (
-    get_create_notification_command_use_case,
     get_list_notifications_query_use_case,
     get_mark_notification_read_command_use_case,
     get_notification_settings_query_use_case,
@@ -137,6 +136,10 @@ class NotificationsContractStore:
                 notification
                 for notification in self._notifications
                 if notification.user_id == query.user_id
+                and (
+                    notification.message_type is not NotificationMessageType.MARKETING
+                    or self._marketing_consent
+                )
             ),
             key=lambda notification: (notification.created_at, notification.notification_id),
             reverse=True,
@@ -245,14 +248,11 @@ async def _fake_authenticate_current_principal(request: Request) -> Authenticate
     return principal
 
 
-def create_notifications_contract_app() -> FastAPI:
+def create_notifications_contract_app() -> tuple[FastAPI, NotificationsContractStore]:
     test_app = create_app(TEST_SETTINGS)
     notifications = NotificationsContractStore()
     test_app.dependency_overrides[authenticate_current_principal] = (
         _fake_authenticate_current_principal
-    )
-    test_app.dependency_overrides[get_create_notification_command_use_case] = lambda: Executable(
-        notifications.create
     )
     test_app.dependency_overrides[get_list_notifications_query_use_case] = lambda: Executable(
         notifications.list_notifications
@@ -266,4 +266,4 @@ def create_notifications_contract_app() -> FastAPI:
     test_app.dependency_overrides[get_update_notification_settings_command_use_case] = lambda: (
         Executable(notifications.update_settings)
     )
-    return test_app
+    return test_app, notifications
