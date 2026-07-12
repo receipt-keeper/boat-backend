@@ -594,7 +594,8 @@ async def test_send_marketing_push_skips_without_marketing_consent() -> None:
 
     # Then: 마케팅 동의가 없어 발송은 시도되지 않는다.
     assert push_sender.calls == []
-    assert repository.settings_for_update_count == 1
+    assert repository.settings_get_count == 1
+    assert repository.settings_for_update_count == 0
 
 
 async def test_send_service_push_sends_without_marketing_consent() -> None:
@@ -664,7 +665,8 @@ async def test_send_marketing_push_sends_with_marketing_consent() -> None:
     assert len(push_sender.calls) == 1
     _, sent_message = push_sender.calls[0]
     assert sent_message.title == "혜택 안내"
-    assert repository.settings_for_update_count == 1
+    assert repository.settings_get_count == 1
+    assert repository.settings_for_update_count == 0
 
 
 async def test_mark_notification_read_commits_once_and_returns_expected_result() -> None:
@@ -706,6 +708,41 @@ async def test_mark_notification_read_commits_once_and_returns_expected_result()
     assert result.message == "보증 만료가 다가옵니다."
     assert result.read_at == READ_AT
     assert saved.read_at == READ_AT
+
+
+async def test_mark_unconsented_marketing_notification_raises_not_found_without_commit() -> None:
+    # Given: 마케팅 동의가 없는 현재 사용자에게 읽지 않은 marketing 알림이 저장되어 있다.
+    repository = InMemoryNotificationRepository()
+    notification = UserNotification.create(
+        user_id=TEST_USER_ID,
+        message_type=NotificationMessageType.MARKETING,
+        kind="benefit",
+        title="혜택 안내",
+        message="이번 달 혜택을 확인해 보세요.",
+        created_at=CREATED_AT,
+    )
+    repository.notifications[notification.id] = notification
+    unit_of_work = FakeUnitOfWork()
+    use_case = MarkNotificationReadCommandUseCase(
+        notification_repository=repository,
+        unit_of_work=unit_of_work,
+        clock=lambda: READ_AT,
+    )
+
+    # When: 동의 없이 해당 marketing 알림을 읽음 처리한다.
+    with pytest.raises(NotFoundError):
+        await use_case.execute(
+            MarkNotificationReadCommand(
+                user_id=TEST_USER_ID,
+                notification_id=notification.id,
+            )
+        )
+
+    # Then: 가시성 정책에 따라 읽음 상태를 바꾸지 않고 commit하지 않는다.
+    assert repository.notifications[notification.id].read_at is None
+    assert repository.mark_read_count == 1
+    assert repository.settings_for_update_count == 1
+    assert unit_of_work.commit_count == 0
 
 
 async def test_mark_missing_notification_raises_not_found_without_commit() -> None:

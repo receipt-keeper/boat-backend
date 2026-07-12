@@ -434,6 +434,62 @@ async def test_update_notification_settings_preserves_concurrent_partial_update(
     assert updated_settings.marketing_consent is True
 
 
+async def test_get_settings_for_update_materializes_default_settings_record(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    # Given: 아직 notification_settings 행이 없는 사용자가 있다.
+    async with postgres_session_factory() as session:
+        repository = SqlAlchemyNotificationRepository(session)
+
+        # When: 생성 경계가 사용할 설정 잠금을 획득한다.
+        settings = await repository.get_settings_for_update(user_id=TEST_USER_ID)
+        await session.commit()
+
+    async with postgres_session_factory() as session:
+        record = await session.get(orm.NotificationSettings, TEST_USER_ID)
+
+        # Then: 기본 미동의 설정 행을 실제로 만든 뒤 잠금 경로의 기준으로 사용한다.
+        assert settings.push_enabled is True
+        assert settings.marketing_consent is False
+        assert record is not None
+
+
+async def test_get_settings_for_update_refreshes_preloaded_settings(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    # Given: 한 세션이 설정을 preload한 뒤 다른 세션이 마케팅 동의를 철회한다.
+    async with postgres_session_factory() as setup_session:
+        setup_session.add(
+            orm.NotificationSettings(
+                user_id=TEST_USER_ID,
+                push_enabled=True,
+                marketing_consent=True,
+            )
+        )
+        await setup_session.commit()
+
+    async with (
+        postgres_session_factory() as stale_session,
+        postgres_session_factory() as withdrawal_session,
+    ):
+        stale_repository = SqlAlchemyNotificationRepository(stale_session)
+        withdrawal_repository = SqlAlchemyNotificationRepository(withdrawal_session)
+        preloaded = await stale_repository.get_settings(user_id=TEST_USER_ID)
+        await withdrawal_repository.update_settings(
+            user_id=TEST_USER_ID,
+            push_enabled=None,
+            marketing_consent=False,
+        )
+        await withdrawal_session.commit()
+
+        # When: preload했던 세션이 FOR UPDATE로 다시 읽는다.
+        locked = await stale_repository.get_settings_for_update(user_id=TEST_USER_ID)
+
+        # Then: identity map의 stale 값이 아니라 최신 철회 값을 반환한다.
+        assert preloaded.marketing_consent is True
+        assert locked.marketing_consent is False
+
+
 async def test_mark_notification_read_persists_for_current_user(
     postgres_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:

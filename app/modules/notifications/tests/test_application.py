@@ -37,6 +37,7 @@ class InMemoryNotificationRepository(NotificationRepository):
         self.create_count = 0
         self.mark_read_count = 0
         self.update_settings_count = 0
+        self.settings_get_count = 0
         self.settings_for_update_count = 0
 
     async def create(self, *, notification: UserNotification) -> UserNotification:
@@ -118,6 +119,7 @@ class InMemoryNotificationRepository(NotificationRepository):
         return read_notification
 
     async def get_settings(self, *, user_id: UUID) -> NotificationSettings:
+        self.settings_get_count += 1
         return self.settings.get(user_id, NotificationSettings.create(user_id=user_id))
 
     async def get_settings_for_update(self, *, user_id: UUID) -> NotificationSettings:

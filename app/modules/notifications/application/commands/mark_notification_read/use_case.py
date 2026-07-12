@@ -31,6 +31,7 @@ class MarkNotificationReadCommandUseCase:
         self._clock = clock
 
     async def execute(self, command: MarkNotificationReadCommand) -> MarkNotificationReadResult:
+        # 동의 철회와 읽음 처리의 가시성을 원자적으로 맞추기 위해 설정 행을 잠근다.
         await self._notification_repository.get_settings_for_update(user_id=command.user_id)
         notification = await self._notification_repository.mark_read(
             user_id=command.user_id,

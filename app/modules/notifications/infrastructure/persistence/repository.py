@@ -52,6 +52,11 @@ class PushTokenUpsertMissingRecordError(RuntimeError):
         super().__init__("push token upsert 이후 레코드를 찾을 수 없습니다.")
 
 
+class NotificationSettingsLockMissingRecordError(RuntimeError):
+    def __init__(self) -> None:
+        super().__init__("notification settings 잠금 이후 레코드를 찾을 수 없습니다.")
+
+
 class SqlAlchemyNotificationRepository(NotificationRepository):
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
@@ -163,13 +168,22 @@ class SqlAlchemyNotificationRepository(NotificationRepository):
         return mapper.settings_to_domain(record)
 
     async def get_settings_for_update(self, *, user_id: UUID) -> NotificationSettings:
+        insert_statement = postgresql_insert(NotificationSettingsRecord).values(user_id=user_id)
+        await self._session.execute(
+            insert_statement.on_conflict_do_nothing(
+                index_elements=[NotificationSettingsRecord.user_id]
+            )
+        )
+        await self._session.flush()
+
         record = await self._session.scalar(
             select(NotificationSettingsRecord)
             .where(NotificationSettingsRecord.user_id == user_id)
+            .execution_options(populate_existing=True)
             .with_for_update()
         )
         if record is None:
-            return NotificationSettings.create(user_id=user_id)
+            raise NotificationSettingsLockMissingRecordError()
         return mapper.settings_to_domain(record)
 
     async def update_settings(
