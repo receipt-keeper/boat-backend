@@ -15,7 +15,7 @@ SCHEDULER_INTERNAL_USER_NOTIFICATION_COLUMN = "scheduled_key"
 
 def test_notification_schedule_migrations_have_single_head() -> None:
     # Given: current scheduler persistence includes the 0022 scheduler query indexes migration,
-    # followed by the auth withdrawn_identities migration (0023) as the current head.
+    # followed by the credits purge_after migration (0023) as the current head.
     config = alembic_config()
     script_directory = ScriptDirectory.from_config(config)
 
