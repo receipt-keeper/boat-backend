@@ -1,5 +1,6 @@
 from collections.abc import Callable
 from datetime import UTC, datetime
+from typing import assert_never
 
 from app.core.application.event_publisher import EventPublisher
 from app.core.application.unit_of_work import UnitOfWork
@@ -19,6 +20,7 @@ from app.modules.promotions.application.ports.promotion_repository import (
     PromotionRepository,
 )
 from app.modules.promotions.domain.exceptions import PromotionNotFoundError
+from app.modules.promotions.domain.model import PromotionContext
 
 
 def _utc_now() -> datetime:
@@ -49,6 +51,19 @@ class CreatePromotionRedemptionCommandUseCase:
         command: CreatePromotionRedemptionCommand,
     ) -> CreatePromotionRedemptionResult:
         idempotency_key = _idempotency_key(command)
+        promotion = await self._promotion_repository.find_promotion_for_update(
+            promotion_id=command.promotion_id,
+        )
+        if promotion is None:
+            raise PromotionNotFoundError()
+        match promotion.context:
+            case PromotionContext.SIGNUP:
+                raise PromotionNotFoundError()
+            case PromotionContext.RECHARGE | None:
+                pass
+            case unreachable:
+                assert_never(unreachable)
+
         replayed = await self._redemption_executor.replay_if_existing(
             PromotionRedemptionReplay(
                 user_id=command.user_id,
@@ -57,12 +72,6 @@ class CreatePromotionRedemptionCommandUseCase:
         )
         if replayed is not None:
             return replayed
-
-        promotion = await self._promotion_repository.find_promotion_for_update(
-            promotion_id=command.promotion_id,
-        )
-        if promotion is None:
-            raise PromotionNotFoundError()
 
         return await self._redemption_executor.redeem(
             PromotionRedemptionAttempt(

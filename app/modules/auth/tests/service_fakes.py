@@ -8,12 +8,17 @@ from app.modules.auth.application.ports.external_identity_login_synchronizer imp
 )
 from app.modules.auth.application.ports.external_identity_verifier import ExternalIdentityVerifier
 from app.modules.auth.domain.model import ExternalIdentity
+from app.modules.auth.domain.value_objects import PromotionBeneficiaryHmacSecret
+from app.modules.auth.infrastructure.promotion_beneficiary_key import (
+    HmacPromotionBeneficiaryKeyFactory,
+)
 from app.modules.auth.infrastructure.tokens.jwt import JwtAccessTokenService
 from app.modules.auth.infrastructure.tokens.opaque_refresh_token import OpaqueRefreshTokenIssuer
 from app.modules.auth.tests.credential_repository_fake import FakeCredentialRepository
 from tests.support.unit_of_work import FakeUnitOfWork
 
 TEST_SIGNING_KEY = "x" * 48
+TEST_PROMOTION_BENEFICIARY_HMAC_SECRET = "b" * 48
 
 
 @dataclass(slots=True)
@@ -48,6 +53,12 @@ def build_refresh_token_service() -> OpaqueRefreshTokenIssuer:
     return OpaqueRefreshTokenIssuer(
         pepper="test-pepper",
         expires_days=14,
+    )
+
+
+def build_promotion_beneficiary_key_factory() -> HmacPromotionBeneficiaryKeyFactory:
+    return HmacPromotionBeneficiaryKeyFactory(
+        secret=PromotionBeneficiaryHmacSecret(TEST_PROMOTION_BENEFICIARY_HMAC_SECRET)
     )
 
 

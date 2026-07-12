@@ -2,10 +2,12 @@ from functools import lru_cache
 from typing import Annotated, Final, Literal, Self
 
 from pydantic import Field, field_validator, model_validator
+from pydantic_core import PydanticCustomError
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 DEFAULT_JWT_SECRET_KEY: Final = "local-development-secret-change-me-32bytes"  # noqa: S105
 DEFAULT_REFRESH_TOKEN_PEPPER: Final = "local-refresh-token-pepper-change-me"  # noqa: S105
+DEFAULT_PROMOTION_BENEFICIARY_HMAC_SECRET: Final = "local-promotion-beneficiary-hmac-change-me"  # noqa: S105
 SECURE_DEPLOYMENT_ENVS: Final = {"staging", "prod"}
 
 
@@ -101,6 +103,14 @@ class Settings(BaseSettings):
         default=DEFAULT_REFRESH_TOKEN_PEPPER,
         description="Server-side pepper used when hashing opaque refresh tokens.",
     )
+    promotion_beneficiary_hmac_secret: str = Field(
+        default=DEFAULT_PROMOTION_BENEFICIARY_HMAC_SECRET,
+        min_length=1,
+        description=(
+            "프로모션 수혜자 식별 HMAC 비밀값. v1 non-null beneficiary row가 하나라도 "
+            "존재하는 동안 변경하지 않는다. rotation/keyring/data migration은 별도 절차다."
+        ),
+    )
 
     default_profile_image_url: str | None = None
     file_storage_backend: Literal["local"] = "local"
@@ -121,6 +131,16 @@ class Settings(BaseSettings):
             return tuple(item.strip() for item in value.split(",") if item.strip())
         return value
 
+    @field_validator("promotion_beneficiary_hmac_secret")
+    @classmethod
+    def reject_blank_promotion_beneficiary_hmac_secret(cls, value: str) -> str:
+        if value.strip() != value:
+            raise PydanticCustomError(
+                "promotion_beneficiary_hmac_secret_whitespace",
+                "promotion_beneficiary_hmac_secret must not have surrounding whitespace",
+            )
+        return value
+
     @model_validator(mode="after")
     def reject_default_token_secrets_for_secure_envs(self) -> Self:
         if self.app_env not in SECURE_DEPLOYMENT_ENVS:
@@ -129,6 +149,10 @@ class Settings(BaseSettings):
             raise ValueError("prod/staging requires a non-default jwt_secret_key")
         if self.refresh_token_pepper == DEFAULT_REFRESH_TOKEN_PEPPER:
             raise ValueError("prod/staging requires a non-default refresh_token_pepper")
+        if self.promotion_beneficiary_hmac_secret == DEFAULT_PROMOTION_BENEFICIARY_HMAC_SECRET:
+            raise ValueError(
+                "prod/staging requires a non-default promotion_beneficiary_hmac_secret"
+            )
         if not self.firebase_check_revoked:
             raise ValueError("prod/staging requires firebase_check_revoked=true")
         return self

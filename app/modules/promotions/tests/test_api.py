@@ -148,6 +148,18 @@ async def test_get_promotions_route_rejects_invalid_context() -> None:
     assert response.status_code == 422
 
 
+async def test_get_promotions_route_rejects_signup_context() -> None:
+    # Given: 가입 축하 캠페인을 public 조회로 노출하지 않는 Promotion API가 있다.
+    test_app = promotion_api_app()
+
+    async with api_client(test_app) as test_client:
+        # When: 가입 축하 context로 공개 조회를 시도한다.
+        response = await test_client.get("/api/v1/promotions?featureKey=ocr&context=signup")
+
+    # Then: transport 경계에서 422로 거절한다.
+    assert response.status_code == 422
+
+
 def test_promotions_openapi_exposes_optional_context_query_parameter() -> None:
     # Given: 앱 공개 계약을 설명하는 OpenAPI 문서가 있다.
     test_app = create_app(TEST_SETTINGS)
@@ -170,11 +182,41 @@ def test_promotions_openapi_exposes_optional_context_query_parameter() -> None:
     assert isinstance(any_of, list)
     recharge_schema = any_of[0]
     assert isinstance(recharge_schema, dict)
-    assert recharge_schema["$ref"] == "#/components/schemas/PromotionContext"
-    assert openapi_schema["components"]["schemas"]["PromotionContext"]["enum"] == ["recharge"]
+    assert recharge_schema["$ref"] == "#/components/schemas/PromotionQueryContext"
+    assert openapi_schema["components"]["schemas"]["PromotionQueryContext"]["enum"] == ["recharge"]
     example = openapi_schema["components"]["schemas"]["PromotionResponse"]["examples"][0]
     assert isinstance(example, dict)
     assert example["benefit"] == {"featureKey": "ocr", "amount": 5}
+
+
+def test_promotions_openapi_pins_public_paths_and_recharge_context_enum() -> None:
+    # Given: 앱 공개 계약을 설명하는 OpenAPI 문서가 있다.
+    test_app = create_app(TEST_SETTINGS)
+
+    # When: promotions 공개 path와 context enum을 조회한다.
+    openapi_schema = test_app.openapi()
+    promotion_paths = [
+        path for path in openapi_schema["paths"] if path.startswith("/api/v1/promotions")
+    ]
+    parameters = openapi_schema["paths"]["/api/v1/promotions"]["get"]["parameters"]
+    context_schema = _parameter_by_name(parameters, "context")["schema"]
+
+    # Then: recharge만 지원하며 기존 세 public path 외의 표면은 노출하지 않는다.
+    assert promotion_paths == [
+        "/api/v1/promotions",
+        "/api/v1/promotions/redemptions",
+        "/api/v1/promotions/{promotion_id}/redemptions",
+    ]
+    assert isinstance(context_schema, dict)
+    any_of = context_schema["anyOf"]
+    assert isinstance(any_of, list)
+    context_reference = any_of[0]
+    assert isinstance(context_reference, dict)
+    context_reference_path = context_reference["$ref"]
+    assert isinstance(context_reference_path, str)
+    context_reference_name = context_reference_path.rsplit("/", maxsplit=1)[-1]
+    assert context_reference_name == "PromotionQueryContext"
+    assert openapi_schema["components"]["schemas"][context_reference_name]["enum"] == ["recharge"]
 
 
 def test_promotions_openapi_documents_recharge_lookup_and_redemption_flow() -> None:

@@ -8,7 +8,7 @@ from app.modules.promotions.infrastructure.persistence import mapper, orm
 
 EXPECTED_PROMOTION_CHECKS = {
     "ck_promotions_benefit_feature_key_allowed": "benefit_feature_key IN ('ocr')",
-    "ck_promotions_context_allowed": "context IS NULL OR context IN ('recharge')",
+    "ck_promotions_context_allowed": "context IS NULL OR context IN ('recharge', 'signup')",
     "ck_promotions_benefit_amount_positive": "benefit_amount > 0",
     "ck_promotions_max_redemptions_positive": ("max_redemptions IS NULL OR max_redemptions > 0"),
     "ck_promotions_times_redeemed_non_negative": "times_redeemed >= 0",
@@ -74,6 +74,7 @@ def test_promotion_orm_declares_exact_tables_and_columns() -> None:
         "promotion_id",
         "promotion_code_id",
         "user_id",
+        "beneficiary_key",
         "status",
         "idempotency_key",
         "failure_reason",
@@ -114,6 +115,9 @@ def test_promotion_orm_declares_constraints_and_unique_guards() -> None:
         for constraint in redemptions.constraints
         if isinstance(constraint, UniqueConstraint)
     }
+    redemption_indexes = {
+        None if index.name is None else str(index.name): index for index in redemptions.indexes
+    }
     content_uniques = {
         constraint.name
         for constraint in promotion_contents.constraints
@@ -150,6 +154,15 @@ def test_promotion_orm_declares_constraints_and_unique_guards() -> None:
     assert redemption_uniques == {
         "uq_promotion_redemptions_idempotency_key",
     }
+    beneficiary_unique = redemption_indexes["uq_promotion_redemptions_promotion_beneficiary"]
+    assert beneficiary_unique.unique is True
+    assert tuple(column.name for column in beneficiary_unique.columns) == (
+        "promotion_id",
+        "beneficiary_key",
+    )
+    assert str(beneficiary_unique.dialect_options["postgresql"]["where"]) == (
+        "promotion_redemptions.beneficiary_key IS NOT NULL"
+    )
     assert content_uniques == {"uq_promotion_contents_promotion_id"}
     assert promotion_contents.c.banner_image_url.nullable is True
 

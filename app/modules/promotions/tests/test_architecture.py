@@ -143,6 +143,20 @@ def test_promotions_application_and_domain_stay_adapter_free() -> None:
     assert {path: imports for path, imports in offending_imports.items() if imports} == {}
 
 
+def test_promotions_dependencies_do_not_import_credits_infrastructure() -> None:
+    # Given: promotions는 credits의 public dependency builder로만 연동한다.
+    dependencies_path = PROMOTIONS_ROOT / "dependencies.py"
+
+    # When: promotions runtime wiring의 import를 확인한다.
+    imported = _imports(dependencies_path)
+
+    # Then: 다른 BC의 concrete persistence adapter를 직접 참조하지 않는다.
+    assert not any(
+        _imports_forbidden_prefix(imported_name, ("app.modules.credits.infrastructure",))
+        for imported_name in imported
+    )
+
+
 def test_promotion_codes_are_internal_table_not_public_resource() -> None:
     orm_source = (PROMOTIONS_ROOT / "infrastructure" / "persistence" / "orm.py").read_text(
         encoding="utf-8"

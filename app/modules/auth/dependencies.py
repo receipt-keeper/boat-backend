@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,7 +23,6 @@ from app.modules.auth.application.ports.credential_repository import (
     CredentialRepository,
 )
 from app.modules.auth.application.ports.credit_lifecycle import (
-    CreditInitializer,
     CreditWithdrawalCleaner,
 )
 from app.modules.auth.application.ports.external_identity_login_synchronizer import (
@@ -32,8 +32,14 @@ from app.modules.auth.application.ports.external_identity_verifier import Extern
 from app.modules.auth.application.ports.notification_settings_initializer import (
     NotificationSettingsInitializer,
 )
+from app.modules.auth.application.ports.promotion_beneficiary_key_factory import (
+    PromotionBeneficiaryKeyFactory,
+)
 from app.modules.auth.application.ports.push_token_lifecycle import (
     PushTokenWithdrawalCleaner,
+)
+from app.modules.auth.application.ports.signup_promotion_redeemer import (
+    SignupPromotionRedeemer,
 )
 from app.modules.auth.application.ports.token_issuer import (
     AccessTokenIssuer,
@@ -50,13 +56,14 @@ from app.modules.auth.application.queries.current_principal.use_case import (
     CurrentPrincipalQueryUseCase,
 )
 from app.modules.auth.dependency_adapters import (
-    CreditInitializerAdapter,
     CreditWithdrawalCleanerAdapter,
     NotificationSettingsInitializerAdapter,
     PushTokenWithdrawalCleanerAdapter,
     RequestActiveSessionChecker,
 )
 from app.modules.auth.domain.events import AccountWithdrawn, UserCredentialCreated
+from app.modules.auth.domain.model import ExternalIdentity
+from app.modules.auth.domain.value_objects import PromotionBeneficiaryHmacSecret
 from app.modules.auth.infrastructure.identity_providers.firebase import (
     FirebaseExternalIdentityVerifier,
 )
@@ -66,15 +73,26 @@ from app.modules.auth.infrastructure.persistence.credential_repository import (
 from app.modules.auth.infrastructure.persistence.external_identity_login_synchronizer import (
     SqlAlchemyExternalIdentityLoginSynchronizer,
 )
+from app.modules.auth.infrastructure.promotion_beneficiary_key import (
+    HmacPromotionBeneficiaryKeyFactory,
+)
 from app.modules.auth.infrastructure.tokens.jwt import JwtAccessTokenService
 from app.modules.auth.infrastructure.tokens.opaque_refresh_token import OpaqueRefreshTokenIssuer
 from app.modules.credits.dependencies import (
     build_delete_user_credits_command_use_case,
-    build_grant_credit_command_use_case,
 )
 from app.modules.notifications.dependencies import (
     build_delete_user_push_tokens_command_use_case,
     build_update_notification_settings_command_use_case,
+)
+from app.modules.promotions.application.commands.redeem_signup_promotion.command import (
+    RedeemSignupPromotionCommand,
+)
+from app.modules.promotions.application.commands.redeem_signup_promotion.use_case import (
+    RedeemSignupPromotionCommandUseCase,
+)
+from app.modules.promotions.dependencies import (
+    build_redeem_signup_promotion_command_use_case,
 )
 from app.modules.users.application.commands.resolve_user_for_login.command import (
     ResolveUserForLoginCommand,
@@ -134,6 +152,24 @@ class ProvisionUserPortAdapter(UserProvisioner):
         return ProvisionedUser(user_id=result.user_id)
 
 
+@dataclass(frozen=True, slots=True)
+class SignupPromotionRedeemerAdapter(SignupPromotionRedeemer):
+    command_use_case: RedeemSignupPromotionCommandUseCase
+    beneficiary_key_factory: PromotionBeneficiaryKeyFactory
+
+    async def redeem(self, *, identity: ExternalIdentity, user_id: UUID) -> None:
+        beneficiary_key = self.beneficiary_key_factory.create(
+            issuer=identity.issuer,
+            subject=identity.subject,
+        )
+        await self.command_use_case.execute(
+            RedeemSignupPromotionCommand(
+                user_id=user_id,
+                beneficiary_key=beneficiary_key.value,
+            )
+        )
+
+
 async def get_credential_repository(session: AsyncSessionDep) -> CredentialRepository:
     return SqlAlchemyCredentialRepository(session)
 
@@ -174,6 +210,14 @@ async def get_refresh_token_hasher(settings: SettingsDep) -> RefreshTokenHasher:
     )
 
 
+async def get_promotion_beneficiary_key_factory(
+    settings: SettingsDep,
+) -> PromotionBeneficiaryKeyFactory:
+    return HmacPromotionBeneficiaryKeyFactory(
+        secret=PromotionBeneficiaryHmacSecret(settings.promotion_beneficiary_hmac_secret)
+    )
+
+
 async def get_user_provisioner(session: AsyncSessionDep, settings: SettingsDep) -> UserProvisioner:
     command_use_case = build_resolve_user_for_login_command_use_case(
         session,
@@ -196,12 +240,19 @@ async def get_notification_settings_initializer(
     )
 
 
-async def get_credit_initializer(session: AsyncSessionDep) -> CreditInitializer:
-    return CreditInitializerAdapter(
-        build_grant_credit_command_use_case(
+async def get_signup_promotion_redeemer(
+    session: AsyncSessionDep,
+    beneficiary_key_factory: Annotated[
+        PromotionBeneficiaryKeyFactory,
+        Depends(get_promotion_beneficiary_key_factory),
+    ],
+) -> SignupPromotionRedeemer:
+    return SignupPromotionRedeemerAdapter(
+        command_use_case=build_redeem_signup_promotion_command_use_case(
             session,
             DeferredCommitUnitOfWork(),
-        )
+        ),
+        beneficiary_key_factory=beneficiary_key_factory,
     )
 
 
@@ -252,7 +303,10 @@ NotificationInitializerDep = Annotated[
     NotificationSettingsInitializer,
     Depends(get_notification_settings_initializer),
 ]
-CreditInitializerDep = Annotated[CreditInitializer, Depends(get_credit_initializer)]
+SignupPromotionRedeemerDep = Annotated[
+    SignupPromotionRedeemer,
+    Depends(get_signup_promotion_redeemer),
+]
 CreditWithdrawalCleanerDep = Annotated[
     CreditWithdrawalCleaner,
     Depends(get_credit_withdrawal_cleaner),
@@ -294,7 +348,7 @@ async def get_signup_command_use_case(
     identity_verifier: IdentityVerifierDep,
     user_provisioner: UserProvisionerDep,
     notification_settings_initializer: NotificationInitializerDep,
-    credit_initializer: CreditInitializerDep,
+    signup_promotion_redeemer: SignupPromotionRedeemerDep,
     access_token_issuer: AccessTokenIssuerDep,
     refresh_token_issuer: RefreshTokenIssuerDep,
     unit_of_work: UnitOfWorkDep,
@@ -306,7 +360,7 @@ async def get_signup_command_use_case(
         credential_repository=credential_repository,
         user_provisioner=user_provisioner,
         notification_settings_initializer=notification_settings_initializer,
-        credit_initializer=credit_initializer,
+        signup_promotion_redeemer=signup_promotion_redeemer,
         access_token_issuer=access_token_issuer,
         refresh_token_issuer=refresh_token_issuer,
         unit_of_work=unit_of_work,

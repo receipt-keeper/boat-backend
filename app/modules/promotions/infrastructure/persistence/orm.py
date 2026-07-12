@@ -27,7 +27,7 @@ class Promotion(Base):
             name=conv("ck_promotions_benefit_feature_key_allowed"),
         ),
         CheckConstraint(
-            "context IS NULL OR context IN ('recharge')",
+            "context IS NULL OR context IN ('recharge', 'signup')",
             name=conv("ck_promotions_context_allowed"),
         ),
         CheckConstraint(
@@ -235,6 +235,7 @@ class PromotionRedemption(Base):
         nullable=True,
     )
     user_id: Mapped[UUID] = mapped_column(type_=PostgreSQLUUID(as_uuid=True), nullable=False)
+    beneficiary_key: Mapped[str | None] = mapped_column(type_=String(80), nullable=True)
     status: Mapped[str] = mapped_column(type_=String(20), nullable=False)
     idempotency_key: Mapped[str] = mapped_column(type_=String(255), nullable=False)
     failure_reason: Mapped[str | None] = mapped_column(type_=String(255), nullable=True)
@@ -253,3 +254,12 @@ class PromotionRedemption(Base):
         server_default=func.now(),
         onupdate=func.now(),
     )
+
+
+Index(
+    "uq_promotion_redemptions_promotion_beneficiary",
+    PromotionRedemption.promotion_id,
+    PromotionRedemption.beneficiary_key,
+    unique=True,
+    postgresql_where=PromotionRedemption.beneficiary_key.is_not(None),
+)

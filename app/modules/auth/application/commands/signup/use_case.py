@@ -1,3 +1,4 @@
+from contextlib import suppress
 from datetime import UTC, datetime
 from typing import Final
 
@@ -7,13 +8,15 @@ from app.core.domain.exceptions import ErrorDetail, ValidationError
 from app.modules.auth.application.commands.signup.command import SignupCommand
 from app.modules.auth.application.commands.signup.result import SignupResult
 from app.modules.auth.application.ports.credential_repository import CredentialRepository
-from app.modules.auth.application.ports.credit_lifecycle import CreditInitializer
 from app.modules.auth.application.ports.external_identity_login_synchronizer import (
     ExternalIdentityLoginSynchronizer,
 )
 from app.modules.auth.application.ports.external_identity_verifier import ExternalIdentityVerifier
 from app.modules.auth.application.ports.notification_settings_initializer import (
     NotificationSettingsInitializer,
+)
+from app.modules.auth.application.ports.signup_promotion_redeemer import (
+    SignupPromotionRedeemer,
 )
 from app.modules.auth.application.ports.token_issuer import AccessTokenIssuer, RefreshTokenIssuer
 from app.modules.auth.application.ports.user_provisioner import (
@@ -35,7 +38,7 @@ class SignupCommandUseCase:
         credential_repository: CredentialRepository,
         user_provisioner: UserProvisioner,
         notification_settings_initializer: NotificationSettingsInitializer,
-        credit_initializer: CreditInitializer,
+        signup_promotion_redeemer: SignupPromotionRedeemer,
         access_token_issuer: AccessTokenIssuer,
         refresh_token_issuer: RefreshTokenIssuer,
         unit_of_work: UnitOfWork,
@@ -46,7 +49,7 @@ class SignupCommandUseCase:
         self._credential_repository = credential_repository
         self._user_provisioner = user_provisioner
         self._notification_settings_initializer = notification_settings_initializer
-        self._credit_initializer = credit_initializer
+        self._signup_promotion_redeemer = signup_promotion_redeemer
         self._access_token_issuer = access_token_issuer
         self._refresh_token_issuer = refresh_token_issuer
         self._unit_of_work = unit_of_work
@@ -105,49 +108,57 @@ class SignupCommandUseCase:
             raise ValidationError(details)
 
         identity = await self._identity_verifier.verify(command.provider_token)
-        await self._ensure_new_user(identity)
-        await self._identity_synchronizer.synchronize(identity=identity)
+        try:
+            await self._ensure_new_user(identity)
+            await self._identity_synchronizer.synchronize(identity=identity)
 
-        provisioned_user = await self._user_provisioner.provision(
-            request=UserProvisioningRequest(
-                name=identity.name,
-                email=None if identity.email is None else identity.email.value,
-                profile_image_url=None,
-                terms_version=terms_version,
-                privacy_version=privacy_version,
-                terms_accepted=command.terms_accepted,
-                privacy_accepted=command.privacy_accepted,
+            provisioned_user = await self._user_provisioner.provision(
+                request=UserProvisioningRequest(
+                    name=identity.name,
+                    email=None if identity.email is None else identity.email.value,
+                    profile_image_url=None,
+                    terms_version=terms_version,
+                    privacy_version=privacy_version,
+                    terms_accepted=command.terms_accepted,
+                    privacy_accepted=command.privacy_accepted,
+                )
             )
-        )
-        await self._notification_settings_initializer.initialize(
-            user_id=provisioned_user.user_id,
-            marketing_consent=command.marketing_consent,
-        )
-        await self._credit_initializer.initialize(user_id=provisioned_user.user_id)
-        logged_in_at = datetime.now(UTC)
-        credentials = await self._credential_repository.create_for_external_identity(
-            identity=identity,
-            user_id=provisioned_user.user_id,
-            logged_in_at=logged_in_at,
-        )
-        await self._event_publisher.publish(credentials.pull_events())
-        session_id = await self._credential_repository.create_session(
-            credentials_id=credentials.credentials_id,
-        )
-        refresh_token = self._refresh_token_issuer.issue()
-        await self._credential_repository.save_refresh_token(
-            credentials_id=credentials.credentials_id,
-            session_id=session_id,
-            token_hash=refresh_token.token_hash,
-            expires_at=refresh_token.expires_at,
-        )
-        access_token = self._access_token_issuer.issue(
-            user_id=credentials.user_id,
-            credentials_id=credentials.credentials_id,
-            session_id=session_id,
-            role=credentials.role.value,
-        )
-        await self._unit_of_work.commit()
+            await self._notification_settings_initializer.initialize(
+                user_id=provisioned_user.user_id,
+                marketing_consent=command.marketing_consent,
+            )
+            await self._signup_promotion_redeemer.redeem(
+                identity=identity,
+                user_id=provisioned_user.user_id,
+            )
+            logged_in_at = datetime.now(UTC)
+            credentials = await self._credential_repository.create_for_external_identity(
+                identity=identity,
+                user_id=provisioned_user.user_id,
+                logged_in_at=logged_in_at,
+            )
+            await self._event_publisher.publish(credentials.pull_events())
+            session_id = await self._credential_repository.create_session(
+                credentials_id=credentials.credentials_id,
+            )
+            refresh_token = self._refresh_token_issuer.issue()
+            await self._credential_repository.save_refresh_token(
+                credentials_id=credentials.credentials_id,
+                session_id=session_id,
+                token_hash=refresh_token.token_hash,
+                expires_at=refresh_token.expires_at,
+            )
+            access_token = self._access_token_issuer.issue(
+                user_id=credentials.user_id,
+                credentials_id=credentials.credentials_id,
+                session_id=session_id,
+                role=credentials.role.value,
+            )
+            await self._unit_of_work.commit()
+        except BaseException:
+            with suppress(BaseException):
+                await self._unit_of_work.rollback()
+            raise
 
         return SignupResult(
             access_token=access_token.token,

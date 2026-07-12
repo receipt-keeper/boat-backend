@@ -10,7 +10,7 @@ from app.modules.promotions.application.commands.create_promotion_redemption.res
 from app.modules.promotions.application.queries.get_current_ocr_credit_promotion.result import (
     GetCurrentOcrCreditPromotionResult,
 )
-from app.modules.promotions.domain.model import PromotionBenefitFeatureKey, PromotionContext
+from app.modules.promotions.domain.model import PromotionBenefitFeatureKey
 
 
 class PromotionState(StrEnum):
@@ -21,6 +21,10 @@ class PromotionState(StrEnum):
     UNAVAILABLE = "unavailable"
 
 
+class PromotionQueryContext(StrEnum):
+    RECHARGE = "recharge"
+
+
 class PromotionListQuery(AppBaseModel):
     model_config = ConfigDict(frozen=True, populate_by_name=True)
 
@@ -29,10 +33,10 @@ class PromotionListQuery(AppBaseModel):
         description="조회할 혜택 기능. 현재는 OCR만 지원한다. 예: featureKey=ocr&context=recharge",
         examples=[PromotionBenefitFeatureKey.OCR],
     )
-    context: PromotionContext | None = Field(
+    context: PromotionQueryContext | None = Field(
         default=None,
         description="프로모션 조회 상황. OCR 크레딧 충전 혜택은 recharge를 전달한다.",
-        examples=[PromotionContext.RECHARGE],
+        examples=[PromotionQueryContext.RECHARGE],
     )
 
 

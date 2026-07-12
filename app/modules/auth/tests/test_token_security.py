@@ -24,6 +24,7 @@ from app.modules.auth.infrastructure.tokens.jwt import (
 TEST_SIGNING_KEY: Final = "x" * 48
 OTHER_SIGNING_KEY: Final = "y" * 48
 TEST_REFRESH_TOKEN_PEPPER: Final = "p" * 48
+TEST_PROMOTION_BENEFICIARY_HMAC_SECRET: Final = "b" * 48
 TEST_USER_ID: Final = UUID("00000000-0000-0000-0000-000000000001")
 TEST_CREDENTIALS_ID: Final = UUID("00000000-0000-0000-0000-000000000002")
 
@@ -92,6 +93,24 @@ def test_staging_settings_reject_default_refresh_token_pepper() -> None:
         Settings(app_env="staging", jwt_secret_key=TEST_SIGNING_KEY)
 
 
+def test_staging_settings_reject_default_promotion_beneficiary_hmac_secret() -> None:
+    with pytest.raises(PydanticValidationError):
+        Settings(
+            app_env="staging",
+            jwt_secret_key=TEST_SIGNING_KEY,
+            refresh_token_pepper=TEST_REFRESH_TOKEN_PEPPER,
+            firebase_check_revoked=True,
+        )
+
+
+@pytest.mark.parametrize("secret", ["", " ", "\n"])
+def test_settings_reject_empty_or_whitespace_promotion_beneficiary_hmac_secret(
+    secret: str,
+) -> None:
+    with pytest.raises(PydanticValidationError):
+        Settings(promotion_beneficiary_hmac_secret=secret)
+
+
 def test_prod_settings_reject_disabled_firebase_revocation_check() -> None:
     with pytest.raises(PydanticValidationError):
         Settings(
@@ -107,6 +126,7 @@ def test_prod_settings_accept_strong_secrets_and_firebase_revocation_check() -> 
         app_env="prod",
         jwt_secret_key=TEST_SIGNING_KEY,
         refresh_token_pepper=TEST_REFRESH_TOKEN_PEPPER,
+        promotion_beneficiary_hmac_secret=TEST_PROMOTION_BENEFICIARY_HMAC_SECRET,
         firebase_check_revoked=True,
     )
 

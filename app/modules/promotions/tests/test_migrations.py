@@ -13,6 +13,10 @@ from app.core.db.session import build_engine
 from app.modules.promotions.tests.migration_promotion_table_contract import (
     assert_promotion_tables_are_constrained,
 )
+from app.modules.promotions.tests.migration_signup_beneficiary_downgrade import (
+    insert_signup_promotion_and_redemption,
+    read_signup_data,
+)
 
 PROJECT_ROOT = Path(__file__).parents[4]
 PROMOTION_MIGRATION_PATH = (
@@ -27,9 +31,15 @@ PROMOTION_CONTENT_MIGRATION_PATH = (
 PROMOTION_CONTEXT_MIGRATION_PATH = (
     PROJECT_ROOT / "alembic" / "versions" / "20260707_0019_add_promotion_context.py"
 )
+SIGNUP_BENEFICIARY_MIGRATION_PATH = (
+    PROJECT_ROOT
+    / "alembic"
+    / "versions"
+    / "20260712_0024_add_signup_beneficiary_key_to_promotion_redemptions.py"
+)
 
 
-def test_promotion_migration_revision_is_linear_through_context_extension() -> None:
+def test_promotion_migration_revision_is_linear_through_signup_beneficiary_extension() -> None:
     # Given: Promotion persistence migration 뒤에 credit source와 content migration이 이어진다.
     config = _alembic_config()
     script_directory = ScriptDirectory.from_config(config)
@@ -43,6 +53,7 @@ def test_promotion_migration_revision_is_linear_through_context_extension() -> N
     assert CREDIT_SOURCE_MIGRATION_PATH.is_file()
     assert PROMOTION_CONTENT_MIGRATION_PATH.is_file()
     assert PROMOTION_CONTEXT_MIGRATION_PATH.is_file()
+    assert SIGNUP_BENEFICIARY_MIGRATION_PATH.is_file()
 
     migration_source = PROMOTION_MIGRATION_PATH.read_text(encoding="utf-8")
     assert 'revision: str = "20260705_0016"' in migration_source
@@ -55,6 +66,9 @@ def test_promotion_migration_revision_is_linear_through_context_extension() -> N
     promotion_context = PROMOTION_CONTEXT_MIGRATION_PATH.read_text(encoding="utf-8")
     assert 'revision: str = "20260707_0019"' in promotion_context
     assert 'down_revision: str | Sequence[str] | None = "20260705_0018"' in promotion_context
+    signup_beneficiary = SIGNUP_BENEFICIARY_MIGRATION_PATH.read_text(encoding="utf-8")
+    assert 'revision: str = "20260712_0024"' in signup_beneficiary
+    assert 'down_revision: str | Sequence[str] | None = "20260712_0023"' in signup_beneficiary
 
 
 def test_promotion_migration_creates_constrained_tables(
@@ -103,7 +117,7 @@ def test_promotion_migration_rejects_invalid_context_schema_inputs(
         # Then: DB가 각 제약 위반을 실제로 거절한다.
         for failure in observed_failures:
             print(failure)
-        assert len(observed_failures) == 7
+        assert len(observed_failures) == 8
     finally:
         if upgraded:
             command.downgrade(config, "base")
@@ -132,6 +146,36 @@ def test_promotion_contents_reject_duplicate_promotion_content(
 
         # Then: DB unique constraint가 실제 중복 저장을 거절한다.
         assert "uq_promotion_contents_promotion_id" in failure
+    finally:
+        if upgraded:
+            command.downgrade(config, "base")
+        get_settings.cache_clear()
+
+
+def test_promotion_migration_downgrade_preserves_rows_and_clears_signup_context(
+    postgres_async_database_url: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given: signup context와 beneficiary key를 가진 최신 promotion row가 있다.
+    monkeypatch.setenv("DATABASE_URL", postgres_async_database_url)
+    get_settings.cache_clear()
+    config = _alembic_config()
+
+    upgraded = False
+    try:
+        command.upgrade(config, "head")
+        upgraded = True
+        anyio.run(insert_signup_promotion_and_redemption, postgres_async_database_url)
+
+        # When: 신규 migration만 downgrade한 뒤 다시 head까지 upgrade한다.
+        command.downgrade(config, "20260710_0022")
+        downgraded = anyio.run(read_signup_data, postgres_async_database_url)
+        command.upgrade(config, "head")
+        reupgraded = anyio.run(read_signup_data, postgres_async_database_url)
+
+        # Then: 행/redemption은 보존되고 signup context만 legacy NULL로 정규화된다.
+        assert downgraded == (None, 1, False)
+        assert reupgraded == (None, 1, True)
     finally:
         if upgraded:
             command.downgrade(config, "base")

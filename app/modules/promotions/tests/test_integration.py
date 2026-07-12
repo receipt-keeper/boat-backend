@@ -110,6 +110,31 @@ async def test_no_code_promotion_redemption_grants_credit_once_through_real_wiri
     assert outbox_events[1].payload["idempotency_key"] == PROMOTION_IDEMPOTENCY_KEY
 
 
+async def test_public_signup_promotion_redemption_returns_404_without_redemption_or_credit(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    # Given: public API가 아닌 가입 축하 프로모션이 실제 persistence에 있다.
+    test_app = _promotion_integration_app(postgres_session_factory)
+    async with postgres_session_factory() as session:
+        await seed_promotion(session, context="signup")
+
+    async with api_client(test_app) as test_client:
+        # When: public promotion ID 수령 endpoint를 호출한다.
+        response = await test_client.post(f"/api/v1/promotions/{PROMOTION_ID}/redemptions")
+
+    # Then: 404이고 redemption 또는 credit transaction을 만들지 않는다.
+    async with postgres_session_factory() as session:
+        promotion = await session.get(promotions_orm.Promotion, PROMOTION_ID)
+        redemptions = tuple(await session.scalars(select(promotions_orm.PromotionRedemption)))
+        transactions = tuple(await session.scalars(select(credits_orm.CreditTransaction)))
+
+    assert response.status_code == 404
+    assert promotion is not None
+    assert promotion.times_redeemed == 0
+    assert redemptions == ()
+    assert transactions == ()
+
+
 async def test_code_promotion_redemption_grants_credit_once_through_real_wiring(
     postgres_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
