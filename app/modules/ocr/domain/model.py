@@ -57,6 +57,17 @@ class ReceiptOcrResult:
             resolved_period_months = DEFAULT_WARRANTY_PERIOD_MONTHS
             warnings.append("무상 AS 기간을 찾지 못해 12개월 기본값을 적용했습니다.")
 
+        resolved_expires_on = expires_on
+        if (
+            payment_date is not None
+            and resolved_expires_on is not None
+            and resolved_expires_on < payment_date
+        ):
+            resolved_expires_on = None
+            warnings.append(
+                "보장 만료일이 구매일보다 빨라 구매일과 무상 AS 기간으로 다시 계산했습니다."
+            )
+
         notification = Notification()
         new_item_name = notification.collect(lambda: ItemName((item_name or "").strip()))
         new_payment_date = notification.collect(lambda: PaymentDate(resolved_payment_date))
@@ -94,8 +105,8 @@ class ReceiptOcrResult:
             total_amount=new_total_amount,
             period_months=new_period_months,
             expires_on=(
-                expires_on
-                if expires_on is not None
+                resolved_expires_on
+                if resolved_expires_on is not None
                 else _add_months(new_payment_date.value, new_period_months.value)
             ),
             category=normalized_category,
