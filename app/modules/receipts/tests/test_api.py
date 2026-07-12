@@ -332,6 +332,30 @@ async def test_explicit_expiration_is_preserved_until_warranty_inputs_change(
     assert payment_date_update.json()["data"]["expiresOn"] == "2026-05-26"
 
 
+async def test_create_receipt_rejects_expiration_before_payment_date(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    payload = {
+        "item_name": "Apple iPhone",
+        "payment_date": "2024-05-26",
+        "period_months": 12,
+        "expires_on": "2020-01-01",
+        "receipt_file_ids": [str(TEST_FILE_ID)],
+    }
+
+    async with _client(postgres_session_factory) as client:
+        response = await client.post("/api/v1/receipts", json=payload)
+
+    body = response.json()
+    assert response.status_code == 422
+    assert body["data"]["errors"] == [
+        {
+            "field": "expires_on",
+            "message": "보장 만료일은 구매일보다 빠를 수 없습니다.",
+        }
+    ]
+
+
 def test_receipts_expose_final_registration_route_only() -> None:
     schema = create_app(_test_settings()).openapi()
     paths = schema["paths"]
