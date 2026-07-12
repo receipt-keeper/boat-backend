@@ -9,8 +9,11 @@ from app.modules.promotions.application.ports.credit_grant import (
     PromotionCreditGrant,
     PromotionCreditGrantResult,
 )
-from app.modules.promotions.domain.exceptions import PromotionRedemptionConflictError
-from app.modules.promotions.domain.model import PromotionRedemptionStatus
+from app.modules.promotions.domain.exceptions import (
+    PromotionNotFoundError,
+    PromotionRedemptionConflictError,
+)
+from app.modules.promotions.domain.model import PromotionContext, PromotionRedemptionStatus
 from app.modules.promotions.infrastructure.persistence import orm
 from app.modules.promotions.tests.helpers import (
     BANNER_IMAGE_URL,
@@ -32,7 +35,7 @@ async def test_create_promotion_code_redemption_grants_credit_for_valid_code(
     postgres_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     async with postgres_session_factory() as session:
-        await seed_promotion(session)
+        await seed_promotion(session, context=PromotionContext.RECHARGE.value)
         await seed_code(session)
         grant_port = FakePromotionCreditGrantPort(
             result=PromotionCreditGrantResult(
@@ -64,6 +67,27 @@ async def test_create_promotion_code_redemption_grants_credit_for_valid_code(
             idempotency_key=CODE_IDEMPOTENCY_KEY,
         )
     ]
+
+
+async def test_create_promotion_code_redemption_rejects_signup_context_before_redemption_or_credit(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    # Given: 공개 수령 대상이 아닌 가입 축하 코드 프로모션이 있다.
+    async with postgres_session_factory() as session:
+        await seed_promotion(session, context=PromotionContext.SIGNUP.value)
+        await seed_code(session)
+        grant_port = FakePromotionCreditGrantPort()
+
+        # When: 해당 코드를 공개 수령 endpoint 흐름으로 사용한다.
+        with pytest.raises(PromotionNotFoundError):
+            await code_use_case(session, grant_port).execute(code_command())
+
+    # Then: 404 도메인 경로를 타며 redemption과 credit 지급은 발생하지 않는다.
+    async with postgres_session_factory() as session:
+        redemption = await session.scalar(select(orm.PromotionRedemption))
+
+    assert redemption is None
+    assert grant_port.grants == []
 
 
 async def test_create_promotion_code_redemption_idempotent_retry_does_not_grant_again(

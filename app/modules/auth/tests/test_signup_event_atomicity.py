@@ -23,9 +23,12 @@ from app.core.db.outbox.serialization import EventTypeRegistry
 from app.core.db.unit_of_work import SqlAlchemyUnitOfWork
 from app.modules.auth.application.commands.signup.command import SignupCommand
 from app.modules.auth.application.commands.signup.use_case import SignupCommandUseCase
-from app.modules.auth.application.ports.credit_lifecycle import CreditInitializer
+from app.modules.auth.application.ports.external_identity_verifier import ExternalIdentityVerifier
 from app.modules.auth.application.ports.notification_settings_initializer import (
     NotificationSettingsInitializer,
+)
+from app.modules.auth.application.ports.signup_promotion_redeemer import (
+    SignupPromotionRedeemer,
 )
 from app.modules.auth.application.ports.user_provisioner import (
     ProvisionedUser,
@@ -48,8 +51,9 @@ from app.modules.users.dependencies import (
 )
 
 
-class _NoOpCreditInitializer(CreditInitializer):
-    async def initialize(self, *, user_id: UUID) -> None:
+class _NoOpSignupPromotionRedeemer(SignupPromotionRedeemer):
+    async def redeem(self, *, identity: ExternalIdentity, user_id: UUID) -> None:
+        assert identity.subject.value
         assert user_id
 
 
@@ -79,15 +83,15 @@ def _build_signup_use_case(
     session: AsyncSession,
     user_provisioner: UserProvisioner,
     event_publisher: EventPublisher,
-    identity_verifier: object,
+    identity_verifier: ExternalIdentityVerifier,
 ) -> SignupCommandUseCase:
     return SignupCommandUseCase(
-        identity_verifier=identity_verifier,  # type: ignore[arg-type]
+        identity_verifier=identity_verifier,
         identity_synchronizer=NoOpExternalIdentityLoginSynchronizer(),
         credential_repository=SqlAlchemyCredentialRepository(session),
         user_provisioner=user_provisioner,
         notification_settings_initializer=_NoOpNotificationSettingsInitializer(),
-        credit_initializer=_NoOpCreditInitializer(),
+        signup_promotion_redeemer=_NoOpSignupPromotionRedeemer(),
         access_token_issuer=build_access_token_issuer(),
         refresh_token_issuer=build_refresh_token_service(),
         unit_of_work=SqlAlchemyUnitOfWork(session),
@@ -117,7 +121,7 @@ async def _outbox_row_count(
     return count
 
 
-class _FakeExternalIdentityVerifier:
+class _FakeExternalIdentityVerifier(ExternalIdentityVerifier):
     def __init__(self, identity: ExternalIdentity) -> None:
         self._identity = identity
 

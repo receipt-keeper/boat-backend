@@ -23,6 +23,15 @@ class PromotionRepository(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    async def find_current_ocr_credit_promotion_for_update(
+        self,
+        *,
+        at: datetime,
+        context: PromotionContext,
+    ) -> Promotion | None:
+        raise NotImplementedError
+
+    @abstractmethod
     async def find_content_by_promotion_id(self, *, promotion_id: UUID) -> PromotionContent | None:
         raise NotImplementedError
 
@@ -58,6 +67,15 @@ class PromotionRepository(ABC):
         *,
         user_id: UUID,
         promotion_id: UUID,
+    ) -> PromotionRedemption | None:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def find_redemption_by_promotion_and_beneficiary(
+        self,
+        *,
+        promotion_id: UUID,
+        beneficiary_key: str,
     ) -> PromotionRedemption | None:
         raise NotImplementedError
 

@@ -1,8 +1,11 @@
+import re
 from dataclasses import dataclass
-from typing import ClassVar
+from typing import ClassVar, Final
 
 from app.core.domain.exceptions import ErrorDetail, ValidationError
 from app.core.domain.value_object import ValueObject
+
+PROMOTION_BENEFICIARY_KEY_PATTERN: Final = re.compile(r"v1:[0-9a-f]{64}")
 
 
 @dataclass(frozen=True)
@@ -76,4 +79,32 @@ class TokenHash(ValueObject[str]):
         if not self.value or len(self.value) > self.MAX_LENGTH:
             raise ValidationError(
                 [ErrorDetail(field="tokenHash", message="토큰 해시가 올바르지 않습니다.")]
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class PromotionBeneficiaryHmacSecret(ValueObject[str]):
+    def validate(self) -> None:
+        if not self.value or self.value.strip() != self.value:
+            raise ValidationError(
+                [
+                    ErrorDetail(
+                        field="promotionBeneficiaryHmacSecret",
+                        message="프로모션 수혜자 HMAC 비밀값이 올바르지 않습니다.",
+                    )
+                ]
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class PromotionBeneficiaryKey(ValueObject[str]):
+    def validate(self) -> None:
+        if PROMOTION_BENEFICIARY_KEY_PATTERN.fullmatch(self.value) is None:
+            raise ValidationError(
+                [
+                    ErrorDetail(
+                        field="promotionBeneficiaryKey",
+                        message="프로모션 수혜자 식별키가 올바르지 않습니다.",
+                    )
+                ]
             )

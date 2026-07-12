@@ -9,12 +9,14 @@ from app.core.domain.events import DomainEvent
 from app.core.domain.exceptions import ValidationError
 from app.modules.auth.application.commands.signup.command import SignupCommand
 from app.modules.auth.application.commands.signup.use_case import SignupCommandUseCase
-from app.modules.auth.application.ports.credit_lifecycle import CreditInitializer
 from app.modules.auth.application.ports.external_identity_login_synchronizer import (
     ExternalIdentityLoginSynchronizer,
 )
 from app.modules.auth.application.ports.notification_settings_initializer import (
     NotificationSettingsInitializer,
+)
+from app.modules.auth.application.ports.signup_promotion_redeemer import (
+    SignupPromotionRedeemer,
 )
 from app.modules.auth.application.ports.user_provisioner import (
     ProvisionedUser,
@@ -48,7 +50,8 @@ class InitializedSettings:
 
 
 @dataclass(frozen=True, slots=True)
-class InitializedCredits:
+class RedeemedSignupPromotion:
+    identity: ExternalIdentity
     user_id: UUID
 
 
@@ -75,12 +78,21 @@ class FakeNotificationSettingsInitializer(NotificationSettingsInitializer):
         )
 
 
-class FakeCreditInitializer(CreditInitializer):
+class FakeSignupPromotionRedeemer(SignupPromotionRedeemer):
     def __init__(self) -> None:
-        self.initialized: list[InitializedCredits] = []
+        self.redeemed: list[RedeemedSignupPromotion] = []
+        self.error: BaseException | None = None
 
-    async def initialize(self, *, user_id: UUID) -> None:
-        self.initialized.append(InitializedCredits(user_id=user_id))
+    async def redeem(self, *, identity: ExternalIdentity, user_id: UUID) -> None:
+        self.redeemed.append(RedeemedSignupPromotion(identity=identity, user_id=user_id))
+        if self.error is not None:
+            raise self.error
+
+
+class RollbackFailingUnitOfWork(FakeUnitOfWork):
+    async def rollback(self) -> None:
+        await super().rollback()
+        raise RuntimeError("injected rollback failure")
 
 
 class RecordingExternalIdentityLoginSynchronizer(ExternalIdentityLoginSynchronizer):
@@ -97,7 +109,7 @@ class SignupUseCaseFixture:
     repository: FakeCredentialRepository
     provisioner: FakeUserProvisioner
     notification_initializer: FakeNotificationSettingsInitializer
-    credit_initializer: FakeCreditInitializer
+    signup_promotion_redeemer: FakeSignupPromotionRedeemer
     identity_synchronizer: RecordingExternalIdentityLoginSynchronizer
     unit_of_work: FakeUnitOfWork
     event_publisher: RecordingEventPublisher
@@ -114,13 +126,16 @@ def _new_identity() -> ExternalIdentity:
     )
 
 
-def _build_signup_use_case(identity: ExternalIdentity) -> SignupUseCaseFixture:
+def _build_signup_use_case(
+    identity: ExternalIdentity,
+    unit_of_work: FakeUnitOfWork | None = None,
+) -> SignupUseCaseFixture:
     repository = FakeCredentialRepository()
     provisioner = FakeUserProvisioner()
     notification_initializer = FakeNotificationSettingsInitializer()
-    credit_initializer = FakeCreditInitializer()
+    signup_promotion_redeemer = FakeSignupPromotionRedeemer()
     identity_synchronizer = RecordingExternalIdentityLoginSynchronizer()
-    unit_of_work = FakeUnitOfWork()
+    resolved_unit_of_work = unit_of_work or FakeUnitOfWork()
     refresh_token_service = build_refresh_token_service()
     event_publisher = RecordingEventPublisher()
     return SignupUseCaseFixture(
@@ -130,18 +145,18 @@ def _build_signup_use_case(identity: ExternalIdentity) -> SignupUseCaseFixture:
             credential_repository=repository,
             user_provisioner=provisioner,
             notification_settings_initializer=notification_initializer,
-            credit_initializer=credit_initializer,
+            signup_promotion_redeemer=signup_promotion_redeemer,
             access_token_issuer=build_access_token_issuer(),
             refresh_token_issuer=refresh_token_service,
-            unit_of_work=unit_of_work,
+            unit_of_work=resolved_unit_of_work,
             event_publisher=event_publisher,
         ),
         repository=repository,
         provisioner=provisioner,
         notification_initializer=notification_initializer,
-        credit_initializer=credit_initializer,
+        signup_promotion_redeemer=signup_promotion_redeemer,
         identity_synchronizer=identity_synchronizer,
-        unit_of_work=unit_of_work,
+        unit_of_work=resolved_unit_of_work,
         event_publisher=event_publisher,
     )
 
@@ -187,8 +202,8 @@ async def test_signup_creates_new_credentials_tokens_and_marketing_settings() ->
     assert fixture.notification_initializer.initialized == [
         InitializedSettings(user_id=fixture.provisioner.user_id, marketing_consent=True)
     ]
-    assert fixture.credit_initializer.initialized == [
-        InitializedCredits(user_id=fixture.provisioner.user_id)
+    assert fixture.signup_promotion_redeemer.redeemed == [
+        RedeemedSignupPromotion(identity=identity, user_id=fixture.provisioner.user_id)
     ]
     assert fixture.identity_synchronizer.identities == [identity]
     assert len(fixture.repository.credentials_by_identity) == 1
@@ -223,9 +238,39 @@ async def test_signup_defaults_marketing_settings_to_false() -> None:
     assert fixture.notification_initializer.initialized == [
         InitializedSettings(user_id=fixture.provisioner.user_id, marketing_consent=False)
     ]
-    assert fixture.credit_initializer.initialized == [
-        InitializedCredits(user_id=fixture.provisioner.user_id)
+    assert fixture.signup_promotion_redeemer.redeemed == [
+        RedeemedSignupPromotion(
+            identity=fixture.identity_synchronizer.identities[0],
+            user_id=fixture.provisioner.user_id,
+        )
     ]
+
+
+async def test_signup_rolls_back_and_preserves_base_exception_after_promotion_redemption() -> None:
+    fixture = _build_signup_use_case(_new_identity())
+    interruption = KeyboardInterrupt("test interruption")
+    fixture.signup_promotion_redeemer.error = interruption
+
+    with pytest.raises(KeyboardInterrupt) as raised:
+        await fixture.use_case.execute(_signup_command())
+
+    assert raised.value is interruption
+    assert fixture.unit_of_work.commit_count == 0
+    assert fixture.unit_of_work.rollback_count == 1
+
+
+async def test_signup_preserves_base_exception_when_outer_rollback_fails() -> None:
+    unit_of_work = RollbackFailingUnitOfWork()
+    fixture = _build_signup_use_case(_new_identity(), unit_of_work)
+    interruption = KeyboardInterrupt("test interruption")
+    fixture.signup_promotion_redeemer.error = interruption
+
+    with pytest.raises(KeyboardInterrupt) as raised:
+        await fixture.use_case.execute(_signup_command())
+
+    assert raised.value is interruption
+    assert unit_of_work.commit_count == 0
+    assert unit_of_work.rollback_count == 1
 
 
 async def test_signup_rejects_missing_required_consent_before_provisioning() -> None:
@@ -245,7 +290,7 @@ async def test_signup_rejects_missing_required_consent_before_provisioning() -> 
     ]
     assert fixture.provisioner.requests == []
     assert fixture.notification_initializer.initialized == []
-    assert fixture.credit_initializer.initialized == []
+    assert fixture.signup_promotion_redeemer.redeemed == []
     assert fixture.identity_synchronizer.identities == []
     assert fixture.repository.refresh_token_hashes == {}
     assert fixture.unit_of_work.commit_count == 0
@@ -268,7 +313,7 @@ async def test_signup_rejects_missing_required_consent_versions_before_provision
     ]
     assert fixture.provisioner.requests == []
     assert fixture.notification_initializer.initialized == []
-    assert fixture.credit_initializer.initialized == []
+    assert fixture.signup_promotion_redeemer.redeemed == []
     assert fixture.repository.refresh_token_hashes == {}
     assert fixture.unit_of_work.commit_count == 0
 
@@ -290,7 +335,7 @@ async def test_signup_rejects_blank_required_consent_versions_before_provisionin
     ]
     assert fixture.provisioner.requests == []
     assert fixture.notification_initializer.initialized == []
-    assert fixture.credit_initializer.initialized == []
+    assert fixture.signup_promotion_redeemer.redeemed == []
     assert fixture.repository.refresh_token_hashes == {}
     assert fixture.unit_of_work.commit_count == 0
 
@@ -327,7 +372,7 @@ async def test_signup_rejects_existing_external_identity_without_side_effects() 
     assert error.value.code == "USER_ALREADY_EXISTS"
     assert fixture.provisioner.requests == []
     assert fixture.notification_initializer.initialized == []
-    assert fixture.credit_initializer.initialized == []
+    assert fixture.signup_promotion_redeemer.redeemed == []
     assert fixture.identity_synchronizer.identities == []
     assert fixture.repository.refresh_token_hashes == {}
     assert fixture.unit_of_work.commit_count == 0
@@ -351,5 +396,5 @@ async def test_signup_rejects_verified_email_existing_credential_without_attach_
     assert fixture.repository.refresh_token_hashes == {}
     assert fixture.provisioner.requests == []
     assert fixture.notification_initializer.initialized == []
-    assert fixture.credit_initializer.initialized == []
+    assert fixture.signup_promotion_redeemer.redeemed == []
     assert fixture.identity_synchronizer.identities == []

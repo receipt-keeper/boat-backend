@@ -4,9 +4,13 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from app.core.db.session import build_engine
 from app.modules.promotions.tests.migration_insert_probes import (
     assert_invalid_promotion_insert_probes,
+    assert_signup_context_insert_is_accepted,
 )
 from app.modules.promotions.tests.migration_promotion_content_table_contract import (
     assert_promotion_content_table_is_constrained,
+)
+from app.modules.promotions.tests.migration_promotion_nullability_contract import (
+    assert_promotion_nullability,
 )
 
 EXPECTED_PROMOTION_CHECKS = {
@@ -73,6 +77,7 @@ async def assert_promotion_tables_are_constrained(database_url: str) -> list[str
                     "promotion_id",
                     "promotion_code_id",
                     "user_id",
+                    "beneficiary_key",
                     "status",
                     "idempotency_key",
                     "failure_reason",
@@ -85,7 +90,8 @@ async def assert_promotion_tables_are_constrained(database_url: str) -> list[str
             await _assert_check_constraint_names(connection)
             await _assert_same_bc_foreign_keys(connection)
             await _assert_unique_indexes(connection)
-            await _assert_nullable_columns(connection)
+            await assert_promotion_nullability(connection)
+            await assert_signup_context_insert_is_accepted(connection)
             return await assert_invalid_promotion_insert_probes(connection)
     finally:
         await engine.dispose()
@@ -204,6 +210,7 @@ async def _assert_unique_indexes(connection: AsyncConnection) -> None:
               AND index_class.relname IN (
                   'ix_promotion_codes_code_unique',
                   'uq_promotion_redemptions_idempotency_key',
+                  'uq_promotion_redemptions_promotion_beneficiary',
                   'ix_promotions_current_benefit_context',
                   'uq_promotions_benefit_context_starts_at'
               )
@@ -222,6 +229,12 @@ async def _assert_unique_indexes(connection: AsyncConnection) -> None:
             "CREATE UNIQUE INDEX uq_promotion_redemptions_idempotency_key "
             "ON public.promotion_redemptions USING btree (idempotency_key)",
         ),
+        "uq_promotion_redemptions_promotion_beneficiary": (
+            True,
+            "CREATE UNIQUE INDEX uq_promotion_redemptions_promotion_beneficiary "
+            "ON public.promotion_redemptions USING btree (promotion_id, beneficiary_key) "
+            "WHERE (beneficiary_key IS NOT NULL)",
+        ),
         "ix_promotions_current_benefit_context": (
             False,
             "CREATE INDEX ix_promotions_current_benefit_context "
@@ -234,31 +247,4 @@ async def _assert_unique_indexes(connection: AsyncConnection) -> None:
             "ON public.promotions USING btree "
             "(benefit_feature_key, context, starts_at) WHERE (context IS NOT NULL)",
         ),
-    }
-
-
-async def _assert_nullable_columns(connection: AsyncConnection) -> None:
-    result = await connection.execute(
-        text(
-            """
-            SELECT table_name, column_name, is_nullable
-            FROM information_schema.columns
-            WHERE table_schema = 'public'
-              AND (
-                  (table_name = 'promotion_codes' AND column_name IN ('starts_at', 'expires_at'))
-                  OR (table_name = 'promotions' AND column_name = 'context')
-                  OR (
-                      table_name = 'promotion_redemptions'
-                      AND column_name = 'promotion_code_id'
-                  )
-              )
-            """
-        )
-    )
-    nullable = {(row[0], row[1]): row[2] for row in result.tuples()}
-    assert nullable == {
-        ("promotion_codes", "starts_at"): "YES",
-        ("promotion_codes", "expires_at"): "YES",
-        ("promotions", "context"): "YES",
-        ("promotion_redemptions", "promotion_code_id"): "YES",
     }

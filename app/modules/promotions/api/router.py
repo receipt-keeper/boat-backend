@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Annotated
+from typing import Annotated, assert_never
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, Query, status
@@ -11,6 +11,7 @@ from app.core.http.responses import ApiErrorData, CommonResponse
 from app.modules.promotions.api.schemas import (
     PromotionCodeRedemptionRequest,
     PromotionListQuery,
+    PromotionQueryContext,
     PromotionResponse,
 )
 from app.modules.promotions.application.commands.create_promotion_code_redemption.command import (
@@ -27,6 +28,7 @@ from app.modules.promotions.dependencies import (
     CreatePromotionRedemptionCommandUseCaseDep,
     CurrentOcrCreditPromotionQueryUseCaseDep,
 )
+from app.modules.promotions.domain.model import PromotionContext
 
 _OpenApiResponse = dict[str, type[CommonResponse[ApiErrorData]] | str]
 
@@ -98,7 +100,7 @@ async def get_promotions(
     result = await query_use_case.execute(
         GetCurrentOcrCreditPromotionQuery(
             user_id=context.user_id,
-            context=query.context,
+            context=_to_domain_promotion_context(query.context),
         )
     )
     data = (
@@ -178,3 +180,15 @@ def _with_api_prefix(api_prefix: str, path: str | None) -> str | None:
     if path is None or not path.startswith("/"):
         return path
     return f"{api_prefix}{path}"
+
+
+def _to_domain_promotion_context(
+    context: PromotionQueryContext | None,
+) -> PromotionContext | None:
+    match context:
+        case PromotionQueryContext.RECHARGE:
+            return PromotionContext.RECHARGE
+        case None:
+            return None
+        case unreachable:
+            assert_never(unreachable)

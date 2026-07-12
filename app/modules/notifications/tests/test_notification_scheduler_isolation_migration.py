@@ -14,7 +14,7 @@ SCHEDULER_INTERNAL_USER_NOTIFICATION_COLUMN = "scheduled_key"
 
 
 def test_notification_schedule_migrations_have_single_head() -> None:
-    # Given: current scheduler persistence includes the 0022 scheduler query indexes migration.
+    # Given: scheduler persistence 이후 signup beneficiary migration까지 이어진 graph가 있다.
     config = alembic_config()
     script_directory = ScriptDirectory.from_config(config)
 
@@ -22,7 +22,7 @@ def test_notification_schedule_migrations_have_single_head() -> None:
     heads = script_directory.get_heads()
     revisions = {revision.revision for revision in script_directory.walk_revisions()}
 
-    # Then: 전체 migration graph는 단일 head를 유지하고 scheduler revisions를 포함한다.
+    # Then: 전체 graph는 단일 head를 유지하고 scheduler chain을 보존한다.
     assert len(heads) == 1
     assert {"20260709_0020", "20260709_0021", "20260710_0022"} <= revisions
 

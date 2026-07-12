@@ -18,6 +18,7 @@ class PromotionBenefitFeatureKey(StrEnum):
 
 class PromotionContext(StrEnum):
     RECHARGE = "recharge"
+    SIGNUP = "signup"
 
 
 class PromotionRedemptionStatus(StrEnum):
@@ -132,6 +133,7 @@ class PromotionRedemption(AggregateRoot[UUID]):
     promotion_id: UUID
     promotion_code_id: UUID | None
     user_id: UUID
+    beneficiary_key: str | None
     status: PromotionRedemptionStatus
     idempotency_key: str
     failure_reason: str | None
@@ -145,6 +147,7 @@ class PromotionRedemption(AggregateRoot[UUID]):
         promotion_id: UUID,
         promotion_code_id: UUID | None,
         user_id: UUID,
+        beneficiary_key: str | None,
         status: PromotionRedemptionStatus,
         idempotency_key: str,
         failure_reason: str | None,
@@ -155,6 +158,7 @@ class PromotionRedemption(AggregateRoot[UUID]):
             promotion_id=promotion_id,
             promotion_code_id=promotion_code_id,
             user_id=user_id,
+            beneficiary_key=beneficiary_key,
             status=status,
             idempotency_key=idempotency_key,
             failure_reason=failure_reason,
@@ -168,6 +172,7 @@ class PromotionRedemption(AggregateRoot[UUID]):
         promotion_id: UUID,
         promotion_code_id: UUID | None,
         user_id: UUID,
+        beneficiary_key: str | None = None,
         idempotency_key: str,
         redeemed_at: datetime,
         benefit_amount: int,
@@ -178,6 +183,7 @@ class PromotionRedemption(AggregateRoot[UUID]):
             promotion_id=promotion_id,
             promotion_code_id=promotion_code_id,
             user_id=user_id,
+            beneficiary_key=beneficiary_key,
             status=PromotionRedemptionStatus.GRANTED,
             idempotency_key=idempotency_key,
             failure_reason=None,

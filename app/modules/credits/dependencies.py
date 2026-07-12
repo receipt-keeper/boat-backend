@@ -60,6 +60,21 @@ def build_grant_credit_command_use_case(
     )
 
 
+def build_deferred_grant_credit_command_use_case(
+    session: AsyncSession,
+) -> GrantCreditCommandUseCase:
+    return build_grant_credit_command_use_case(
+        session,
+        DeferredCommitUnitOfWork(rollback=session.rollback),
+    )
+
+
+def build_credit_balance_query_use_case(
+    session: AsyncSession,
+) -> GetCreditBalanceQueryUseCase:
+    return GetCreditBalanceQueryUseCase(credit_repository=SqlAlchemyCreditRepository(session))
+
+
 def build_delete_user_credits_command_use_case(
     session: AsyncSession,
     unit_of_work: UnitOfWork,
@@ -126,14 +141,9 @@ async def get_grant_credit_command_use_case(
 
 
 async def get_deferred_grant_credit_command_use_case(
-    credit_repository: Annotated[CreditRepository, Depends(get_credit_repository)],
     session: AsyncSessionDep,
 ) -> GrantCreditCommandUseCase:
-    return GrantCreditCommandUseCase(
-        credit_repository=credit_repository,
-        unit_of_work=DeferredCommitUnitOfWork(rollback=session.rollback),
-        event_publisher=_build_outbox_event_publisher(session),
-    )
+    return build_deferred_grant_credit_command_use_case(session)
 
 
 async def get_credit_balance_query_use_case(

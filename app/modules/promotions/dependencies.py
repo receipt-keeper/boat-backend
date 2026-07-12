@@ -19,6 +19,8 @@ from app.modules.credits.application.queries.get_credit_balance.use_case import 
     GetCreditBalanceQueryUseCase,
 )
 from app.modules.credits.dependencies import (
+    build_credit_balance_query_use_case,
+    build_deferred_grant_credit_command_use_case,
     get_credit_balance_query_use_case,
     get_deferred_grant_credit_command_use_case,
 )
@@ -28,6 +30,9 @@ from app.modules.promotions.application.commands.create_promotion_code_redemptio
 )
 from app.modules.promotions.application.commands.create_promotion_redemption.use_case import (
     CreatePromotionRedemptionCommandUseCase,
+)
+from app.modules.promotions.application.commands.redeem_signup_promotion.use_case import (
+    RedeemSignupPromotionCommandUseCase,
 )
 from app.modules.promotions.application.ports.credit_grant import (
     PromotionCreditBalance,
@@ -53,6 +58,22 @@ def build_promotions_event_registry() -> EventTypeRegistry:
 
 def _build_outbox_event_publisher(session: AsyncSession) -> EventPublisher:
     return OutboxEventPublisher(session=session, registry=build_promotions_event_registry())
+
+
+def build_redeem_signup_promotion_command_use_case(
+    session: AsyncSession,
+    unit_of_work: UnitOfWork,
+) -> RedeemSignupPromotionCommandUseCase:
+    credit_grant_port = CreditsPromotionCreditGrantPort(
+        grant_credit_command_use_case=build_deferred_grant_credit_command_use_case(session),
+        credit_balance_query_use_case=build_credit_balance_query_use_case(session),
+    )
+    return RedeemSignupPromotionCommandUseCase(
+        promotion_repository=SqlAlchemyPromotionRepository(session),
+        credit_grant_port=credit_grant_port,
+        unit_of_work=unit_of_work,
+        event_publisher=_build_outbox_event_publisher(session),
+    )
 
 
 class CreditsPromotionCreditGrantPort(PromotionCreditGrantPort):

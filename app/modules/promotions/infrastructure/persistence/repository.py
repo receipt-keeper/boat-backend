@@ -54,6 +54,33 @@ class SqlAlchemyPromotionRepository(PromotionRepository):
             return None
         return mapper.promotion_to_domain(record)
 
+    async def find_current_ocr_credit_promotion_for_update(
+        self,
+        *,
+        at: datetime,
+        context: PromotionContext,
+    ) -> Promotion | None:
+        record = await self._session.scalar(
+            select(orm.Promotion)
+            .where(
+                orm.Promotion.active.is_(True),
+                orm.Promotion.benefit_feature_key == PromotionBenefitFeatureKey.OCR.value,
+                orm.Promotion.context == context.value,
+                orm.Promotion.starts_at <= at,
+                or_(orm.Promotion.expires_at.is_(None), orm.Promotion.expires_at > at),
+                or_(
+                    orm.Promotion.max_redemptions.is_(None),
+                    orm.Promotion.times_redeemed < orm.Promotion.max_redemptions,
+                ),
+            )
+            .order_by(orm.Promotion.starts_at.desc(), orm.Promotion.id.desc())
+            .limit(1)
+            .with_for_update()
+        )
+        if record is None:
+            return None
+        return mapper.promotion_to_domain(record)
+
     async def find_content_by_promotion_id(self, *, promotion_id: UUID) -> PromotionContent | None:
         record = await self._session.scalar(
             select(orm.PromotionContent)
@@ -127,6 +154,24 @@ class SqlAlchemyPromotionRepository(PromotionRepository):
             .where(
                 orm.PromotionRedemption.user_id == user_id,
                 orm.PromotionRedemption.promotion_id == promotion_id,
+            )
+            .limit(1)
+        )
+        if record is None:
+            return None
+        return mapper.redemption_to_domain(record)
+
+    async def find_redemption_by_promotion_and_beneficiary(
+        self,
+        *,
+        promotion_id: UUID,
+        beneficiary_key: str,
+    ) -> PromotionRedemption | None:
+        record = await self._session.scalar(
+            select(orm.PromotionRedemption)
+            .where(
+                orm.PromotionRedemption.promotion_id == promotion_id,
+                orm.PromotionRedemption.beneficiary_key == beneficiary_key,
             )
             .limit(1)
         )
