@@ -48,7 +48,7 @@ class ReceiptListQuery(_ReceiptCategoryInputModel):
         default=ReceiptSort.RECENT,
         description=(
             "정렬 기준. recent는 등록일 내림차순, expiresOn은 무상 AS 만료일 오름차순, "
-            "purchaseDate는 구매일 내림차순이다."
+            "purchaseDate는 구매일 내림차순, title은 제품명 오름차순이다."
         ),
     )
     limit: int = Field(default=20, description="응답할 최대 영수증 수.", ge=1, le=50)
@@ -56,7 +56,7 @@ class ReceiptListQuery(_ReceiptCategoryInputModel):
         default=None,
         description="다음 목록 조회용 커서. 첫 조회에서는 보내지 않는다.",
         min_length=1,
-        max_length=200,
+        max_length=2048,
     )
     category: ReceiptCategory | None = Field(
         default=None,
@@ -66,7 +66,7 @@ class ReceiptListQuery(_ReceiptCategoryInputModel):
         default=None,
         description="제품명, 브랜드명, 구매처, 메모에서 찾을 검색어.",
         min_length=1,
-        max_length=30,
+        max_length=100,
     )
 
 

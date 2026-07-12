@@ -620,6 +620,68 @@ async def test_list_receipts_supports_home_list_and_search_contract(
     assert search_body["data"]["receipts"][0]["receiptFiles"] == first_receipt["receiptFiles"]
 
 
+async def test_list_receipts_supports_title_cursor_across_duplicate_names(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with _client(postgres_session_factory) as client:
+        created = [
+            await _create_receipt(
+                client,
+                item_name=item_name,
+                payment_date=date(2026, 7, 12),
+            )
+            for item_name in ("A" * 255, "B" * 255, "B" * 255, "C" * 255)
+        ]
+
+        first_response = await client.get("/api/v1/receipts?sort=title&limit=2")
+        first_body = first_response.json()
+        next_cursor = first_body["data"]["pagination"]["nextCursor"]
+        second_response = await client.get(
+            "/api/v1/receipts",
+            params={"sort": "title", "limit": 2, "cursor": next_cursor},
+        )
+
+    second_body = second_response.json()
+    expected = sorted(
+        created,
+        key=lambda receipt: (receipt["itemName"], UUID(str(receipt["receiptId"]))),
+    )
+    actual = [
+        *first_body["data"]["receipts"],
+        *second_body["data"]["receipts"],
+    ]
+
+    assert first_response.status_code == 200
+    assert len(first_body["data"]["receipts"]) == 2
+    assert first_body["data"]["pagination"]["hasNext"] is True
+    assert next_cursor is not None
+    assert len(next_cursor) > 200
+    assert second_response.status_code == 200
+    assert len(second_body["data"]["receipts"]) == 2
+    assert second_body["data"]["pagination"]["hasNext"] is False
+    assert [receipt["receiptId"] for receipt in actual] == [
+        receipt["receiptId"] for receipt in expected
+    ]
+    assert len({receipt["receiptId"] for receipt in actual}) == 4
+
+
+async def test_list_receipts_accepts_search_query_up_to_100_characters(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with _client(postgres_session_factory) as client:
+        accepted = await client.get("/api/v1/receipts", params={"q": "a" * 100})
+        rejected = await client.get("/api/v1/receipts", params={"q": "a" * 101})
+
+    assert accepted.status_code == 200
+    assert rejected.status_code == 422
+    assert rejected.json()["data"]["errors"] == [
+        {
+            "field": "q",
+            "message": "String should have at most 100 characters",
+        }
+    ]
+
+
 async def test_dev_list_receipts_returns_empty_when_user_has_no_receipts(
     postgres_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:

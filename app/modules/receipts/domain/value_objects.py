@@ -19,6 +19,7 @@ class ReceiptSort(StrEnum):
     RECENT = "recent"
     EXPIRES_ON = "expiresOn"
     PURCHASE_DATE = "purchaseDate"
+    TITLE = "title"
 
 
 class ReceiptCategory(StrEnum):

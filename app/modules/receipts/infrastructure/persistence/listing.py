@@ -3,7 +3,7 @@ import binascii
 import json
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
-from typing import Any, assert_never
+from typing import Any, assert_never, cast
 from uuid import UUID
 
 from sqlalchemy import and_, or_
@@ -17,7 +17,7 @@ from app.modules.receipts.infrastructure.persistence import orm
 @dataclass(frozen=True, slots=True)
 class ReceiptCursor:
     sort: ReceiptSort
-    value: date | datetime
+    value: date | datetime | str
     receipt_id: UUID
 
 
@@ -80,6 +80,12 @@ def cursor_condition(sort: ReceiptSort, cursor: ReceiptCursor | None) -> Any | N
                 orm.Receipt.payment_date < cursor.value,
                 and_(orm.Receipt.payment_date == cursor.value, orm.Receipt.id < cursor.receipt_id),
             )
+        case ReceiptSort.TITLE:
+            title = cast(str, cursor.value)
+            return or_(
+                orm.Receipt.item_name > title,
+                and_(orm.Receipt.item_name == title, orm.Receipt.id > cursor.receipt_id),
+            )
         case unreachable:
             assert_never(unreachable)
 
@@ -92,18 +98,21 @@ def list_order_by(sort: ReceiptSort) -> tuple[Any, ...]:
             return (orm.Receipt.expires_on.asc(), orm.Receipt.id.asc())
         case ReceiptSort.PURCHASE_DATE:
             return (orm.Receipt.payment_date.desc(), orm.Receipt.id.desc())
+        case ReceiptSort.TITLE:
+            return (orm.Receipt.item_name.asc(), orm.Receipt.id.asc())
         case unreachable:
             assert_never(unreachable)
 
 
 def encode_cursor(*, sort: ReceiptSort, record: orm.Receipt) -> str:
+    cursor_value = _cursor_value(sort, record)
     payload = {
         "sort": sort.value,
-        "value": _cursor_value(sort, record).isoformat(),
+        "value": cursor_value if isinstance(cursor_value, str) else cursor_value.isoformat(),
         "id": str(record.id),
     }
     encoded = base64.urlsafe_b64encode(
-        json.dumps(payload, separators=(",", ":")).encode("utf-8")
+        json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     ).decode("ascii")
     return encoded.rstrip("=")
 
@@ -145,7 +154,7 @@ def _escape_like_keyword(keyword: str) -> str:
     return keyword.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
-def _cursor_value(sort: ReceiptSort, record: orm.Receipt) -> date | datetime:
+def _cursor_value(sort: ReceiptSort, record: orm.Receipt) -> date | datetime | str:
     match sort:
         case ReceiptSort.RECENT:
             return record.created_at
@@ -153,15 +162,21 @@ def _cursor_value(sort: ReceiptSort, record: orm.Receipt) -> date | datetime:
             return record.expires_on
         case ReceiptSort.PURCHASE_DATE:
             return record.payment_date
+        case ReceiptSort.TITLE:
+            return record.item_name
         case unreachable:
             assert_never(unreachable)
 
 
-def _parse_cursor_value(*, sort: ReceiptSort, value: str) -> date | datetime:
+def _parse_cursor_value(*, sort: ReceiptSort, value: str) -> date | datetime | str:
     match sort:
         case ReceiptSort.RECENT:
             return datetime.fromisoformat(value)
         case ReceiptSort.EXPIRES_ON | ReceiptSort.PURCHASE_DATE:
             return date.fromisoformat(value)
+        case ReceiptSort.TITLE:
+            if not isinstance(value, str):
+                raise _InvalidReceiptCursorError(reason="title cursor value must be a string")
+            return value
         case unreachable:
             assert_never(unreachable)
