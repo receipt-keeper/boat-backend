@@ -320,6 +320,10 @@ async def test_explicit_expiration_is_preserved_until_warranty_inputs_change(
             f"/api/v1/receipts/{receipt_id}",
             json={"memo": "보장 문서 확인"},
         )
+        same_warranty_inputs_update = await client.patch(
+            f"/api/v1/receipts/{receipt_id}",
+            json={"payment_date": "2024-05-26", "period_months": 12},
+        )
         payment_date_update = await client.patch(
             f"/api/v1/receipts/{receipt_id}",
             json={"payment_date": "2025-05-26"},
@@ -328,6 +332,8 @@ async def test_explicit_expiration_is_preserved_until_warranty_inputs_change(
     assert created["expiresOn"] == "2027-09-30"
     assert memo_update.status_code == 200
     assert memo_update.json()["data"]["expiresOn"] == "2027-09-30"
+    assert same_warranty_inputs_update.status_code == 200
+    assert same_warranty_inputs_update.json()["data"]["expiresOn"] == "2027-09-30"
     assert payment_date_update.status_code == 200
     assert payment_date_update.json()["data"]["expiresOn"] == "2026-05-26"
 

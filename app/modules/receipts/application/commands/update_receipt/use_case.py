@@ -89,7 +89,13 @@ def _resolved_expires_on(
 ) -> date | None:
     if _has_update(command, "expires_on"):
         return command.expires_on
-    if _has_update(command, "payment_date") or _has_update(command, "period_months"):
+    payment_date_changed = (
+        _has_update(command, "payment_date") and command.payment_date != current.payment_date
+    )
+    period_months_changed = (
+        _has_update(command, "period_months") and command.period_months != current.period_months
+    )
+    if payment_date_changed or period_months_changed:
         return None
     return current.expires_on
 
