@@ -8,9 +8,9 @@ class ExpiringReceipt:
     user_id: UUID
     receipt_id: UUID
     item_name: str
+    sub_category: str | None
     expires_on: date
     created_at: datetime
-    days_until_expiry: int
 
 
 @dataclass(frozen=True, slots=True)

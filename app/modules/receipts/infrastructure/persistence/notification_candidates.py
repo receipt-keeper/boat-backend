@@ -125,9 +125,9 @@ def _expiring_receipt(
         user_id=record.user_id,
         receipt_id=record.id,
         item_name=record.item_name,
+        sub_category=record.sub_category,
         expires_on=record.expires_on,
         created_at=record.created_at,
-        days_until_expiry=(record.expires_on - query.target_date).days,
     )
 
 

@@ -28,9 +28,12 @@ def warranty_expiry_notification(
     user_id: UUID,
     receipt_id: UUID,
     item_name: str,
-    days_until_expiry: int,
+    sub_category: str | None,
 ) -> DueNotification:
     delivery = delivery_contract_for(due_rule.rule.target_kind)
+    metadata = {"productName": item_name}
+    if sub_category is not None:
+        metadata["subCategory"] = sub_category
     return DueNotification(
         command=CreateNotificationCommand(
             user_id=user_id,
@@ -48,7 +51,7 @@ def warranty_expiry_notification(
             ),
             resource_type=delivery.resource_type,
             resource_id=receipt_id,
-            metadata={"daysUntilExpiry": str(days_until_expiry)},
+            metadata=metadata,
         ),
         occurrence=ScheduleOccurrenceKey(
             campaign_key=due_rule.rule.campaign_key,

@@ -44,7 +44,10 @@ async def test_scheduler_creates_due_warranty_notification_with_device_detail_ro
     assert created.resource_type == "receipt"
     assert created.resource_id == RECEIPT_ID
     assert created.message == "공기청정기 무상 AS 7일 남았어요."
-    assert created.metadata == {"daysUntilExpiry": "7"}
+    assert created.metadata == {
+        "productName": "공기청정기",
+        "subCategory": "공기청정기",
+    }
     assert_no_scheduler_internal_metadata(created.metadata)
     occurrence = next(iter(fixture.occurrence_repository.reserved))
     assert occurrence.campaign_key == "warranty_risk_d7"
@@ -146,7 +149,6 @@ async def test_scheduler_filters_rules_by_campaign_key() -> None:
             warranty_candidate(
                 receipt_id=OTHER_RECEIPT_ID,
                 expires_on=date(2026, 7, 19),
-                days_until_expiry=10,
             ),
         ),
     )

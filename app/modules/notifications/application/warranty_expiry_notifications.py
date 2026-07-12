@@ -72,7 +72,7 @@ class WarrantyExpiryNotifications:
                     user_id=receipt.user_id,
                     receipt_id=receipt.receipt_id,
                     item_name=receipt.item_name,
-                    days_until_expiry=receipt.days_until_expiry,
+                    sub_category=receipt.sub_category,
                 )
             if not page.has_next:
                 return

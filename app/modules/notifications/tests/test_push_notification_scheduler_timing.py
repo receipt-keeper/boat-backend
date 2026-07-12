@@ -56,8 +56,8 @@ async def test_scheduler_uses_mutable_rule_offset_join_delay_and_repeat_data() -
         warranty_candidates=(
             warranty_candidate(
                 expires_on=date(2026, 7, 19),
-                days_until_expiry=10,
                 item_name="노트북",
+                sub_category="노트북",
             ),
         ),
         user_candidates=(
@@ -81,7 +81,10 @@ async def test_scheduler_uses_mutable_rule_offset_join_delay_and_repeat_data() -
         "warranty_expiry",
         "receipt_analysis_reminder",
     ]
-    assert [command.metadata for command in commands] == [{"daysUntilExpiry": "10"}, {}]
+    assert [command.metadata for command in commands] == [
+        {"productName": "노트북", "subCategory": "노트북"},
+        {},
+    ]
     for command in commands:
         assert_no_scheduler_internal_metadata(command.metadata)
 

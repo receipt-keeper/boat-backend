@@ -137,7 +137,6 @@ async def test_list_receipts_expiring_on_matches_exact_offsets_and_pages(
     assert [candidate.receipt_id for candidate in first_d30_page.receipts] == [D30_RECEIPT_ID]
     assert first_d30_page.receipts[0].item_name == "D-30 냉장고"
     assert first_d30_page.receipts[0].expires_on == TARGET_DATE + timedelta(days=30)
-    assert first_d30_page.receipts[0].days_until_expiry == 30
     assert first_d30_page.next_cursor_receipt_id == D30_RECEIPT_ID
     assert first_d30_page.has_next is True
 
@@ -149,7 +148,6 @@ async def test_list_receipts_expiring_on_matches_exact_offsets_and_pages(
 
     assert _candidate_ids(d14_page.receipts) == (D14_RECEIPT_ID,)
     assert _candidate_ids(d10_page.receipts) == (D10_RECEIPT_ID,)
-    assert d10_page.receipts[0].days_until_expiry == 10
     assert _candidate_ids(d7_page.receipts) == (D7_RECEIPT_ID,)
     assert _candidate_ids(d0_page.receipts) == (D0_RECEIPT_ID,)
 
