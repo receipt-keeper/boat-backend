@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-readonly REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+readonly REPO_ROOT
 readonly SQL_PATH="$REPO_ROOT/ops/promotions/upsert_signup_welcome_promotion.sql"
 readonly PROMOTION_ID='8ee55542-0daa-4f2d-94f6-29bb2a71cc31'
 readonly CONTAINER_NAME="boat-signup-welcome-promotion-qa-$$"
@@ -168,7 +169,8 @@ docker run --rm --name "$CONTAINER_NAME" \
 container_started=true
 wait_for_postgres
 
-readonly POSTGRES_PORT="$(docker port "$CONTAINER_NAME" 5432/tcp | sed -n 's/.*:\([0-9][0-9]*\)$/\1/p')"
+POSTGRES_PORT="$(docker port "$CONTAINER_NAME" 5432/tcp | sed -n 's/.*:\([0-9][0-9]*\)$/\1/p')"
+readonly POSTGRES_PORT
 [[ -n "$POSTGRES_PORT" ]] || fail 'PostgreSQL 16 호스트 포트를 찾지 못했다'
 
 (
