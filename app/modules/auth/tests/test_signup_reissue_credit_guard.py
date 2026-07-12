@@ -64,6 +64,7 @@ from app.modules.users.dependencies import (
 )
 
 TEST_NAMESPACE = "reissue-guard-namespace"
+RETENTION_DAYS = 180
 TEST_IDENTITY_HASH_SECRET_V1 = "reissue-guard-test-identity-hash-secret-v1"  # noqa: S105
 TEST_IDENTITY_HASH_SECRET_V2 = "reissue-guard-test-identity-hash-secret-v2"  # noqa: S105
 
@@ -157,7 +158,11 @@ def _build_withdraw_use_case(
             session, DeferredCommitUnitOfWork()
         ),
         credit_withdrawal_cleaner=CreditWithdrawalCleanerAdapter(
-            build_close_credit_account_command_use_case(session, DeferredCommitUnitOfWork())
+            build_close_credit_account_command_use_case(
+                session,
+                DeferredCommitUnitOfWork(),
+                retention_days=RETENTION_DAYS,
+            )
         ),
         push_token_withdrawal_cleaner=PushTokenWithdrawalCleanerAdapter(
             build_delete_user_push_tokens_command_use_case(session, DeferredCommitUnitOfWork())

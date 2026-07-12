@@ -128,6 +128,7 @@ class Settings(BaseSettings):
     )
     credit_claim_retention_days: int = Field(
         default=180,
+        gt=0,
         description="가입 보너스 claim 보존 기간(일). 탈퇴 시 이 기간이 지나면 자동 파기된다.",
     )
     credit_claim_purge_enabled: bool = Field(
@@ -136,6 +137,7 @@ class Settings(BaseSettings):
     )
     credit_claim_purge_interval_seconds: float = Field(
         default=3600.0,
+        gt=0,
         description="가입 보너스 claim 파기 폴러가 만료 row를 조회하는 주기(초).",
     )
 
@@ -166,7 +168,10 @@ class Settings(BaseSettings):
             raise ValueError("prod/staging requires a non-default jwt_secret_key")
         if self.refresh_token_pepper == DEFAULT_REFRESH_TOKEN_PEPPER:
             raise ValueError("prod/staging requires a non-default refresh_token_pepper")
-        if self.identity_hash_secret == DEFAULT_IDENTITY_HASH_SECRET:
+        if (
+            not self.identity_hash_secret.strip()
+            or self.identity_hash_secret == DEFAULT_IDENTITY_HASH_SECRET
+        ):
             raise ValueError("prod/staging requires a non-default identity_hash_secret")
         if not self.firebase_check_revoked:
             raise ValueError("prod/staging requires firebase_check_revoked=true")

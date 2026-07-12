@@ -5,7 +5,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.application.event_publisher import EventPublisher
 from app.core.application.unit_of_work import DeferredCommitUnitOfWork, UnitOfWork
-from app.core.config.settings import get_settings
 from app.core.db.outbox.publisher import OutboxEventPublisher
 from app.core.db.outbox.serialization import EventTypeRegistry
 from app.core.db.session import AsyncSessionDep
@@ -84,12 +83,14 @@ def build_issue_signup_allowance_command_use_case(
 def build_close_credit_account_command_use_case(
     session: AsyncSession,
     unit_of_work: UnitOfWork,
+    *,
+    retention_days: int,
 ) -> CloseCreditsAccountCommandUseCase:
     return CloseCreditsAccountCommandUseCase(
         credit_repository=SqlAlchemyCreditRepository(session),
         unit_of_work=unit_of_work,
         event_publisher=_build_outbox_event_publisher(session),
-        retention_days=get_settings().credit_claim_retention_days,
+        retention_days=retention_days,
     )
 
 

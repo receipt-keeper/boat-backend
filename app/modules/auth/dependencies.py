@@ -213,11 +213,13 @@ async def get_credit_initializer(session: AsyncSessionDep) -> CreditInitializer:
 
 async def get_credit_withdrawal_cleaner(
     session: AsyncSessionDep,
+    settings: SettingsDep,
 ) -> CreditWithdrawalCleaner:
     return CreditWithdrawalCleanerAdapter(
         build_close_credit_account_command_use_case(
             session,
             DeferredCommitUnitOfWork(),
+            retention_days=settings.credit_claim_retention_days,
         )
     )
 

@@ -103,6 +103,17 @@ def test_prod_settings_reject_default_identity_hash_secret() -> None:
         )
 
 
+def test_prod_settings_reject_blank_identity_hash_secret() -> None:
+    with pytest.raises(PydanticValidationError):
+        Settings(
+            app_env="prod",
+            jwt_secret_key=TEST_SIGNING_KEY,
+            refresh_token_pepper=TEST_REFRESH_TOKEN_PEPPER,
+            identity_hash_secret="   ",
+            firebase_check_revoked=True,
+        )
+
+
 def test_prod_settings_reject_disabled_firebase_revocation_check() -> None:
     with pytest.raises(PydanticValidationError):
         Settings(
