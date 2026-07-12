@@ -48,6 +48,7 @@ class Receipt(Entity[UUID]):
         payment_location: str | None = None,
         total_amount: int | None = None,
         period_months: int | None = None,
+        expires_on: date | None = None,
         category: str | None = None,
         sub_category: str | None = None,
         memo: str | None = None,
@@ -128,6 +129,11 @@ class Receipt(Entity[UUID]):
             lambda: _required_file_references(receipt_file_ids)
         )
         notification.raise_if_any()
+        resolved_expires_on = _resolve_expires_on(
+            explicit_expires_on=expires_on,
+            payment_date=new_payment_date.value,
+            period_months=new_period_months.value,
+        )
 
         return cls(
             id=receipt_id or uuid4(),
@@ -139,7 +145,7 @@ class Receipt(Entity[UUID]):
             payment_date=new_payment_date,
             total_amount=new_total_amount,
             period_months=new_period_months,
-            expires_on=_add_months(new_payment_date.value, new_period_months.value),
+            expires_on=resolved_expires_on,
             category=new_category,
             sub_category=new_sub_category,
             memo=new_memo,
@@ -177,6 +183,26 @@ def _required_file_references(value: tuple[UUID, ...] | None) -> ReceiptFileRefe
             ]
         )
     return ReceiptFileReferences(value)
+
+
+def _resolve_expires_on(
+    *,
+    explicit_expires_on: date | None,
+    payment_date: date,
+    period_months: int,
+) -> date:
+    if explicit_expires_on is None:
+        return _add_months(payment_date, period_months)
+    if explicit_expires_on < payment_date:
+        raise ValidationError(
+            [
+                ErrorDetail(
+                    field="expires_on",
+                    message="보장 만료일은 구매일보다 빠를 수 없습니다.",
+                )
+            ]
+        )
+    return explicit_expires_on
 
 
 def _optional_text(

@@ -86,6 +86,13 @@ class CreateReceiptRequest(AppBaseModel):
         ge=1,
         le=60,
     )
+    expires_on: date | None = Field(
+        default=None,
+        description=(
+            "사용자가 확인한 보장 만료일. 문서에 명시된 날짜가 있으면 전달하고, "
+            "미전달 시 구매일과 무상 AS 기간으로 계산한다."
+        ),
+    )
     category: str | None = Field(
         default=None,
         description="대분류 카테고리.",
@@ -139,7 +146,10 @@ class ReceiptResponse(AppBaseModel):
     payment_date: date = Field(alias="paymentDate", description="저장된 구매일 또는 결제일.")
     total_amount: int | None = Field(alias="totalAmount", description="저장된 총 결제 금액.")
     period_months: int = Field(alias="periodMonths", description="저장된 무상 AS 기간.")
-    expires_on: date = Field(alias="expiresOn", description="서버가 계산한 무상 AS 만료일.")
+    expires_on: date = Field(
+        alias="expiresOn",
+        description="명시된 만료일을 우선하고, 없으면 서버가 계산한 무상 AS 만료일.",
+    )
     category: str | None = Field(description="저장된 대분류 카테고리.")
     sub_category: str | None = Field(alias="subCategory", description="저장된 소분류 대표 기기명.")
     memo: str | None = Field(description="저장된 사용자 메모.")
@@ -219,6 +229,12 @@ class UpdateReceiptRequest(AppBaseModel):
         description="무상 AS 기간.",
         ge=1,
         le=60,
+    )
+    expires_on: date | None = Field(
+        default=None,
+        description=(
+            "사용자가 확인한 보장 만료일. null이면 현재 구매일과 무상 AS 기간으로 다시 계산한다."
+        ),
     )
     category: str | None = Field(default=None, description="대분류 카테고리.", max_length=100)
     sub_category: str | None = Field(

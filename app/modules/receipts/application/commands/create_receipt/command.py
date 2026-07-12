@@ -13,6 +13,7 @@ class CreateReceiptCommand:
     payment_location: str | None = None
     total_amount: int | None = None
     period_months: int | None = None
+    expires_on: date | None = None
     category: str | None = None
     sub_category: str | None = None
     memo: str | None = None

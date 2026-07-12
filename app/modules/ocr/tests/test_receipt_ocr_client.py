@@ -1,3 +1,5 @@
+from datetime import date
+
 import pytest
 
 from app.modules.ocr.application.ports.receipt_ocr_client import ReceiptOcrImage
@@ -66,3 +68,30 @@ def test_structured_output_keeps_explicit_serial_number() -> None:
     schema = ReceiptOcrStructuredOutput.model_json_schema()["properties"]
     assert "그중 하나에서라도" in schema["serial_number"]["description"]
     assert "구매 또는 제품과 무관한" in schema["unreadable_file_indexes"]["description"]
+
+
+def test_structured_output_keeps_explicit_expiration_date() -> None:
+    structured_output = ReceiptOcrStructuredOutput(
+        item_name="Apple iPhone",
+        expires_on=date(2027, 9, 30),
+    )
+
+    extracted = structured_output.to_extracted_fields(image_count=1)
+
+    assert extracted.expires_on == date(2027, 9, 30)
+
+    schema = ReceiptOcrStructuredOutput.model_json_schema()["properties"]
+    assert "직접 계산하거나 추측하지 않음" in schema["expires_on"]["description"]
+
+
+def test_multimodal_prompt_classifies_coverage_by_covered_device() -> None:
+    content = _build_openrouter_multimodal_content(
+        images=(ReceiptOcrImage(file_index=0, content=b"applecare", content_type="image/png"),)
+    )
+
+    prompt = content[0]["text"]
+
+    assert isinstance(prompt, str)
+    assert "classify category and" in prompt
+    assert "by the covered device" in prompt
+    assert "Do not calculate or guess expires_on" in prompt

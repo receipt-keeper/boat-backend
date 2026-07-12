@@ -43,6 +43,7 @@ class _ExtractedReceiptOcrFields:
     period_months: int | None
     category: str | None
     sub_category: str | None
+    expires_on: date | None = None
     unreadable_file_indexes: tuple[int, ...] = ()
 
 
@@ -95,6 +96,7 @@ class CategoryReceiptOcrClient:
             period_months=24,
             category="주방 가전",
             sub_category="냉장고",
+            expires_on=date(2028, 12, 31),
         )
 
 
@@ -193,6 +195,7 @@ async def _create_receipt(
     payment_location: str | None = None,
     total_amount: int | None = None,
     period_months: int | None = None,
+    expires_on: date | None = None,
     category: str | None = None,
     sub_category: str | None = None,
     memo: str | None = None,
@@ -209,6 +212,7 @@ async def _create_receipt(
             "payment_date": payment_date.isoformat(),
             "total_amount": total_amount,
             "period_months": period_months,
+            "expires_on": None if expires_on is None else expires_on.isoformat(),
             "category": category,
             "sub_category": sub_category,
             "memo": memo,
@@ -297,6 +301,65 @@ async def test_create_receipt_persists_final_values(
         TEST_FILE_ID,
         SECOND_TEST_FILE_ID,
     }
+
+
+async def test_explicit_expiration_is_preserved_until_warranty_inputs_change(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with _client(postgres_session_factory) as client:
+        created = await _create_receipt(
+            client,
+            item_name="Apple iPhone",
+            payment_date=date(2024, 5, 26),
+            period_months=12,
+            expires_on=date(2027, 9, 30),
+        )
+        receipt_id = created["receiptId"]
+
+        memo_update = await client.patch(
+            f"/api/v1/receipts/{receipt_id}",
+            json={"memo": "보장 문서 확인"},
+        )
+        same_warranty_inputs_update = await client.patch(
+            f"/api/v1/receipts/{receipt_id}",
+            json={"payment_date": "2024-05-26", "period_months": 12},
+        )
+        payment_date_update = await client.patch(
+            f"/api/v1/receipts/{receipt_id}",
+            json={"payment_date": "2025-05-26"},
+        )
+
+    assert created["expiresOn"] == "2027-09-30"
+    assert memo_update.status_code == 200
+    assert memo_update.json()["data"]["expiresOn"] == "2027-09-30"
+    assert same_warranty_inputs_update.status_code == 200
+    assert same_warranty_inputs_update.json()["data"]["expiresOn"] == "2027-09-30"
+    assert payment_date_update.status_code == 200
+    assert payment_date_update.json()["data"]["expiresOn"] == "2026-05-26"
+
+
+async def test_create_receipt_rejects_expiration_before_payment_date(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    payload = {
+        "item_name": "Apple iPhone",
+        "payment_date": "2024-05-26",
+        "period_months": 12,
+        "expires_on": "2020-01-01",
+        "receipt_file_ids": [str(TEST_FILE_ID)],
+    }
+
+    async with _client(postgres_session_factory) as client:
+        response = await client.post("/api/v1/receipts", json=payload)
+
+    body = response.json()
+    assert response.status_code == 422
+    assert body["data"]["errors"] == [
+        {
+            "field": "expires_on",
+            "message": "보장 만료일은 구매일보다 빠를 수 없습니다.",
+        }
+    ]
 
 
 def test_receipts_expose_final_registration_route_only() -> None:
@@ -779,6 +842,7 @@ async def test_ocr_auto_fill_category_can_be_saved(
                 "payment_date": ocr_data["payment_date"],
                 "total_amount": ocr_data["total_amount"],
                 "period_months": ocr_data["period_months"],
+                "expires_on": ocr_data["expires_on"],
                 "category": ocr_data["category"],
                 "sub_category": ocr_data["sub_category"],
                 "receipt_file_ids": [str(TEST_FILE_ID)],
@@ -789,10 +853,12 @@ async def test_ocr_auto_fill_category_can_be_saved(
     assert ocr_data["category"] == "주방 가전"
     assert ocr_data["sub_category"] == "냉장고"
     assert ocr_data["serial_number"] == "SN-20240526-001"
+    assert ocr_data["expires_on"] == "2028-12-31"
     assert save_response.status_code == 201
     assert save_body["data"]["category"] == "주방 가전"
     assert save_body["data"]["subCategory"] == "냉장고"
     assert save_body["data"]["serialNumber"] == "SN-20240526-001"
+    assert save_body["data"]["expiresOn"] == "2028-12-31"
 
 
 async def test_create_receipt_calculates_expiration_on_month_end(

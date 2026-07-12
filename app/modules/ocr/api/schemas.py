@@ -57,7 +57,9 @@ class ReceiptOcrResultResponse(AppBaseModel):
     payment_date: date = Field(description="구매일")
     total_amount: int | None = Field(description="총 결제 금액")
     period_months: int = Field(description="무상 AS 기간. 인식 실패 시 12개월 기본값")
-    expires_on: date = Field(description="무상 AS 만료일")
+    expires_on: date = Field(
+        description="문서에 명시된 만료일을 우선하고, 없으면 구매일과 보증기간으로 계산한 만료일"
+    )
     category: str | None = Field(
         description="대분류 카테고리 추천값. 사용자가 수정 후 저장할 수 있다."
     )
