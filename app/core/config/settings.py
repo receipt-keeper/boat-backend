@@ -1,5 +1,5 @@
 from functools import lru_cache
-from typing import Annotated, Final, Literal, Self
+from typing import Annotated, Final, Literal, Self, assert_never
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_core import PydanticCustomError
@@ -113,8 +113,13 @@ class Settings(BaseSettings):
     )
 
     default_profile_image_url: str | None = None
-    file_storage_backend: Literal["local"] = "local"
+    file_storage_backend: Literal["local", "s3"] = "local"
     file_storage_root: str = "./storage/files"
+    s3_bucket: str | None = None
+    s3_region: str | None = None
+    s3_endpoint_url: str | None = None
+    s3_access_key_id: str | None = None
+    s3_secret_access_key: str | None = None
     file_max_upload_bytes: int = Field(default=10_485_760, gt=0)
     file_max_upload_count: int = Field(default=5, gt=0)
     file_allowed_content_types: Annotated[tuple[str, ...], NoDecode] = (
@@ -156,6 +161,26 @@ class Settings(BaseSettings):
         if not self.firebase_check_revoked:
             raise ValueError("prod/staging requires firebase_check_revoked=true")
         return self
+
+    @model_validator(mode="after")
+    def validate_file_storage_configuration(self) -> Self:
+        match self.file_storage_backend:
+            case "local":
+                return self
+            case "s3":
+                if not self.s3_bucket or not self.s3_bucket.strip() or not self.s3_region:
+                    raise ValueError("FILE_STORAGE_BACKEND=s3 requires S3_BUCKET and S3_REGION")
+                has_access_key = bool(self.s3_access_key_id and self.s3_access_key_id.strip())
+                has_secret_key = bool(
+                    self.s3_secret_access_key and self.s3_secret_access_key.strip()
+                )
+                if has_access_key != has_secret_key:
+                    raise ValueError(
+                        "S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY must be configured together"
+                    )
+                return self
+            case unreachable:
+                assert_never(unreachable)
 
 
 @lru_cache(maxsize=1)

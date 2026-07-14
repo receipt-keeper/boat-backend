@@ -25,6 +25,8 @@ uv run pyright
 uv run pytest
 ```
 
+운영 환경변수 계약은 [`docs/운영-환경변수.md`](docs/운영-환경변수.md), v1.0.0 Git Flow와 GHCR 이미지 tag 규칙은 [`docs/릴리스-Git-Flow.md`](docs/릴리스-Git-Flow.md)에 정리되어 있다.
+
 ## Architecture
 
 The application uses one deployable FastAPI service with strict internal module

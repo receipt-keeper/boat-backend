@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, assert_never
 from uuid import UUID
 
 from fastapi import Depends, Request
@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.application.event_publisher import EventPublisher
 from app.core.application.unit_of_work import UnitOfWork
+from app.core.config.settings import Settings
 from app.core.db.outbox.publisher import OutboxEventPublisher
 from app.core.db.outbox.serialization import EventTypeRegistry
 from app.core.db.session import AsyncSessionDep
@@ -26,6 +27,7 @@ from app.modules.files.application.queries.open_file_content.use_case import (
 from app.modules.files.domain.events import FileDeleted, FileUploaded
 from app.modules.files.infrastructure.persistence.repository import SqlAlchemyFileRepository
 from app.modules.files.infrastructure.storage.local import LocalObjectStorage
+from app.modules.files.infrastructure.storage.s3 import S3ObjectStorage
 
 
 class AllowFileDeleteReferenceGuard(FileReferenceGuard):
@@ -37,8 +39,14 @@ def build_file_repository(session: AsyncSession) -> FileRepository:
     return SqlAlchemyFileRepository(session)
 
 
-def build_object_storage(root: str) -> ObjectStorage:
-    return LocalObjectStorage(root=root)
+def build_object_storage(settings: Settings) -> ObjectStorage:
+    match settings.file_storage_backend:
+        case "local":
+            return LocalObjectStorage(root=settings.file_storage_root)
+        case "s3":
+            return S3ObjectStorage.from_settings(settings)
+        case unreachable:
+            assert_never(unreachable)
 
 
 async def get_file_repository(
@@ -67,14 +75,8 @@ async def get_files_event_publisher(session: AsyncSessionDep) -> EventPublisher:
     return OutboxEventPublisher(session=session, registry=registry)
 
 
-def get_local_file_storage_root(request: Request) -> str:
-    return request.app.state.settings.file_storage_root
-
-
-async def get_object_storage(
-    root: Annotated[str, Depends(get_local_file_storage_root)],
-) -> ObjectStorage:
-    return build_object_storage(root)
+async def get_object_storage(request: Request) -> ObjectStorage:
+    return build_object_storage(request.app.state.settings)
 
 
 async def get_upload_file_command_use_case(
