@@ -1,14 +1,34 @@
 from functools import lru_cache
 from typing import Annotated, Final, Literal, Self, assert_never
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_core import PydanticCustomError
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+from sqlalchemy.engine import URL
 
 DEFAULT_JWT_SECRET_KEY: Final = "local-development-secret-change-me-32bytes"  # noqa: S105
 DEFAULT_REFRESH_TOKEN_PEPPER: Final = "local-refresh-token-pepper-change-me"  # noqa: S105
 DEFAULT_PROMOTION_BENEFICIARY_HMAC_SECRET: Final = "local-promotion-beneficiary-hmac-change-me"  # noqa: S105
 SECURE_DEPLOYMENT_ENVS: Final = {"staging", "prod"}
+
+
+def build_database_url(
+    *,
+    host: str,
+    port: int,
+    database: str,
+    username: str,
+    password: str,
+) -> URL:
+    """개별 PostgreSQL 구성값을 SQLAlchemy URL로 조립한다."""
+    return URL.create(
+        drivername="postgresql+asyncpg",
+        username=username,
+        password=password,
+        host=host,
+        port=port,
+        database=database,
+    )
 
 
 class Settings(BaseSettings):
@@ -26,9 +46,36 @@ class Settings(BaseSettings):
     redoc_url: str | None = "/redoc"
     openapi_url: str | None = "/openapi.json"
 
-    database_url: str = Field(
-        default="postgresql+asyncpg://boat:boat@localhost:5432/boat",
-        description="Async SQLAlchemy database URL.",
+    db_host: str = Field(
+        default="",
+        min_length=1,
+        validate_default=True,
+        description="PostgreSQL host.",
+    )
+    db_port: int = Field(
+        default=0,
+        ge=1,
+        le=65_535,
+        validate_default=True,
+        description="PostgreSQL port.",
+    )
+    db_name: str = Field(
+        default="",
+        min_length=1,
+        validate_default=True,
+        description="PostgreSQL database name.",
+    )
+    db_user: str = Field(
+        default="",
+        min_length=1,
+        validate_default=True,
+        description="PostgreSQL username.",
+    )
+    db_password: SecretStr = Field(
+        default=SecretStr(""),
+        min_length=1,
+        validate_default=True,
+        description="PostgreSQL password.",
     )
     openrouter_api_key: str | None = Field(
         default=None,
@@ -152,6 +199,17 @@ class Settings(BaseSettings):
                 "promotion_beneficiary_hmac_secret must not have surrounding whitespace",
             )
         return value
+
+    @property
+    def database_url(self) -> URL:
+        """개별 DB 설정을 비동기 PostgreSQL SQLAlchemy URL로 반환한다."""
+        return build_database_url(
+            host=self.db_host,
+            port=self.db_port,
+            database=self.db_name,
+            username=self.db_user,
+            password=self.db_password.get_secret_value(),
+        )
 
     @model_validator(mode="after")
     def reject_default_token_secrets_for_secure_envs(self) -> Self:

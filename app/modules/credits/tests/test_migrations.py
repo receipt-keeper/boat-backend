@@ -10,6 +10,7 @@ from app.core.config.settings import get_settings
 from app.modules.credits.tests.migration_credit_table_contract import (
     assert_credit_tables_are_constrained,
 )
+from tests.support.database import configure_database_environment
 
 PROJECT_ROOT = Path(__file__).parents[4]
 CREDIT_MIGRATION_PATH = (
@@ -70,7 +71,7 @@ def test_credits_migration_creates_credit_tables(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Given: 테스트 PostgreSQL DB와 Alembic 설정이 준비되어 있다.
-    monkeypatch.setenv("DATABASE_URL", postgres_async_database_url)
+    configure_database_environment(monkeypatch, postgres_async_database_url)
     get_settings.cache_clear()
     config = _alembic_config()
 

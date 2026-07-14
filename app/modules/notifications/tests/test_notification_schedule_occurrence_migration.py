@@ -11,6 +11,7 @@ from app.modules.notifications.tests.migration_support import (
     alembic_config,
     table_column_names,
 )
+from tests.support.database import configure_database_environment
 
 OCCURRENCE_MIGRATION_PATH = (
     PROJECT_ROOT
@@ -41,7 +42,7 @@ def test_schedule_occurrence_migration_creates_composite_pk_without_foreign_keys
     postgres_async_database_url: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("DATABASE_URL", postgres_async_database_url)
+    configure_database_environment(monkeypatch, postgres_async_database_url)
     get_settings.cache_clear()
     config = alembic_config()
 

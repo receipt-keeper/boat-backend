@@ -2,6 +2,7 @@ import json
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from pydantic import SecretStr
 
 from app.core.config.settings import Settings
 from app.core.db.outbox.serialization import UnregisteredEventTypeError
@@ -114,10 +115,16 @@ async def test_unhandled_exception_uses_failure_envelope() -> None:
     assert body["data"]["errors"] == []
 
 
-def test_settings_can_override_database_url_without_import_global_session() -> None:
-    settings = Settings(database_url="postgresql+asyncpg://test:test@localhost:5432/test")
+def test_settings_builds_database_url_without_import_global_session() -> None:
+    settings = Settings(
+        db_host="localhost",
+        db_port=5432,
+        db_name="test",
+        db_user="test",
+        db_password=SecretStr("test"),
+    )
 
-    assert settings.database_url.endswith("/test")
+    assert settings.database_url.database == "test"
 
 
 def test_merged_event_registry_resolves_notification_module_event_types() -> None:
@@ -136,7 +143,13 @@ def test_merged_event_registry_still_rejects_unregistered_event_types() -> None:
 
 async def test_database_state_is_created_by_lifespan_not_import() -> None:
     test_app = create_app(
-        Settings(database_url="postgresql+asyncpg://test:test@localhost:5432/test")
+        Settings(
+            db_host="localhost",
+            db_port=5432,
+            db_name="test",
+            db_user="test",
+            db_password=SecretStr("test"),
+        )
     )
 
     assert not hasattr(test_app.state, "engine")

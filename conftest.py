@@ -1,7 +1,14 @@
+import os
 from collections.abc import AsyncIterator
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+
+os.environ.setdefault("DB_HOST", "localhost")
+os.environ.setdefault("DB_PORT", "5432")
+os.environ.setdefault("DB_NAME", "boat")
+os.environ.setdefault("DB_USER", "boat")
+os.environ.setdefault("DB_PASSWORD", "boat")
 
 from app.main import app
 

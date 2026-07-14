@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.core.config.settings import get_settings
 from app.modules.notifications.infrastructure.persistence import orm
 from app.modules.notifications.jobs.cleanup_stale_tokens import run
+from tests.support.database import configure_database_environment
 
 STALE_USER_ID = UUID("00000000-0000-0000-0000-000000000401")
 FRESH_USER_ID = UUID("00000000-0000-0000-0000-000000000402")
@@ -37,7 +38,7 @@ async def test_cleanup_job_deletes_only_tokens_past_stale_window(
                 updated_at=now,
             )
         )
-    monkeypatch.setenv("DATABASE_URL", postgres_async_database_url)
+    configure_database_environment(monkeypatch, postgres_async_database_url)
     get_settings.cache_clear()
 
     try:
@@ -59,7 +60,7 @@ async def test_cleanup_job_is_idempotent_when_nothing_is_stale(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Given: 정리 대상이 없는 DB가 있다.
-    monkeypatch.setenv("DATABASE_URL", postgres_async_database_url)
+    configure_database_environment(monkeypatch, postgres_async_database_url)
     get_settings.cache_clear()
 
     try:

@@ -8,13 +8,13 @@ from app.core.db.base import Base
 from app.core.db.outbox import orm as outbox_orm
 from app.core.db.session import build_engine, build_session_factory
 from app.modules.credits.infrastructure.persistence import orm as credits_orm
+from tests.support.database import database_url_from_postgres_container
 
 
 @pytest.fixture(scope="module")
 def postgres_async_database_url() -> Iterator[str]:
     with PostgresContainer("postgres:16", driver=None) as postgres:
-        database_url = postgres.get_connection_url()
-        yield database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        yield database_url_from_postgres_container(postgres)
 
 
 @pytest.fixture
