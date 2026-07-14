@@ -17,6 +17,7 @@ from app.core.db.outbox.publisher import OutboxEventPublisher
 from app.core.db.outbox.serialization import EventTypeRegistry
 from app.core.db.session import build_engine, build_session_factory
 from app.core.domain.events import DomainEvent
+from tests.support.database import database_url_from_postgres_container
 
 
 class HandlerFailure(Exception):
@@ -26,8 +27,7 @@ class HandlerFailure(Exception):
 @pytest.fixture(scope="module")
 def postgres_async_database_url() -> Iterator[str]:
     with PostgresContainer("postgres:16", driver=None) as postgres:
-        database_url = postgres.get_connection_url()
-        yield database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        yield database_url_from_postgres_container(postgres)
 
 
 @pytest.fixture

@@ -7,6 +7,7 @@ from testcontainers.postgres import PostgresContainer
 from app.core.db.base import Base
 from app.core.db.session import build_engine, build_session_factory
 from app.main import app
+from tests.support.database import database_url_from_postgres_container
 
 
 @pytest.fixture(autouse=True)
@@ -20,8 +21,7 @@ def clear_auth_dependency_overrides() -> Iterator[None]:
 @pytest.fixture(scope="module")
 def postgres_async_database_url() -> Iterator[str]:
     with PostgresContainer("postgres:16", driver=None) as postgres:
-        database_url = postgres.get_connection_url()
-        yield database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        yield database_url_from_postgres_container(postgres)
 
 
 @pytest.fixture

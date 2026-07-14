@@ -11,6 +11,7 @@ from app.modules.notifications.tests.migration_support import (
     alembic_config,
     table_column_names,
 )
+from tests.support.database import configure_database_environment
 
 SCHEDULE_RULE_MIGRATION_PATH = (
     PROJECT_ROOT / "alembic" / "versions" / "20260709_0020_create_notification_schedule_rules.py"
@@ -44,7 +45,7 @@ def test_schedule_rule_migration_creates_exact_seeded_table(
     postgres_async_database_url: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("DATABASE_URL", postgres_async_database_url)
+    configure_database_environment(monkeypatch, postgres_async_database_url)
     get_settings.cache_clear()
     config = alembic_config()
 
@@ -167,7 +168,7 @@ def test_scheduler_query_indexes_upgrade_and_downgrade(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Given: scheduler 후보 조회가 사용하는 users/receipts 테이블이 존재한다.
-    monkeypatch.setenv("DATABASE_URL", postgres_async_database_url)
+    configure_database_environment(monkeypatch, postgres_async_database_url)
     get_settings.cache_clear()
     config = alembic_config()
 

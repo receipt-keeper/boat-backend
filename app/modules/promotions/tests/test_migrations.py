@@ -17,6 +17,7 @@ from app.modules.promotions.tests.migration_signup_beneficiary_downgrade import 
     insert_signup_promotion_and_redemption,
     read_signup_data,
 )
+from tests.support.database import configure_database_environment
 
 PROJECT_ROOT = Path(__file__).parents[4]
 PROMOTION_MIGRATION_PATH = (
@@ -76,7 +77,7 @@ def test_promotion_migration_creates_constrained_tables(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Given: 테스트 PostgreSQL DB와 Alembic 설정이 준비되어 있다.
-    monkeypatch.setenv("DATABASE_URL", postgres_async_database_url)
+    configure_database_environment(monkeypatch, postgres_async_database_url)
     get_settings.cache_clear()
     config = _alembic_config()
 
@@ -99,7 +100,7 @@ def test_promotion_migration_rejects_invalid_context_schema_inputs(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Given: 최신 migration이 적용된 테스트 DB가 있다.
-    monkeypatch.setenv("DATABASE_URL", postgres_async_database_url)
+    configure_database_environment(monkeypatch, postgres_async_database_url)
     get_settings.cache_clear()
     config = _alembic_config()
 
@@ -129,7 +130,7 @@ def test_promotion_contents_reject_duplicate_promotion_content(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Given: 최신 migration이 적용된 테스트 DB와 기존 프로모션이 있다.
-    monkeypatch.setenv("DATABASE_URL", postgres_async_database_url)
+    configure_database_environment(monkeypatch, postgres_async_database_url)
     get_settings.cache_clear()
     config = _alembic_config()
 
@@ -157,7 +158,7 @@ def test_promotion_migration_downgrade_preserves_rows_and_hides_signup_campaign(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Given: signup context와 beneficiary key를 가진 최신 promotion row가 있다.
-    monkeypatch.setenv("DATABASE_URL", postgres_async_database_url)
+    configure_database_environment(monkeypatch, postgres_async_database_url)
     get_settings.cache_clear()
     config = _alembic_config()
 

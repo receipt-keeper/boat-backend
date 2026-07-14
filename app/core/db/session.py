@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from typing import Annotated
 
 from fastapi import Depends, Request
+from sqlalchemy.engine import URL
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -11,7 +12,7 @@ from sqlalchemy.ext.asyncio import (
 )
 
 
-def build_engine(database_url: str) -> AsyncEngine:
+def build_engine(database_url: URL | str) -> AsyncEngine:
     return create_async_engine(database_url, pool_pre_ping=True)
 
 

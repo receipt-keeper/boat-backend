@@ -17,6 +17,7 @@ from app.core.security.principal import AuthenticatedPrincipal
 from app.main import create_app
 from app.modules.auth.api.security import authenticate_current_principal
 from app.modules.notifications.infrastructure.persistence import orm as _notifications_orm
+from tests.support.database import database_url_from_postgres_container
 
 _ = _notifications_orm
 
@@ -65,8 +66,7 @@ def _authenticate_current_principal_for(
 @pytest.fixture(scope="module")
 def postgres_async_database_url() -> Iterator[str]:
     with PostgresContainer("postgres:16", driver=None) as postgres:
-        database_url = postgres.get_connection_url()
-        yield database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        yield database_url_from_postgres_container(postgres)
 
 
 @pytest.fixture

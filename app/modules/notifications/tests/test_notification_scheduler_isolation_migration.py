@@ -9,6 +9,7 @@ from app.modules.notifications.tests.migration_support import (
     alembic_config,
     table_column_names,
 )
+from tests.support.database import configure_database_environment
 
 SCHEDULER_INTERNAL_USER_NOTIFICATION_COLUMN = "scheduled_key"
 
@@ -31,7 +32,7 @@ def test_user_notifications_schema_stays_scheduler_agnostic_after_head(
     postgres_async_database_url: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("DATABASE_URL", postgres_async_database_url)
+    configure_database_environment(monkeypatch, postgres_async_database_url)
     get_settings.cache_clear()
     config = alembic_config()
 

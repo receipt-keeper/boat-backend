@@ -9,6 +9,7 @@ from sqlalchemy import text
 from alembic import command
 from app.core.config.settings import get_settings
 from app.core.db.session import build_engine
+from tests.support.database import configure_database_environment
 
 _PRE_CATEGORY_ENUM_REVISION = "20260710_0022"
 
@@ -17,7 +18,7 @@ def test_receipts_migration_creates_receipt_tables(
     postgres_async_database_url: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("DATABASE_URL", postgres_async_database_url)
+    configure_database_environment(monkeypatch, postgres_async_database_url)
     get_settings.cache_clear()
     project_root = Path(__file__).parents[4]
     config = Config()
@@ -83,7 +84,7 @@ def test_receipt_category_enum_migration_normalizes_legacy_values(
     postgres_async_database_url: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("DATABASE_URL", postgres_async_database_url)
+    configure_database_environment(monkeypatch, postgres_async_database_url)
     get_settings.cache_clear()
     project_root = Path(__file__).parents[4]
     config = Config()

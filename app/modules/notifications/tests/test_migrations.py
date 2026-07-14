@@ -15,6 +15,7 @@ from app.modules.notifications.tests.migration_notification_table_contract impor
     assert_backfill_is_correct,
     insert_legacy_notification_rows,
 )
+from tests.support.database import configure_database_environment
 
 PROJECT_ROOT = Path(__file__).parents[4]
 GENERALIZE_MIGRATION_PATH = (
@@ -68,7 +69,7 @@ def test_generalize_notifications_migration_backfills_legacy_rows(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Given: 테스트 PostgreSQL DB와 Alembic 설정이 준비되어 있다.
-    monkeypatch.setenv("DATABASE_URL", postgres_async_database_url)
+    configure_database_environment(monkeypatch, postgres_async_database_url)
     get_settings.cache_clear()
     config = _alembic_config()
 
@@ -95,7 +96,7 @@ def test_generalize_notifications_migration_downgrade_round_trip(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Given: head까지 올라간 상태에서 대표 데이터가 채워져 있다.
-    monkeypatch.setenv("DATABASE_URL", postgres_async_database_url)
+    configure_database_environment(monkeypatch, postgres_async_database_url)
     get_settings.cache_clear()
     config = _alembic_config()
 
@@ -127,7 +128,7 @@ def test_generalize_notifications_migration_downgrade_normalizes_opaque_values(
 ) -> None:
     # Given: head 스키마에 새 API가 수용한 불투명 값 행이 존재한다 —
     # 구 enum 밖 resource_type('file') 행과 구 enum 밖 kind('ocr_completed') 행.
-    monkeypatch.setenv("DATABASE_URL", postgres_async_database_url)
+    configure_database_environment(monkeypatch, postgres_async_database_url)
     get_settings.cache_clear()
     config = _alembic_config()
 
