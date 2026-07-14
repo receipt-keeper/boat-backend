@@ -35,6 +35,7 @@ EXPECTED_FILES = {
     "infrastructure/persistence/mapper.py",
     "infrastructure/persistence/repository.py",
     "infrastructure/storage/local.py",
+    "infrastructure/storage/s3.py",
     "dependencies.py",
 }
 
@@ -47,6 +48,11 @@ FORBIDDEN_FILES = {
 EXPECTED_SETTINGS = {
     "file_storage_backend",
     "file_storage_root",
+    "s3_bucket",
+    "s3_region",
+    "s3_endpoint_url",
+    "s3_access_key_id",
+    "s3_secret_access_key",
     "file_max_upload_bytes",
     "file_max_upload_count",
     "file_allowed_content_types",
