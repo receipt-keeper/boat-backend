@@ -136,6 +136,13 @@ class Settings(BaseSettings):
             return tuple(item.strip() for item in value.split(",") if item.strip())
         return value
 
+    @field_validator("s3_endpoint_url", mode="before")
+    @classmethod
+    def normalize_blank_s3_endpoint_url(cls, value: str | None) -> str | None:
+        if value is not None and not value.strip():
+            return None
+        return value
+
     @field_validator("promotion_beneficiary_hmac_secret")
     @classmethod
     def reject_blank_promotion_beneficiary_hmac_secret(cls, value: str) -> str:

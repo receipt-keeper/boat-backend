@@ -83,6 +83,17 @@ def test_s3_settings_require_bucket_and_region() -> None:
         Settings(file_storage_backend="s3")
 
 
+def test_s3_settings_normalize_blank_endpoint_url() -> None:
+    settings = Settings(
+        file_storage_backend="s3",
+        s3_bucket=TEST_BUCKET,
+        s3_region=TEST_REGION,
+        s3_endpoint_url="",
+    )
+
+    assert settings.s3_endpoint_url is None
+
+
 def test_s3_settings_require_static_credentials_as_a_pair() -> None:
     with pytest.raises(
         ValueError,
