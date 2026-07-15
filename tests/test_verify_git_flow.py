@@ -19,10 +19,19 @@ from scripts.verify_git_flow import PolicyDecision, cli, verify_git_flow
         ("develop", "feat/API-client"),
         ("develop", "feat/a.@"),
         ("develop", "fix/인증-수정"),
+        ("develop", "refactor/auth-service"),
+        ("develop", "test/auth-service"),
+        ("develop", "docs/auth-service"),
+        ("develop", "chore/auth-service"),
+        ("develop", "ci/auth-service"),
         ("develop", "dependabot/uv/fastapi-1.2.3"),
         ("develop", "dependabot/docker/dockerfile-1.2.3"),
         ("release/v1.0.2", "fix/release-blocker"),
         ("release/v1.0.2", "fix/API-bug"),
+        ("release/v1.0.2", "test/release-blocker"),
+        ("release/v1.0.2", "docs/release-blocker"),
+        ("release/v1.0.2", "chore/release-blocker"),
+        ("release/v1.0.2", "ci/release-blocker"),
         ("release/v1.0.2", "58-248-소셜-회원가입-API-추가"),
     ],
 )
@@ -138,6 +147,17 @@ def test_unsafe_riido_branch_is_rejected(head: str) -> None:
     assert decision is PolicyDecision.INVALID_BRANCH
 
 
+def test_non_nfc_conventional_branch_is_rejected() -> None:
+    # Given: 일반 topic branch에 분해형 한글이 포함되어 있다.
+    head = unicodedata.normalize("NFD", "fix/인증-수정")
+
+    # When: develop 대상 경로를 검증한다.
+    decision = verify_git_flow(base="develop", head=head)
+
+    # Then: 모든 source branch에 적용되는 NFC 정책으로 거부된다.
+    assert decision is PolicyDecision.INVALID_BRANCH
+
+
 @pytest.mark.parametrize(
     "head",
     [
@@ -173,13 +193,13 @@ def test_unsupported_branch_format_is_rejected_for_develop(head: str) -> None:
     assert decision is PolicyDecision.INVALID_BRANCH
 
 
-def test_non_semver_release_base_is_skipped() -> None:
-    # Given: SemVer 형식이 아니어서 보호 대상이 아닌 release 이름의 base branch가 있다.
+def test_non_semver_release_base_is_rejected() -> None:
+    # Given: release ruleset에는 포함되지만 SemVer 형식이 아닌 base branch가 있다.
     # When: Git Flow 경로를 검증한다.
     decision = verify_git_flow(base="release/next", head="fix/release-blocker")
 
-    # Then: 다른 비보호 branch와 마찬가지로 stacked PR 경로 검사를 생략한다.
-    assert decision is PolicyDecision.SKIPPED
+    # Then: 보호된 release 경로를 우회하지 못하도록 거부된다.
+    assert decision is PolicyDecision.INVALID_ROUTE
 
 
 def test_release_version_rejects_unicode_digits() -> None:
@@ -220,6 +240,15 @@ def test_feature_branch_cannot_target_release() -> None:
                 "receipt-keeper/boat-backend",
             ],
             1,
+        ),
+        (
+            [
+                "develop",
+                "main",
+                "receipt-keeper/boat-backend",
+                "receipt-keeper/boat-backend",
+            ],
+            0,
         ),
         (
             [
