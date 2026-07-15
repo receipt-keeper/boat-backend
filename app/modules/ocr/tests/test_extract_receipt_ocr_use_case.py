@@ -78,6 +78,23 @@ class UnsupportedReceiptOcrClient:
         )
 
 
+class MixedFailureReceiptOcrClient:
+    async def extract(self, *, images: tuple[ReceiptOcrImage, ...]) -> ExtractedReceiptOcrFields:
+        return ExtractedReceiptOcrFields(
+            item_name=None,
+            brand_name=None,
+            serial_number=None,
+            payment_location=None,
+            payment_date=None,
+            total_amount=None,
+            period_months=None,
+            category=None,
+            sub_category=None,
+            unreadable_file_indexes=(2,),
+            unsupported_file_indexes=(1,),
+        )
+
+
 @dataclass(slots=True)
 class InvalidExpirationReceiptOcrClient:
     async def extract(self, *, images: tuple[ReceiptOcrImage, ...]) -> ExtractedReceiptOcrFields:
@@ -229,6 +246,37 @@ async def test_extract_receipt_ocr_use_case_does_not_consume_credit_when_unsuppo
     assert "file_indexes=(1,)" in caplog.text
     assert "device" not in caplog.text
     assert "food" not in caplog.text
+
+
+async def test_extract_receipt_ocr_use_case_reports_all_mixed_failure_indexes() -> None:
+    reserve_credit_use_case = FakeUseCreditCommandUseCase(commands=[])
+    finalize_credit_use_case = FakeUseCreditCommandUseCase(commands=[])
+    unit_of_work = FakeUnitOfWork()
+    use_case = ExtractReceiptOcrCommandUseCase(
+        ocr_client=MixedFailureReceiptOcrClient(),
+        reserve_credit_command_use_case=reserve_credit_use_case,
+        finalize_credit_usage_command_use_case=finalize_credit_use_case,
+        unit_of_work=unit_of_work,
+    )
+
+    with pytest.raises(UnsupportedReceiptError) as error:
+        await use_case.execute(
+            ExtractReceiptOcrCommand(
+                user_id=USER_ID,
+                images=(
+                    ReceiptOcrImage(file_index=0, content=b"device", content_type="image/png"),
+                    ReceiptOcrImage(file_index=1, content=b"food", content_type="image/png"),
+                    ReceiptOcrImage(file_index=2, content=b"blurred", content_type="image/png"),
+                ),
+            )
+        )
+
+    assert error.value.unsupported_file_indexes == (1,)
+    assert error.value.unreadable_file_indexes == (2,)
+    assert error.value.file_indexes == (1, 2)
+    assert len(reserve_credit_use_case.commands) == 1
+    assert finalize_credit_use_case.commands == []
+    assert unit_of_work.rollback_count == 1
 
 
 async def test_extract_receipt_ocr_use_case_recalculates_invalid_explicit_expiration() -> None:

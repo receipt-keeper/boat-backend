@@ -78,6 +78,23 @@ class PartiallyUnsupportedReceiptOcrClient:
         )
 
 
+class MixedFailureReceiptOcrClient:
+    async def extract(self, *, images: tuple[ReceiptOcrImage, ...]) -> ExtractedReceiptOcrFields:
+        return ExtractedReceiptOcrFields(
+            item_name="삼성 냉장고",
+            brand_name="삼성",
+            serial_number=None,
+            payment_location="전자랜드",
+            payment_date=date.today(),
+            total_amount=129000,
+            period_months=12,
+            category="주방 가전",
+            sub_category="냉장고",
+            unreadable_file_indexes=(2,),
+            unsupported_file_indexes=(1,),
+        )
+
+
 class ProviderUnavailableReceiptOcrClient:
     async def extract(self, *, images: tuple[ReceiptOcrImage, ...]) -> ExtractedReceiptOcrFields:
         raise ReceiptOcrProviderUnavailableError()
@@ -347,7 +364,10 @@ async def test_receipt_ocr_endpoint_returns_unsupported_receipt_code_and_file_in
     assert body["success"] is False
     assert body["status"] == 422
     assert body["data"]["code"] == "UNSUPPORTED_RECEIPT"
-    assert body["data"]["message"] == "가전·전자·IT 기기 관련 영수증만 분석할 수 있습니다."
+    assert body["data"]["message"] == (
+        "현재는 전자제품 영수증만 지원하고 있어요! "
+        "더 다양한 제품도 곧 보트랩에서 만나보실 수 있습니다."
+    )
     assert body["data"]["path"] == "/api/v1/ocr"
     assert body["data"]["errors"] == [
         {
@@ -362,6 +382,41 @@ async def test_receipt_ocr_endpoint_returns_unsupported_receipt_code_and_file_in
     assert "ocr_analysis_failed reason=unsupported_receipt" in caplog.text
     assert "file_indexes=(1,)" in caplog.text
     assert repr(_PNG_BYTES) not in caplog.text
+
+
+async def test_receipt_ocr_endpoint_returns_all_mixed_failure_indexes(
+    client: AsyncClient,
+    override_receipt_ocr_client: Callable[[MixedFailureReceiptOcrClient], None],
+    use_recording_credit_command_use_case: RecordingUseCreditCommandUseCase,
+) -> None:
+    override_receipt_ocr_client(MixedFailureReceiptOcrClient())
+
+    response = await client.post(
+        "/api/v1/ocr",
+        files=[
+            ("file", ("device.png", _PNG_BYTES, "image/png")),
+            ("file", ("food.png", _PNG_BYTES, "image/png")),
+            ("file", ("blurred.png", _PNG_BYTES, "image/png")),
+        ],
+    )
+
+    body = response.json()
+
+    assert response.status_code == 422
+    assert body["data"]["code"] == "UNSUPPORTED_RECEIPT"
+    assert body["data"]["errors"] == [
+        {
+            "field": "file",
+            "fileIndex": 1,
+            "message": "지원하지 않는 영수증입니다.",
+        },
+        {
+            "field": "file",
+            "fileIndex": 2,
+            "message": "영수증 이미지를 인식하지 못했습니다. 다시 촬영하거나 수동 입력해 주세요.",
+        },
+    ]
+    assert use_recording_credit_command_use_case.commands == []
 
 
 async def test_receipt_ocr_endpoint_returns_provider_unavailable_failure(
@@ -406,6 +461,7 @@ async def test_receipt_ocr_endpoint_openapi_examples(client: AsyncClient) -> Non
     validation_examples = operation["responses"]["422"]["content"]["application/json"]["examples"]
     unreadable_example = validation_examples["unreadable_images"]["value"]
     unsupported_example = validation_examples["unsupported_receipt"]["value"]
+    mixed_failure_example = validation_examples["mixed_receipt_failures"]["value"]
     invalid_upload_example = validation_examples["invalid_upload"]["value"]
     insufficient_credit_example = operation["responses"]["409"]["content"]["application/json"][
         "example"
@@ -424,6 +480,7 @@ async def test_receipt_ocr_endpoint_openapi_examples(client: AsyncClient) -> Non
     assert unreadable_example["data"]["errors"][0]["fileIndex"] == 1
     assert unsupported_example["data"]["code"] == "UNSUPPORTED_RECEIPT"
     assert unsupported_example["data"]["errors"][0]["fileIndex"] == 1
+    assert [error["fileIndex"] for error in mixed_failure_example["data"]["errors"]] == [1, 2]
     assert invalid_upload_example["data"]["errors"][0] == {
         "field": "files",
         "message": "파일은 최대 5개까지 업로드할 수 있습니다.",

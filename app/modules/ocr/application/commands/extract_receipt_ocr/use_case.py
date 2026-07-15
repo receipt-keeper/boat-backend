@@ -51,6 +51,7 @@ class ExtractReceiptOcrCommandUseCase:
             if extracted.unsupported_file_indexes:
                 raise UnsupportedReceiptError(
                     file_indexes=extracted.unsupported_file_indexes,
+                    unreadable_file_indexes=extracted.unreadable_file_indexes,
                 )
             if extracted.unreadable_file_indexes:
                 raise ReceiptImageUnreadableError(

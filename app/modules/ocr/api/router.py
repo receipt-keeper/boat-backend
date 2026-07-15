@@ -15,13 +15,16 @@ from app.modules.ocr.application.commands.extract_receipt_ocr.command import (
 )
 from app.modules.ocr.application.ports.receipt_ocr_client import ReceiptOcrImage
 from app.modules.ocr.dependencies import ExtractReceiptOcrCommandUseCaseDep
+from app.modules.ocr.domain.exceptions import (
+    UNSUPPORTED_RECEIPT_MESSAGE as DOMAIN_UNSUPPORTED_RECEIPT_MESSAGE,
+)
 
 logger = logging.getLogger(__name__)
 
 _UNREADABLE_RECEIPT_MESSAGE = (
     "영수증 이미지를 인식하지 못했습니다. 다시 촬영하거나 수동 입력해 주세요."
 )
-_UNSUPPORTED_RECEIPT_MESSAGE = "가전·전자·IT 기기 관련 영수증만 분석할 수 있습니다."
+_UNSUPPORTED_RECEIPT_MESSAGE = DOMAIN_UNSUPPORTED_RECEIPT_MESSAGE
 _SUCCESS_EXAMPLE = {
     "success": True,
     "status": status.HTTP_200_OK,
@@ -70,6 +73,28 @@ _UNSUPPORTED_RECEIPT_EXAMPLE = {
                 "fileIndex": 1,
                 "message": "지원하지 않는 영수증입니다.",
             }
+        ],
+    },
+}
+_MIXED_RECEIPT_FAILURE_EXAMPLE = {
+    "success": False,
+    "status": status.HTTP_422_UNPROCESSABLE_CONTENT,
+    "data": {
+        "timestamp": "2026-07-15T00:00:00",
+        "code": "UNSUPPORTED_RECEIPT",
+        "message": _UNSUPPORTED_RECEIPT_MESSAGE,
+        "path": "/api/v1/ocr",
+        "errors": [
+            {
+                "field": "file",
+                "fileIndex": 1,
+                "message": "지원하지 않는 영수증입니다.",
+            },
+            {
+                "field": "file",
+                "fileIndex": 2,
+                "message": _UNREADABLE_RECEIPT_MESSAGE,
+            },
         ],
     },
 }
@@ -174,6 +199,10 @@ router = APIRouter(
                         "unsupported_receipt": {
                             "summary": "지원하지 않는 일반 영수증 식별",
                             "value": _UNSUPPORTED_RECEIPT_EXAMPLE,
+                        },
+                        "mixed_receipt_failures": {
+                            "summary": "지원하지 않는 영수증과 인식 실패 이미지 동시 식별",
+                            "value": _MIXED_RECEIPT_FAILURE_EXAMPLE,
                         },
                         "invalid_upload": {
                             "summary": "업로드 파일 개수 검증 실패",
