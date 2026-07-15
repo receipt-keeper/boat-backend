@@ -17,11 +17,6 @@ permissions:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
-  DB_HOST: localhost
-  DB_PORT: "5432"
-  DB_NAME: boat
-  DB_USER: boat
-  DB_PASSWORD: boat
 
 jobs:
   quality:
@@ -66,7 +61,7 @@ jobs:
     name: Docker image
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    needs: quality
+    needs: [quality]
     permissions:
       contents: read
       packages: write
