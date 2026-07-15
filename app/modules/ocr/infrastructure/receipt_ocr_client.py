@@ -203,12 +203,12 @@ class ReceiptOcrStructuredOutput(BaseModel):
     )
 
     def to_extracted_fields(self, *, image_count: int) -> ExtractedReceiptOcrFields:
-        unreadable_file_indexes = tuple(sorted(set(self.unreadable_file_indexes)))
-        unsupported_file_indexes = tuple(sorted(set(self.unsupported_file_indexes)))
-        all_failure_indexes = unreadable_file_indexes + unsupported_file_indexes
+        unreadable_file_indexes = set(self.unreadable_file_indexes)
+        unsupported_file_indexes = set(self.unsupported_file_indexes)
+        all_failure_indexes = unreadable_file_indexes | unsupported_file_indexes
         if any(index < 0 or index >= image_count for index in all_failure_indexes):
             raise ValueError("OCR provider가 요청 범위를 벗어난 이미지 인덱스를 반환했습니다.")
-        if set(unreadable_file_indexes) & set(unsupported_file_indexes):
+        if unreadable_file_indexes & unsupported_file_indexes:
             raise ValueError("OCR provider가 동일한 이미지를 두 실패 유형으로 반환했습니다.")
 
         return ExtractedReceiptOcrFields(
@@ -222,8 +222,8 @@ class ReceiptOcrStructuredOutput(BaseModel):
             expires_on=self.expires_on,
             category=(self.category.api_label if self.category is not None else DEFAULT_CATEGORY),
             sub_category=blank_to_none(self.sub_category) or DEFAULT_SUB_CATEGORY,
-            unreadable_file_indexes=unreadable_file_indexes,
-            unsupported_file_indexes=unsupported_file_indexes,
+            unreadable_file_indexes=tuple(sorted(unreadable_file_indexes)),
+            unsupported_file_indexes=tuple(sorted(unsupported_file_indexes)),
         )
 
 
