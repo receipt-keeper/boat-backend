@@ -19,6 +19,30 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  branch-policy:
+    name: Branch policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version-file: .python-version
+
+      - name: Verify pull request branch route
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: python scripts/verify_git_flow.py "${BASE_REF}" "${HEAD_REF}"
+
+      - name: Skip branch route verification
+        if: github.event_name != 'pull_request'
+        run: echo "pull request 이벤트가 아니므로 브랜치 경로 검사를 생략합니다."
+
   quality:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -61,7 +85,7 @@ jobs:
     name: Docker image
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    needs: quality
+    needs: [branch-policy, quality]
     permissions:
       contents: read
       packages: write
