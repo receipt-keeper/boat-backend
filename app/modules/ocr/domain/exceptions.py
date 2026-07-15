@@ -1,8 +1,6 @@
 from app.core.domain.exceptions import DomainError, ErrorDetail, ValidationError
 
-UNSUPPORTED_RECEIPT_MESSAGE = (
-    "현재는 전자제품 영수증만 지원하고 있어요! 더 다양한 제품도 곧 보트랩에서 만나보실 수 있습니다."
-)
+UNSUPPORTED_RECEIPT_MESSAGE = "현재는 전자제품 영수증만 지원하고 있어요!"
 
 
 class ReceiptImageUnreadableError(ValidationError):

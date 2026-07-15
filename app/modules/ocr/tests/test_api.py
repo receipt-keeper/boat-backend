@@ -364,10 +364,7 @@ async def test_receipt_ocr_endpoint_returns_unsupported_receipt_code_and_file_in
     assert body["success"] is False
     assert body["status"] == 422
     assert body["data"]["code"] == "UNSUPPORTED_RECEIPT"
-    assert body["data"]["message"] == (
-        "현재는 전자제품 영수증만 지원하고 있어요! "
-        "더 다양한 제품도 곧 보트랩에서 만나보실 수 있습니다."
-    )
+    assert body["data"]["message"] == "현재는 전자제품 영수증만 지원하고 있어요!"
     assert body["data"]["path"] == "/api/v1/ocr"
     assert body["data"]["errors"] == [
         {
