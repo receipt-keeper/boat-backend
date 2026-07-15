@@ -3,7 +3,7 @@
 # dependencies = []
 # ///
 # ─── How to run ───
-# uv run python scripts/verify_git_flow.py <base-branch> <head-branch>
+# uv run python scripts/verify_git_flow.py <base-branch> <head-branch> <base-repo> <head-repo>
 
 from __future__ import annotations
 
@@ -108,7 +108,7 @@ def _classify_base(base: str) -> BaseKind:
             return BaseKind.OTHER
 
 
-def verify_git_flow(base: str, head: str) -> PolicyDecision:
+def verify_git_flow(base: str, head: str, *, is_same_repository: bool = True) -> PolicyDecision:
     base_kind = _classify_base(base)
     if not _is_globally_safe(head) or not _is_known_branch(head):
         return PolicyDecision.INVALID_BRANCH
@@ -126,7 +126,7 @@ def verify_git_flow(base: str, head: str) -> PolicyDecision:
             allowed = _is_release_branch(head) or _full_match(HOTFIX_PATTERN, head)
         case BaseKind.DEVELOP:
             allowed = (
-                head == "main"
+                (head == "main" and is_same_repository)
                 or _full_match(CONVENTIONAL_PATTERN, head)
                 or _full_match(DEPENDABOT_PATTERN, head)
                 or _is_riido_branch(head)
@@ -140,8 +140,12 @@ def verify_git_flow(base: str, head: str) -> PolicyDecision:
     return PolicyDecision.ALLOWED if allowed else PolicyDecision.INVALID_ROUTE
 
 
-def main(base: str, head: str) -> int:
-    decision = verify_git_flow(base=base, head=head)
+def main(base: str, head: str, *, is_same_repository: bool = True) -> int:
+    decision = verify_git_flow(
+        base=base,
+        head=head,
+        is_same_repository=is_same_repository,
+    )
     match decision:
         case PolicyDecision.ALLOWED:
             print(f"브랜치 정책 통과: {head} -> {base}")
@@ -160,11 +164,18 @@ def main(base: str, head: str) -> int:
 
 
 def cli(arguments: Sequence[str]) -> int:
-    if len(arguments) != 2:
-        usage = "사용법: python scripts/verify_git_flow.py <base-branch> <head-branch>"
+    if len(arguments) != 4:
+        usage = (
+            "사용법: python scripts/verify_git_flow.py "
+            "<base-branch> <head-branch> <base-repository> <head-repository>"
+        )
         print(usage, file=sys.stderr)
         return 2
-    return main(base=arguments[0], head=arguments[1])
+    return main(
+        base=arguments[0],
+        head=arguments[1],
+        is_same_repository=arguments[2] == arguments[3],
+    )
 
 
 if __name__ == "__main__":

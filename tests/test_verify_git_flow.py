@@ -44,6 +44,15 @@ def test_pr_91_fix_branch_cannot_target_main() -> None:
     assert decision is PolicyDecision.INVALID_ROUTE
 
 
+def test_fork_main_branch_cannot_target_develop() -> None:
+    # Given: fork 저장소의 main branch가 upstream develop을 대상으로 한다.
+    # When: 서로 다른 저장소의 Git Flow 경로를 검증한다.
+    decision = verify_git_flow(base="develop", head="main", is_same_repository=False)
+
+    # Then: upstream main 역병합으로 위장할 수 없도록 거부된다.
+    assert decision is PolicyDecision.INVALID_ROUTE
+
+
 def test_pr_42_stacked_riido_pull_request_is_skipped() -> None:
     # Given: PR #42와 동일하게 Riido branch끼리 연결된 stacked PR이 있다.
     # When: Git Flow 경로를 검증한다.
@@ -194,10 +203,35 @@ def test_feature_branch_cannot_target_release() -> None:
 @pytest.mark.parametrize(
     ("arguments", "expected_exit_code"),
     [
-        (["main", "release/v1.0.2"], 0),
-        (["main", "fix/direct-main"], 1),
+        (
+            [
+                "main",
+                "release/v1.0.2",
+                "receipt-keeper/boat-backend",
+                "receipt-keeper/boat-backend",
+            ],
+            0,
+        ),
+        (
+            [
+                "main",
+                "fix/direct-main",
+                "receipt-keeper/boat-backend",
+                "receipt-keeper/boat-backend",
+            ],
+            1,
+        ),
+        (
+            [
+                "develop",
+                "main",
+                "receipt-keeper/boat-backend",
+                "fork/boat-backend",
+            ],
+            1,
+        ),
         ([], 2),
-        (["main", "release/v1.0.2", "extra"], 2),
+        (["main", "release/v1.0.2", "receipt-keeper/boat-backend"], 2),
     ],
 )
 def test_cli_exit_code(arguments: list[str], expected_exit_code: int) -> None:
