@@ -17,11 +17,6 @@ permissions:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
-  DB_HOST: localhost
-  DB_PORT: "5432"
-  DB_NAME: boat
-  DB_USER: boat
-  DB_PASSWORD: boat
 
 jobs:
   quality:
