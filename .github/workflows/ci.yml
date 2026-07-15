@@ -124,9 +124,9 @@ jobs:
           VERSION: ${{ steps.project.outputs.version }}
           GIT_TAG: ${{ github.ref_name }}
           GIT_REVISION: ${{ github.sha }}
-          IMAGE_TAG: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.project.outputs.version }}
           IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
         run: |
+          IMAGE_TAG="sha-${GITHUB_SHA::7}"
           {
             echo "## Boatlab 이미지 릴리스"
             echo
