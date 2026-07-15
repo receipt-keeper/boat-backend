@@ -1,5 +1,7 @@
 from app.core.domain.exceptions import DomainError, ErrorDetail, ValidationError
 
+UNSUPPORTED_RECEIPT_MESSAGE = "현재는 전자제품 영수증만 지원하고 있어요!"
+
 
 class ReceiptImageUnreadableError(ValidationError):
     def __init__(self, *, file_indexes: tuple[int, ...]) -> None:
@@ -16,6 +18,27 @@ class ReceiptImageUnreadableError(ValidationError):
                 )
             ]
         )
+
+
+class UnsupportedReceiptError(DomainError):
+    def __init__(
+        self,
+        *,
+        file_indexes: tuple[int, ...],
+        unreadable_file_indexes: tuple[int, ...] = (),
+    ) -> None:
+        if not file_indexes:
+            raise ValueError("지원하지 않는 영수증 파일 인덱스가 최소 1개 필요합니다.")
+
+        unsupported_indexes = set(file_indexes)
+        unreadable_indexes = set(unreadable_file_indexes)
+        if unsupported_indexes & unreadable_indexes:
+            raise ValueError("동일한 파일을 지원 대상 아님과 인식 실패로 함께 처리할 수 없습니다.")
+
+        self.unsupported_file_indexes = tuple(sorted(unsupported_indexes))
+        self.unreadable_file_indexes = tuple(sorted(unreadable_indexes))
+        self.file_indexes = tuple(sorted(unsupported_indexes | unreadable_indexes))
+        super().__init__(UNSUPPORTED_RECEIPT_MESSAGE)
 
 
 class ReceiptOcrProviderUnavailableError(DomainError):

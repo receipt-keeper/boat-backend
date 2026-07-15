@@ -5,10 +5,19 @@ import pytest
 from app.modules.ocr.application.ports.receipt_ocr_client import ReceiptOcrImage
 from app.modules.ocr.infrastructure.receipt_ocr_client import (
     OcrReceiptCategory,
+    ReceiptOcrClient,
     ReceiptOcrStructuredOutput,
     _build_openrouter_multimodal_content,
 )
 from app.modules.receipts.domain.value_objects import ReceiptCategory
+
+
+@pytest.mark.asyncio
+async def test_mock_receipt_ocr_client_rejects_empty_images() -> None:
+    client = ReceiptOcrClient()
+
+    with pytest.raises(ValueError, match="OCR 분석 이미지가 최소 1개 필요합니다"):
+        await client.extract(images=())
 
 
 def test_openrouter_multimodal_content_keeps_image_order_and_indexes() -> None:
@@ -41,6 +50,50 @@ def test_structured_output_rejects_file_index_outside_request_range() -> None:
         structured_output.to_extracted_fields(image_count=2)
 
 
+def test_structured_output_rejects_unsupported_file_index_outside_request_range() -> None:
+    structured_output = ReceiptOcrStructuredOutput(
+        unsupported_file_indexes=[2],
+    )
+
+    with pytest.raises(ValueError, match="요청 범위를 벗어난 이미지 인덱스"):
+        structured_output.to_extracted_fields(image_count=2)
+
+
+def test_structured_output_rejects_overlapping_failure_indexes() -> None:
+    structured_output = ReceiptOcrStructuredOutput(
+        unreadable_file_indexes=[0],
+        unsupported_file_indexes=[0],
+    )
+
+    with pytest.raises(ValueError, match="동일한 이미지를 두 실패 유형"):
+        structured_output.to_extracted_fields(image_count=1)
+
+
+def test_multimodal_prompt_separates_unsupported_receipts_from_unknown_devices() -> None:
+    content = _build_openrouter_multimodal_content(
+        images=(ReceiptOcrImage(file_index=0, content=b"receipt", content_type="image/png"),)
+    )
+
+    prompt = content[0]["text"]
+    schema = ReceiptOcrStructuredOutput.model_json_schema()["properties"]
+
+    assert isinstance(prompt, str)
+    assert "supports only receipts" in prompt
+    assert "restaurants or food" in prompt
+    assert 'category "other_device"' in prompt
+    assert "food, restaurants" in schema["unsupported_file_indexes"]["description"]
+
+
+def test_structured_output_keeps_unsupported_file_indexes() -> None:
+    structured_output = ReceiptOcrStructuredOutput(
+        unsupported_file_indexes=[2, 1, 2],
+    )
+
+    extracted = structured_output.to_extracted_fields(image_count=3)
+
+    assert extracted.unsupported_file_indexes == (1, 2)
+
+
 def test_multimodal_prompt_extracts_explicit_serial_number_from_any_image() -> None:
     content = _build_openrouter_multimodal_content(
         images=(
@@ -69,9 +122,7 @@ def test_structured_output_keeps_explicit_serial_number() -> None:
 
     schema = ReceiptOcrStructuredOutput.model_json_schema()["properties"]
     assert "in any input image" in schema["serial_number"]["description"]
-    assert (
-        "unrelated to the purchase or product" in schema["unreadable_file_indexes"]["description"]
-    )
+    assert "cannot be classified" in schema["unreadable_file_indexes"]["description"]
 
 
 def test_structured_output_keeps_explicit_expiration_date() -> None:

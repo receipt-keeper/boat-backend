@@ -41,6 +41,7 @@ from app.modules.ocr.api.router import router as ocr_router
 from app.modules.ocr.domain.exceptions import (
     ReceiptImageUnreadableError,
     ReceiptOcrProviderUnavailableError,
+    UnsupportedReceiptError,
 )
 from app.modules.promotions.api.router import router as promotions_router
 from app.modules.promotions.dependencies import build_promotions_event_registry
@@ -98,6 +99,10 @@ def _register_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(
         ReceiptImageUnreadableError,
         ocr_exception_handlers.handle_receipt_image_unreadable_error,
+    )
+    app.add_exception_handler(
+        UnsupportedReceiptError,
+        ocr_exception_handlers.handle_unsupported_receipt_error,
     )
     app.add_exception_handler(DomainError, exception_handlers.handle_domain_error)
     app.add_exception_handler(

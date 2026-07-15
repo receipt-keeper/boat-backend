@@ -13,7 +13,10 @@ class ReceiptOcrFieldError(AppBaseModel):
         default=None,
         alias="fileIndex",
         ge=0,
-        description="요청 multipart file 배열에서 인식에 실패한 이미지의 0-based 순서.",
+        description=(
+            "요청 multipart file 배열에서 인식 실패 또는 지원 대상 아님으로 판정된 "
+            "이미지의 0-based 순서."
+        ),
     )
     message: str
 

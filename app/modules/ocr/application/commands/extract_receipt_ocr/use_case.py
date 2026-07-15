@@ -12,6 +12,7 @@ from app.modules.ocr.application.ports.receipt_ocr_client import ReceiptOcrClien
 from app.modules.ocr.domain.exceptions import (
     ReceiptImageUnreadableError,
     ReceiptOcrProviderUnavailableError,
+    UnsupportedReceiptError,
 )
 from app.modules.ocr.domain.model import ReceiptOcrResult
 
@@ -47,6 +48,11 @@ class ExtractReceiptOcrCommandUseCase:
         await self._reserve_credit_command_use_case.execute(use_credit_command)
         try:
             extracted = await self._ocr_client.extract(images=command.images)
+            if extracted.unsupported_file_indexes:
+                raise UnsupportedReceiptError(
+                    file_indexes=extracted.unsupported_file_indexes,
+                    unreadable_file_indexes=extracted.unreadable_file_indexes,
+                )
             if extracted.unreadable_file_indexes:
                 raise ReceiptImageUnreadableError(
                     file_indexes=extracted.unreadable_file_indexes,
@@ -79,6 +85,16 @@ class ExtractReceiptOcrCommandUseCase:
                 _elapsed_ms(started_at),
             )
             return result
+        except UnsupportedReceiptError as exception:
+            await self._unit_of_work.rollback()
+            _log_ocr_failure(
+                command=command,
+                reason="unsupported_receipt",
+                exception=exception,
+                file_indexes=exception.file_indexes,
+                started_at=started_at,
+            )
+            raise
         except ReceiptImageUnreadableError as exception:
             await self._unit_of_work.rollback()
             _log_ocr_failure(

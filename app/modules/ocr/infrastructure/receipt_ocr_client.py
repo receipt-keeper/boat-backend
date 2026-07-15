@@ -30,8 +30,15 @@ warranty document or product label.
 Treat a readable partial section as valid even when it does not contain all receipt fields
 by itself.
 Treat all readable images as one evidence set and extract one combined receipt result.
-Return unreadable_file_indexes only for images that are unreadable, corrupted, or unrelated
-to the purchase or product.
+This service supports only receipts, warranty documents, protection plans, or product labels
+for household appliances, electronics, or IT devices.
+Return unsupported_file_indexes for readable receipts that are clearly for unsupported general
+purchases, including restaurants or food, groceries without a device purchase, transportation,
+lodging, medical treatment or pharmacy purchases, clothing, cosmetics, or beauty services.
+Do not mark a supported device as unsupported merely because its category is unknown; use
+category "other_device" and sub_category "기타" instead.
+Return unreadable_file_indexes only for images that are unreadable, corrupted, or cannot be
+classified from the visible evidence.
 The indexes are zero-based and match the IMAGE_INDEX labels in the input.
 Extract only information that is clearly supported by the input images.
 Do not guess missing or ambiguous values.
@@ -104,7 +111,7 @@ class ReceiptOcrStructuredOutput(BaseModel):
     item_name: str | None = Field(
         default=None,
         description=(
-            "The product or line-item name being purchased, treated, or repaired. "
+            "The appliance, electronic, or IT device being purchased or repaired. "
             "Return null when it is not clearly identifiable."
         ),
     )
@@ -125,7 +132,7 @@ class ReceiptOcrStructuredOutput(BaseModel):
     payment_location: str | None = Field(
         default=None,
         description=(
-            "The merchant, payment recipient, hospital, store, or online marketplace name. "
+            "The merchant, payment recipient, store, or online marketplace name. "
             "Return null when it is not clearly identifiable."
         ),
     )
@@ -180,15 +187,29 @@ class ReceiptOcrStructuredOutput(BaseModel):
         default_factory=list,
         description=(
             "The zero-based IMAGE_INDEX values for images that are unreadable, corrupted, or "
-            "unrelated to the purchase or product. Do not include readable receipts, relevant "
-            "warranty documents, or product labels."
+            "cannot be classified from the visible evidence. Do not include readable receipts, "
+            "relevant warranty documents, or product labels."
+        ),
+    )
+    unsupported_file_indexes: list[int] = Field(
+        default_factory=list,
+        description=(
+            "The zero-based IMAGE_INDEX values for readable receipts that are clearly not for "
+            "a household appliance, electronic, or IT device purchase. Examples include food, "
+            "restaurants, transportation, lodging, medical or pharmacy, clothing, cosmetics, "
+            "and beauty services. Do not include an unknown but supported device category; use "
+            "category other_device and sub_category 기타 for that case."
         ),
     )
 
     def to_extracted_fields(self, *, image_count: int) -> ExtractedReceiptOcrFields:
-        unreadable_file_indexes = tuple(sorted(set(self.unreadable_file_indexes)))
-        if any(index < 0 or index >= image_count for index in unreadable_file_indexes):
+        unreadable_file_indexes = set(self.unreadable_file_indexes)
+        unsupported_file_indexes = set(self.unsupported_file_indexes)
+        all_failure_indexes = unreadable_file_indexes | unsupported_file_indexes
+        if any(index < 0 or index >= image_count for index in all_failure_indexes):
             raise ValueError("OCR provider가 요청 범위를 벗어난 이미지 인덱스를 반환했습니다.")
+        if unreadable_file_indexes & unsupported_file_indexes:
+            raise ValueError("OCR provider가 동일한 이미지를 두 실패 유형으로 반환했습니다.")
 
         return ExtractedReceiptOcrFields(
             item_name=blank_to_none(self.item_name),
@@ -201,7 +222,8 @@ class ReceiptOcrStructuredOutput(BaseModel):
             expires_on=self.expires_on,
             category=(self.category.api_label if self.category is not None else DEFAULT_CATEGORY),
             sub_category=blank_to_none(self.sub_category) or DEFAULT_SUB_CATEGORY,
-            unreadable_file_indexes=unreadable_file_indexes,
+            unreadable_file_indexes=tuple(sorted(unreadable_file_indexes)),
+            unsupported_file_indexes=tuple(sorted(unsupported_file_indexes)),
         )
 
 
@@ -216,6 +238,9 @@ class ReceiptOcrClient(ReceiptOcrClientPort):
         *,
         images: tuple[ReceiptOcrImage, ...],
     ) -> ExtractedReceiptOcrFields:
+        if not images:
+            raise ValueError("OCR 분석 이미지가 최소 1개 필요합니다.")
+
         structured_output = ReceiptOcrStructuredOutput(
             item_name="삼성 냉장고 875L",
             brand_name="삼성",
