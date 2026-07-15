@@ -109,9 +109,12 @@ def _classify_base(base: str) -> BaseKind:
 
 
 def verify_git_flow(base: str, head: str, *, is_same_repository: bool = True) -> PolicyDecision:
-    base_kind = _classify_base(base)
     if not _is_globally_safe(head) or not _is_known_branch(head):
         return PolicyDecision.INVALID_BRANCH
+    if base.startswith("release/") and not _is_release_branch(base):
+        return PolicyDecision.INVALID_ROUTE
+
+    base_kind = _classify_base(base)
 
     match base_kind:
         case BaseKind.OTHER:
