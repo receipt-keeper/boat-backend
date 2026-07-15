@@ -58,6 +58,26 @@ class PartiallyUnreadableReceiptOcrClient:
         )
 
 
+class PartiallyUnsupportedReceiptOcrClient:
+    def __init__(self) -> None:
+        self.images: tuple[ReceiptOcrImage, ...] = ()
+
+    async def extract(self, *, images: tuple[ReceiptOcrImage, ...]) -> ExtractedReceiptOcrFields:
+        self.images = images
+        return ExtractedReceiptOcrFields(
+            item_name="삼성 냉장고",
+            brand_name="삼성",
+            serial_number=None,
+            payment_location="전자랜드",
+            payment_date=date.today(),
+            total_amount=129000,
+            period_months=12,
+            category="주방 가전",
+            sub_category="냉장고",
+            unsupported_file_indexes=(1,),
+        )
+
+
 class ProviderUnavailableReceiptOcrClient:
     async def extract(self, *, images: tuple[ReceiptOcrImage, ...]) -> ExtractedReceiptOcrFields:
         raise ReceiptOcrProviderUnavailableError()
@@ -302,6 +322,48 @@ async def test_receipt_ocr_endpoint_returns_only_unreadable_file_indexes(
     assert use_recording_credit_command_use_case.commands == []
 
 
+async def test_receipt_ocr_endpoint_returns_unsupported_receipt_code_and_file_indexes(
+    client: AsyncClient,
+    override_receipt_ocr_client: Callable[[PartiallyUnsupportedReceiptOcrClient], None],
+    use_recording_credit_reservation_command_use_case: RecordingUseCreditCommandUseCase,
+    use_recording_credit_command_use_case: RecordingUseCreditCommandUseCase,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level("WARNING")
+    ocr_client = PartiallyUnsupportedReceiptOcrClient()
+    override_receipt_ocr_client(ocr_client)
+
+    response = await client.post(
+        "/api/v1/ocr",
+        files=[
+            ("file", ("device.png", _PNG_BYTES, "image/png")),
+            ("file", ("food.png", _PNG_BYTES, "image/png")),
+        ],
+    )
+
+    body = response.json()
+
+    assert response.status_code == 422
+    assert body["success"] is False
+    assert body["status"] == 422
+    assert body["data"]["code"] == "UNSUPPORTED_RECEIPT"
+    assert body["data"]["message"] == "가전·전자·IT 기기 관련 영수증만 분석할 수 있습니다."
+    assert body["data"]["path"] == "/api/v1/ocr"
+    assert body["data"]["errors"] == [
+        {
+            "field": "file",
+            "fileIndex": 1,
+            "message": "지원하지 않는 영수증입니다.",
+        }
+    ]
+    assert [image.file_index for image in ocr_client.images] == [0, 1]
+    assert len(use_recording_credit_reservation_command_use_case.commands) == 1
+    assert use_recording_credit_command_use_case.commands == []
+    assert "ocr_analysis_failed reason=unsupported_receipt" in caplog.text
+    assert "file_indexes=(1,)" in caplog.text
+    assert repr(_PNG_BYTES) not in caplog.text
+
+
 async def test_receipt_ocr_endpoint_returns_provider_unavailable_failure(
     client: AsyncClient,
     override_receipt_ocr_client: Callable[[ProviderUnavailableReceiptOcrClient], None],
@@ -343,6 +405,7 @@ async def test_receipt_ocr_endpoint_openapi_examples(client: AsyncClient) -> Non
     success_example = operation["responses"]["200"]["content"]["application/json"]["example"]
     validation_examples = operation["responses"]["422"]["content"]["application/json"]["examples"]
     unreadable_example = validation_examples["unreadable_images"]["value"]
+    unsupported_example = validation_examples["unsupported_receipt"]["value"]
     invalid_upload_example = validation_examples["invalid_upload"]["value"]
     insufficient_credit_example = operation["responses"]["409"]["content"]["application/json"][
         "example"
@@ -359,6 +422,8 @@ async def test_receipt_ocr_endpoint_openapi_examples(client: AsyncClient) -> Non
     assert success_example["data"]["needs_review"] is True
     assert unreadable_example["data"]["errors"][0]["field"] == "file"
     assert unreadable_example["data"]["errors"][0]["fileIndex"] == 1
+    assert unsupported_example["data"]["code"] == "UNSUPPORTED_RECEIPT"
+    assert unsupported_example["data"]["errors"][0]["fileIndex"] == 1
     assert invalid_upload_example["data"]["errors"][0] == {
         "field": "files",
         "message": "파일은 최대 5개까지 업로드할 수 있습니다.",

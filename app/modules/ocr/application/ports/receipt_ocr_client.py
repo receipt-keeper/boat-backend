@@ -23,6 +23,7 @@ class ExtractedReceiptOcrFields:
     sub_category: str | None
     expires_on: date | None = None
     unreadable_file_indexes: tuple[int, ...] = ()
+    unsupported_file_indexes: tuple[int, ...] = ()
 
 
 class ReceiptOcrClientPort(Protocol):

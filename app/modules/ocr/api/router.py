@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 _UNREADABLE_RECEIPT_MESSAGE = (
     "영수증 이미지를 인식하지 못했습니다. 다시 촬영하거나 수동 입력해 주세요."
 )
+_UNSUPPORTED_RECEIPT_MESSAGE = "가전·전자·IT 기기 관련 영수증만 분석할 수 있습니다."
 _SUCCESS_EXAMPLE = {
     "success": True,
     "status": status.HTTP_200_OK,
@@ -51,6 +52,23 @@ _UNREADABLE_RECEIPT_EXAMPLE = {
                 "field": "file",
                 "fileIndex": 1,
                 "message": _UNREADABLE_RECEIPT_MESSAGE,
+            }
+        ],
+    },
+}
+_UNSUPPORTED_RECEIPT_EXAMPLE = {
+    "success": False,
+    "status": status.HTTP_422_UNPROCESSABLE_CONTENT,
+    "data": {
+        "timestamp": "2026-07-15T00:00:00",
+        "code": "UNSUPPORTED_RECEIPT",
+        "message": _UNSUPPORTED_RECEIPT_MESSAGE,
+        "path": "/api/v1/ocr",
+        "errors": [
+            {
+                "field": "file",
+                "fileIndex": 1,
+                "message": "지원하지 않는 영수증입니다.",
             }
         ],
     },
@@ -120,6 +138,8 @@ router = APIRouter(
         "한 영수증을 나누어 촬영한 이미지를 전송 순서대로 최대 5장까지 함께 분석한다. "
         "대표 결제 항목, 브랜드, 구매처, 구매일, 금액, AS 기간, "
         "시리얼 넘버, 대분류/소분류 카테고리 후보를 추출한다. "
+        "가전·전자·IT 기기 관련 문서가 아니면 UNSUPPORTED_RECEIPT 코드와 "
+        "해당 이미지의 0-based fileIndex를 반환하며 크레딧을 차감하지 않는다. "
         "영수증 원본 파일 보관 및 연결은 receipts 저장 API의 receipt_file_ids에서 처리한다."
     ),
     response_model=CommonResponse[ReceiptOcrResultResponse],
@@ -143,13 +163,17 @@ router = APIRouter(
             "content": {"application/json": {"example": _SUCCESS_EXAMPLE}},
         },
         status.HTTP_422_UNPROCESSABLE_CONTENT: {
-            "description": "업로드 검증 또는 영수증 이미지 인식 실패",
+            "description": "업로드 검증, 이미지 인식 실패 또는 지원하지 않는 일반 영수증",
             "content": {
                 "application/json": {
                     "examples": {
                         "unreadable_images": {
                             "summary": "인식 실패 이미지 식별",
                             "value": _UNREADABLE_RECEIPT_EXAMPLE,
+                        },
+                        "unsupported_receipt": {
+                            "summary": "지원하지 않는 일반 영수증 식별",
+                            "value": _UNSUPPORTED_RECEIPT_EXAMPLE,
                         },
                         "invalid_upload": {
                             "summary": "업로드 파일 개수 검증 실패",

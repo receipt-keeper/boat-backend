@@ -6,7 +6,11 @@ from app.modules.ocr.api.schemas import ReceiptOcrErrorData, ReceiptOcrFieldErro
 from app.modules.ocr.domain.exceptions import (
     ReceiptImageUnreadableError,
     ReceiptOcrProviderUnavailableError,
+    UnsupportedReceiptError,
 )
+
+_UNSUPPORTED_RECEIPT_CODE = "UNSUPPORTED_RECEIPT"
+_UNSUPPORTED_RECEIPT_FIELD_MESSAGE = "지원하지 않는 영수증입니다."
 
 
 def _failure_response(*, status_code: int, message: str, path: str) -> JSONResponse:
@@ -50,6 +54,35 @@ async def handle_receipt_image_unreadable_error(
                 ReceiptOcrFieldError(
                     fileIndex=file_index,
                     message=message,
+                )
+                for file_index in exception.file_indexes
+            ],
+        ),
+    )
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        content=response.model_dump(by_alias=True, exclude_none=True),
+    )
+
+
+async def handle_unsupported_receipt_error(
+    request: Request,
+    exception: Exception,
+) -> JSONResponse:
+    if not isinstance(exception, UnsupportedReceiptError):
+        raise exception
+
+    response = CommonResponse(
+        success=False,
+        status=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        data=ReceiptOcrErrorData(
+            code=_UNSUPPORTED_RECEIPT_CODE,
+            message=exception.message,
+            path=request.url.path,
+            errors=[
+                ReceiptOcrFieldError(
+                    fileIndex=file_index,
+                    message=_UNSUPPORTED_RECEIPT_FIELD_MESSAGE,
                 )
                 for file_index in exception.file_indexes
             ],
