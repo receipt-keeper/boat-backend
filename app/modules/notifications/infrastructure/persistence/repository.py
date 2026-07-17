@@ -169,6 +169,7 @@ class SqlAlchemyNotificationRepository(NotificationRepository):
         record = await self._find_record_by_id_for_user(
             notification_id=notification_id,
             user_id=user_id,
+            for_update=True,
         )
         if record is None:
             return None
