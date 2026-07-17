@@ -64,6 +64,7 @@ from app.modules.notifications.domain.model import (
 )
 from app.modules.notifications.domain.value_objects import (
     DevicePlatform,
+    NotificationCategory,
     NotificationMessageType,
 )
 from app.modules.notifications.tests.test_application import (
@@ -97,6 +98,7 @@ def _send_push_use_case(
 def _send_push_command(
     *,
     message_type: NotificationMessageType = NotificationMessageType.TRANSACTIONAL,
+    category: NotificationCategory = NotificationCategory.PRODUCT_MANAGEMENT,
     kind: str,
     title: str,
     message: str,
@@ -105,11 +107,30 @@ def _send_push_command(
         user_id=TEST_USER_ID,
         notification_id=uuid4(),
         message_type=message_type,
+        category=category,
         kind=kind,
         title=title,
         message=message,
         resource_type=None,
         resource_id=None,
+    )
+
+
+def _seed_push_notification(
+    repository: InMemoryNotificationRepository,
+    command: SendNotificationPushCommand,
+) -> None:
+    repository.notifications[command.notification_id] = UserNotification.create(
+        notification_id=command.notification_id,
+        user_id=command.user_id,
+        message_type=command.message_type,
+        category=command.category,
+        kind=command.kind,
+        title=command.title,
+        message=command.message,
+        resource_type=command.resource_type,
+        resource_id=command.resource_id,
+        created_at=CREATED_AT,
     )
 
 
@@ -172,6 +193,7 @@ async def test_create_notification_commits_once_and_returns_expected_result() ->
     assert repository.create_count == 1
     assert saved.user_id == TEST_USER_ID
     assert result.message_type == NotificationMessageType.TRANSACTIONAL
+    assert result.category.value == "product_management"
     assert result.kind == "registration_prompt"
     assert result.title == "영수증 등록 안내"
     assert result.message == "영수증을 등록해 보세요."
@@ -190,6 +212,7 @@ async def test_create_notification_commits_once_and_returns_expected_result() ->
     assert published_event.notification_id == result.notification_id
     assert published_event.user_id == TEST_USER_ID
     assert published_event.message_type == NotificationMessageType.TRANSACTIONAL
+    assert published_event.category.value == "product_management"
     assert published_event.kind == "registration_prompt"
     assert published_event.title == "영수증 등록 안내"
     assert published_event.message == "영수증을 등록해 보세요."
@@ -395,10 +418,12 @@ async def test_send_notification_push_sends_to_registered_devices() -> None:
         unit_of_work=unit_of_work,
     )
     command = _send_push_command(
+        category=NotificationCategory.WARRANTY,
         kind="warranty_risk",
         title="보증 만료 임박",
         message="보증 만료가 임박했습니다.",
     )
+    _seed_push_notification(repository, command)
 
     # When: 알림 푸시 발송을 실행한다.
     await use_case.execute(command)
@@ -411,10 +436,77 @@ async def test_send_notification_push_sends_to_registered_devices() -> None:
     assert sent_message.body == "보증 만료가 임박했습니다."
     assert sent_message.data == {
         "notificationId": str(command.notification_id),
+        "category": "warranty",
         "messageType": "transactional",
         "kind": "warranty_risk",
     }
     assert unit_of_work.commit_count == 0
+
+
+async def test_send_notification_push_uses_persisted_category_for_legacy_event() -> None:
+    repository = InMemoryNotificationRepository()
+    push_token_repository = InMemoryPushTokenRepository()
+    await push_token_repository.register(
+        user_id=TEST_USER_ID,
+        token="token-1",
+        platform=DevicePlatform.ANDROID,
+    )
+    command = _send_push_command(
+        kind="warranty_risk",
+        title="보증 만료 임박",
+        message="보증 만료가 임박했습니다.",
+    )
+    repository.notifications[command.notification_id] = UserNotification.create(
+        notification_id=command.notification_id,
+        user_id=command.user_id,
+        message_type=command.message_type,
+        category=NotificationCategory.WARRANTY,
+        kind=command.kind,
+        title=command.title,
+        message=command.message,
+        created_at=CREATED_AT,
+    )
+    push_sender = FakePushSender()
+    use_case = _send_push_use_case(
+        repository=repository,
+        push_token_repository=push_token_repository,
+        push_sender=push_sender,
+        unit_of_work=FakeUnitOfWork(),
+    )
+
+    await use_case.execute(command)
+
+    assert push_sender.calls[0][1].data["category"] == "warranty"
+
+
+async def test_send_notification_push_skips_deleted_notification_from_stale_outbox_event() -> None:
+    # Given: outbox에는 생성 이벤트가 남아 있지만 알림 행은 이미 삭제되었다.
+    repository = InMemoryNotificationRepository()
+    push_token_repository = InMemoryPushTokenRepository()
+    await push_token_repository.register(
+        user_id=TEST_USER_ID,
+        token="token-1",
+        platform=DevicePlatform.ANDROID,
+    )
+    push_sender = FakePushSender()
+    use_case = _send_push_use_case(
+        repository=repository,
+        push_token_repository=push_token_repository,
+        push_sender=push_sender,
+        unit_of_work=FakeUnitOfWork(),
+    )
+
+    # When: 삭제된 알림을 가리키는 stale 생성 이벤트를 처리한다.
+    await use_case.execute(
+        _send_push_command(
+            kind="stale_deleted_notification",
+            title="삭제된 알림",
+            message="이 알림은 발송되면 안 된다.",
+        )
+    )
+
+    # Then: 삭제된 알림에는 푸시를 발송하지 않는다.
+    assert push_sender.calls == []
 
 
 async def test_send_notification_push_includes_resource_fields_when_present() -> None:
@@ -439,12 +531,14 @@ async def test_send_notification_push_includes_resource_fields_when_present() ->
         user_id=TEST_USER_ID,
         notification_id=uuid4(),
         message_type=NotificationMessageType.TRANSACTIONAL,
+        category=NotificationCategory.WARRANTY,
         kind="warranty_risk",
         title="보증 만료 임박",
         message="보증 만료가 임박했습니다.",
         resource_type="receipt",
         resource_id=receipt_id,
     )
+    _seed_push_notification(repository, command)
 
     # When: 알림 푸시 발송을 실행한다.
     await use_case.execute(command)
@@ -453,6 +547,7 @@ async def test_send_notification_push_includes_resource_fields_when_present() ->
     _, sent_message = push_sender.calls[0]
     assert sent_message.data == {
         "notificationId": str(command.notification_id),
+        "category": "warranty",
         "messageType": "transactional",
         "kind": "warranty_risk",
         "resourceType": "receipt",
@@ -482,14 +577,14 @@ async def test_send_notification_push_skips_when_push_disabled() -> None:
     )
 
     # When: 알림 푸시 발송을 실행한다.
-    await use_case.execute(
-        _send_push_command(
-            message_type=NotificationMessageType.MARKETING,
-            kind="benefit",
-            title="혜택 안내",
-            message="이번 달 혜택을 확인해 보세요.",
-        )
+    command = _send_push_command(
+        message_type=NotificationMessageType.MARKETING,
+        kind="benefit",
+        title="혜택 안내",
+        message="이번 달 혜택을 확인해 보세요.",
     )
+    _seed_push_notification(repository, command)
+    await use_case.execute(command)
 
     # Then: 발송은 시도되지 않는다.
     assert push_sender.calls == []
@@ -519,13 +614,13 @@ async def test_send_notification_push_deletes_invalid_registrations_and_commits(
     )
 
     # When: 알림 푸시 발송을 실행한다.
-    await use_case.execute(
-        _send_push_command(
-            kind="credit_prompt",
-            title="크레딧 안내",
-            message="분석 가능 횟수를 확인해 보세요.",
-        )
+    command = _send_push_command(
+        kind="credit_prompt",
+        title="크레딧 안내",
+        message="분석 가능 횟수를 확인해 보세요.",
     )
+    _seed_push_notification(repository, command)
+    await use_case.execute(command)
 
     # Then: 무효 등록만 삭제되고 정리를 위한 commit이 수행된다.
     assert push_token_repository.delete_by_tokens_count == 1
@@ -552,13 +647,13 @@ async def test_send_notification_push_swallows_any_send_failure() -> None:
     )
 
     # When: 알림 푸시 발송을 실행한다.
-    await use_case.execute(
-        _send_push_command(
-            kind="credit_prompt",
-            title="크레딧 안내",
-            message="분석 가능 횟수를 확인해 보세요.",
-        )
+    command = _send_push_command(
+        kind="credit_prompt",
+        title="크레딧 안내",
+        message="분석 가능 횟수를 확인해 보세요.",
     )
+    _seed_push_notification(repository, command)
+    await use_case.execute(command)
 
     # Then: 예외는 전파되지 않고 등록은 유지된다.
     assert len(push_sender.calls) == 1
@@ -583,14 +678,14 @@ async def test_send_marketing_push_skips_without_marketing_consent() -> None:
     )
 
     # When: 마케팅성(marketing) 알림 푸시 발송을 실행한다.
-    await use_case.execute(
-        _send_push_command(
-            message_type=NotificationMessageType.MARKETING,
-            kind="benefit",
-            title="혜택 안내",
-            message="이번 달 혜택을 확인해 보세요.",
-        )
+    command = _send_push_command(
+        message_type=NotificationMessageType.MARKETING,
+        kind="benefit",
+        title="혜택 안내",
+        message="이번 달 혜택을 확인해 보세요.",
     )
+    _seed_push_notification(repository, command)
+    await use_case.execute(command)
 
     # Then: 마케팅 동의가 없어 발송은 시도되지 않는다.
     assert push_sender.calls == []
@@ -616,14 +711,14 @@ async def test_send_service_push_sends_without_marketing_consent() -> None:
     )
 
     # When: service 알림 푸시 발송을 실행한다.
-    await use_case.execute(
-        _send_push_command(
-            message_type=NotificationMessageType.TRANSACTIONAL,
-            kind="credit_prompt",
-            title="크레딧 안내",
-            message="분석 가능 횟수를 확인해 보세요.",
-        )
+    command = _send_push_command(
+        message_type=NotificationMessageType.TRANSACTIONAL,
+        kind="credit_prompt",
+        title="크레딧 안내",
+        message="분석 가능 횟수를 확인해 보세요.",
     )
+    _seed_push_notification(repository, command)
+    await use_case.execute(command)
 
     # Then: message_type가 marketing이 아니므로 마케팅 동의 없이도 발송된다.
     assert len(push_sender.calls) == 1
@@ -652,14 +747,14 @@ async def test_send_marketing_push_sends_with_marketing_consent() -> None:
     )
 
     # When: 마케팅성(marketing) 알림 푸시 발송을 실행한다.
-    await use_case.execute(
-        _send_push_command(
-            message_type=NotificationMessageType.MARKETING,
-            kind="benefit",
-            title="혜택 안내",
-            message="이번 달 혜택을 확인해 보세요.",
-        )
+    command = _send_push_command(
+        message_type=NotificationMessageType.MARKETING,
+        kind="benefit",
+        title="혜택 안내",
+        message="이번 달 혜택을 확인해 보세요.",
     )
+    _seed_push_notification(repository, command)
+    await use_case.execute(command)
 
     # Then: 발송이 수행된다.
     assert len(push_sender.calls) == 1

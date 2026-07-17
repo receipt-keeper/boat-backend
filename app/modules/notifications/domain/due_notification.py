@@ -8,7 +8,10 @@ from app.modules.notifications.domain.schedule_rule import (
     NotificationScheduleRule,
     ScheduleRuleTargetKind,
 )
-from app.modules.notifications.domain.value_objects import NotificationMessageType
+from app.modules.notifications.domain.value_objects import (
+    NotificationCategory,
+    NotificationMessageType,
+)
 
 SYSTEM_TIMEZONE: Final = ZoneInfo("Asia/Seoul")
 _ITEM_NAME_MARKER: Final = "[기기명]"
@@ -22,6 +25,7 @@ class DueNotificationRule:
 
 @dataclass(frozen=True, slots=True)
 class NotificationDeliveryContract:
+    category: NotificationCategory
     message_type: NotificationMessageType
     kind: str
     resource_type: str | None
@@ -54,24 +58,28 @@ def delivery_contract_for(target_kind: ScheduleRuleTargetKind) -> NotificationDe
     match target_kind:
         case ScheduleRuleTargetKind.WARRANTY_RECEIPT:
             return NotificationDeliveryContract(
+                category=NotificationCategory.WARRANTY,
                 message_type=NotificationMessageType.TRANSACTIONAL,
                 kind="warranty_expiry",
                 resource_type="receipt",
             )
         case ScheduleRuleTargetKind.ENGAGEMENT_UNREGISTERED_RECEIPT:
             return NotificationDeliveryContract(
+                category=NotificationCategory.PRODUCT_MANAGEMENT,
                 message_type=NotificationMessageType.MARKETING,
                 kind="receipt_registration_reminder",
                 resource_type=None,
             )
         case ScheduleRuleTargetKind.ENGAGEMENT_INACTIVE_RECEIPT:
             return NotificationDeliveryContract(
+                category=NotificationCategory.PRODUCT_MANAGEMENT,
                 message_type=NotificationMessageType.MARKETING,
                 kind="receipt_inactivity_reminder",
                 resource_type=None,
             )
         case ScheduleRuleTargetKind.ENGAGEMENT_ALL_USER:
             return NotificationDeliveryContract(
+                category=NotificationCategory.BENEFIT,
                 message_type=NotificationMessageType.MARKETING,
                 kind="receipt_analysis_reminder",
                 resource_type=None,

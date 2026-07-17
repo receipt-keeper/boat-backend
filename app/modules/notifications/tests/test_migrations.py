@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -91,6 +92,45 @@ def test_generalize_notifications_migration_backfills_legacy_rows(
         get_settings.cache_clear()
 
 
+def test_notification_category_migration_backfills_legacy_scheduler_kinds(
+    postgres_async_database_url: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given: 20260705_0013 이후에도 구 스케줄러 kind가 남아 있는 DB가 있다.
+    configure_database_environment(monkeypatch, postgres_async_database_url)
+    get_settings.cache_clear()
+    config = _alembic_config()
+    row_ids: tuple[UUID, UUID] | None = None
+    upgraded = False
+    try:
+        command.upgrade(config, _GENERALIZE_REVISION)
+        upgraded = True
+        row_ids = anyio.run(
+            _insert_legacy_scheduler_category_rows,
+            postgres_async_database_url,
+        )
+
+        # When: 알림 카테고리 migration을 적용한다.
+        command.upgrade(config, "head")
+
+        # Then: 구 스케줄러 kind도 현재 카테고리 코드로 정확히 백필된다.
+        anyio.run(
+            _assert_legacy_scheduler_category_rows,
+            postgres_async_database_url,
+            row_ids,
+        )
+    finally:
+        if row_ids is not None:
+            anyio.run(
+                _delete_notification_rows,
+                postgres_async_database_url,
+                row_ids,
+            )
+        if upgraded:
+            command.downgrade(config, "base")
+        get_settings.cache_clear()
+
+
 def test_generalize_notifications_migration_downgrade_round_trip(
     postgres_async_database_url: str,
     monkeypatch: pytest.MonkeyPatch,
@@ -170,6 +210,77 @@ async def _insert_legacy_rows(database_url: str) -> dict[str, UUID]:
         await engine.dispose()
 
 
+async def _insert_legacy_scheduler_category_rows(database_url: str) -> tuple[UUID, UUID]:
+    warranty_id = uuid4()
+    benefit_id = uuid4()
+    engine = build_engine(database_url)
+    try:
+        async with engine.begin() as connection:
+            await connection.execute(
+                text(
+                    """
+                    INSERT INTO user_notifications
+                        (id, user_id, message_type, kind, title, message,
+                         resource_type, resource_id, created_at)
+                    VALUES
+                        (:warranty_id, :user_id, 'transactional', 'warranty',
+                         '알림', 'message', NULL, NULL, :created_at),
+                        (:benefit_id, :user_id, 'marketing', 'engagement_all_user',
+                         '알림', 'message', NULL, NULL, :created_at)
+                    """
+                ),
+                {
+                    "warranty_id": warranty_id,
+                    "benefit_id": benefit_id,
+                    "user_id": uuid4(),
+                    "created_at": datetime.now(UTC),
+                },
+            )
+    finally:
+        await engine.dispose()
+    return warranty_id, benefit_id
+
+
+async def _assert_legacy_scheduler_category_rows(
+    database_url: str,
+    row_ids: tuple[UUID, UUID],
+) -> None:
+    engine = build_engine(database_url)
+    try:
+        async with engine.connect() as connection:
+            rows = (
+                (
+                    await connection.execute(
+                        text(
+                            "SELECT kind, category FROM user_notifications "
+                            "WHERE id IN (:warranty_id, :benefit_id)"
+                        ),
+                        {"warranty_id": row_ids[0], "benefit_id": row_ids[1]},
+                    )
+                )
+                .mappings()
+                .all()
+            )
+            assert {row["kind"]: row["category"] for row in rows} == {
+                "warranty": "warranty",
+                "engagement_all_user": "benefit",
+            }
+    finally:
+        await engine.dispose()
+
+
+async def _delete_notification_rows(database_url: str, row_ids: tuple[UUID, UUID]) -> None:
+    engine = build_engine(database_url)
+    try:
+        async with engine.begin() as connection:
+            await connection.execute(
+                text("DELETE FROM user_notifications WHERE id IN (:warranty_id, :benefit_id)"),
+                {"warranty_id": row_ids[0], "benefit_id": row_ids[1]},
+            )
+    finally:
+        await engine.dispose()
+
+
 async def _assert_downgrade_restored_legacy_columns(database_url: str) -> None:
     engine = build_engine(database_url)
     try:
@@ -180,6 +291,7 @@ async def _assert_downgrade_restored_legacy_columns(database_url: str) -> None:
             assert "resource_type" not in column_names
             assert "resource_id" not in column_names
             assert "message_type" not in column_names
+            assert "category" not in column_names
             assert "title" not in column_names
             assert "metadata" not in column_names
 
@@ -277,6 +389,7 @@ async def _assert_head_columns_present(database_url: str) -> None:
         async with engine.connect() as connection:
             column_names = await _column_names(connection)
             assert "message_type" in column_names
+            assert "category" in column_names
             assert "title" in column_names
             assert "resource_type" in column_names
             assert "resource_id" in column_names

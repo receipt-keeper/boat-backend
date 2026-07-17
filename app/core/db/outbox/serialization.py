@@ -109,6 +109,16 @@ def serialize_event(event: DomainEvent) -> tuple[str, dict[str, Any]]:
     return type(event).__name__, payload
 
 
+def _payload_value(field: dataclasses.Field[Any], payload: dict[str, Any]) -> Any:
+    if field.name in payload:
+        return payload[field.name]
+    if field.default is not dataclasses.MISSING:
+        return field.default
+    if field.default_factory is not dataclasses.MISSING:
+        return field.default_factory()
+    raise KeyError(field.name)
+
+
 def deserialize_event(
     registry: EventTypeRegistry,
     event_type: str,
@@ -122,7 +132,7 @@ def deserialize_event(
     type_hints = get_type_hints(event_class)
 
     kwargs = {
-        field.name: _decode_value(type_hints[field.name], payload[field.name])
+        field.name: _decode_value(type_hints[field.name], _payload_value(field, payload))
         for field in dataclasses.fields(event_class)
     }
     return event_class(**kwargs)

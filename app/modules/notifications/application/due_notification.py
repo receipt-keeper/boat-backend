@@ -37,6 +37,7 @@ def warranty_expiry_notification(
     return DueNotification(
         command=CreateNotificationCommand(
             user_id=user_id,
+            category=delivery.category,
             message_type=delivery.message_type,
             kind=delivery.kind,
             title=render_notification_text(
@@ -73,6 +74,7 @@ def receipt_reminder_notification(
     return DueNotification(
         command=CreateNotificationCommand(
             user_id=user_id,
+            category=delivery.category,
             message_type=delivery.message_type,
             kind=delivery.kind,
             title=due_rule.rule.title_template,

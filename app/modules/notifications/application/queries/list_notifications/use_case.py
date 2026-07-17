@@ -38,6 +38,7 @@ class ListNotificationsQueryUseCase:
             NotificationListItemResult(
                 notification_id=notification.id,
                 message_type=notification.message_type,
+                category=notification.category,
                 kind=notification.kind.value,
                 title=notification.title.value,
                 message=notification.message.value,

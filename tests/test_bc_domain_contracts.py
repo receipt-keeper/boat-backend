@@ -42,7 +42,9 @@ EXPECTED_PERSISTENCE_BACKED_DATA: Final[dict[str, frozenset[str]]] = {
     ),
     "app.modules.notifications.dependencies": frozenset(
         {
+            "DeleteNotificationCommandUseCaseDep",
             "ListNotificationsQueryUseCaseDep",
+            "get_delete_notification_command_use_case",
             "get_list_notifications_query_use_case",
             "get_mark_notification_read_command_use_case",
             "get_notification_settings_query_use_case",

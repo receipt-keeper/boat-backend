@@ -22,6 +22,7 @@ from app.modules.notifications.domain.schedule_rule import (
     ScheduleRuleTargetKind,
 )
 from app.modules.notifications.domain.value_objects import (
+    NotificationCategory,
     NotificationMessage,
     NotificationMessageType,
     NotificationTitle,
@@ -124,28 +125,32 @@ def test_observation_cutoff_for_uses_due_rule_kst_send_time() -> None:
 
 
 @pytest.mark.parametrize(
-    ("target_kind", "message_type", "kind", "resource_type"),
+    ("target_kind", "category", "message_type", "kind", "resource_type"),
     [
         (
             ScheduleRuleTargetKind.WARRANTY_RECEIPT,
+            NotificationCategory.WARRANTY,
             NotificationMessageType.TRANSACTIONAL,
             "warranty_expiry",
             "receipt",
         ),
         (
             ScheduleRuleTargetKind.ENGAGEMENT_UNREGISTERED_RECEIPT,
+            NotificationCategory.PRODUCT_MANAGEMENT,
             NotificationMessageType.MARKETING,
             "receipt_registration_reminder",
             None,
         ),
         (
             ScheduleRuleTargetKind.ENGAGEMENT_INACTIVE_RECEIPT,
+            NotificationCategory.PRODUCT_MANAGEMENT,
             NotificationMessageType.MARKETING,
             "receipt_inactivity_reminder",
             None,
         ),
         (
             ScheduleRuleTargetKind.ENGAGEMENT_ALL_USER,
+            NotificationCategory.BENEFIT,
             NotificationMessageType.MARKETING,
             "receipt_analysis_reminder",
             None,
@@ -154,6 +159,7 @@ def test_observation_cutoff_for_uses_due_rule_kst_send_time() -> None:
 )
 def test_delivery_contract_for_target_kind(
     target_kind: ScheduleRuleTargetKind,
+    category: NotificationCategory,
     message_type: NotificationMessageType,
     kind: str,
     resource_type: str | None,
@@ -165,6 +171,7 @@ def test_delivery_contract_for_target_kind(
 
     # Then: message type, external kind, resource type이 target kind별로 고정된다.
     assert contract.message_type == message_type
+    assert contract.category is category
     assert contract.kind == kind
     assert contract.resource_type == resource_type
 

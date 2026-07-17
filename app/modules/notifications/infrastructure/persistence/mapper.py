@@ -14,6 +14,7 @@ from app.modules.notifications.domain.schedule_rule import (
 )
 from app.modules.notifications.domain.value_objects import (
     DevicePlatform,
+    NotificationCategory,
     NotificationMessageType,
 )
 from app.modules.notifications.infrastructure.persistence.orm import (
@@ -66,6 +67,7 @@ def notification_to_domain(record: UserNotification) -> DomainUserNotification:
     return DomainUserNotification.restore(
         notification_id=record.id,
         user_id=record.user_id,
+        category=NotificationCategory(record.category),
         message_type=NotificationMessageType(record.message_type),
         kind=record.kind,
         title=record.title,
@@ -84,6 +86,7 @@ def notification_to_record(
     return UserNotification(
         id=notification.id,
         user_id=notification.user_id,
+        category=notification.category.value,
         message_type=notification.message_type.value,
         kind=notification.kind.value,
         title=notification.title.value,
