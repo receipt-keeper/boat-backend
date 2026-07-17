@@ -24,8 +24,10 @@ def upgrade() -> None:
         sa.text(
             "UPDATE user_notifications "
             "SET category = CASE "
-            "WHEN kind LIKE 'warranty_%' THEN 'warranty' "
-            "WHEN kind IN ('benefit', 'credit_prompt', 'receipt_analysis_reminder') "
+            "WHEN kind = 'warranty' OR kind LIKE 'warranty_%' THEN 'warranty' "
+            "WHEN kind IN ("
+            "'benefit', 'credit_prompt', 'receipt_analysis_reminder', 'engagement_all_user'"
+            ") "
             "THEN 'benefit' "
             "ELSE 'product_management' END"
         )
