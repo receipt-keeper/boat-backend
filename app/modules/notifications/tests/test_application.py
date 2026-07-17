@@ -93,6 +93,17 @@ class InMemoryNotificationRepository(NotificationRepository):
             return None
         return notification
 
+    async def find_by_id_for_user_for_update(
+        self,
+        *,
+        notification_id: UUID,
+        user_id: UUID,
+    ) -> UserNotification | None:
+        return await self.find_by_id_for_user(
+            notification_id=notification_id,
+            user_id=user_id,
+        )
+
     async def mark_read(
         self,
         *,

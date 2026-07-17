@@ -73,6 +73,14 @@ class NotificationRepositoryFake(NotificationRepository):
     ) -> UserNotification | None:
         raise NotImplementedError
 
+    async def find_by_id_for_user_for_update(
+        self,
+        *,
+        notification_id: UUID,
+        user_id: UUID,
+    ) -> UserNotification | None:
+        raise NotImplementedError
+
     async def mark_read(
         self,
         *,

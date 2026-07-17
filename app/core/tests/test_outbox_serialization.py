@@ -25,12 +25,17 @@ class _OtherModuleEvent(DomainEvent):
     payload_id: UUID
 
 
-def _sample_event() -> NotificationCreated:
+def _sample_event(
+    *,
+    kind: str = "warranty_notice",
+    category: NotificationCategory = NotificationCategory.WARRANTY,
+) -> NotificationCreated:
     return NotificationCreated(
         notification_id=UUID("00000000-0000-0000-0000-000000000001"),
         user_id=UUID("00000000-0000-0000-0000-000000000002"),
         message_type=NotificationMessageType.TRANSACTIONAL,
-        kind="warranty_notice",
+        category=category,
+        kind=kind,
         title="보증 기간 안내",
         message="영수증 보증 기간이 곧 만료됩니다.",
         resource_type="receipt",
@@ -102,7 +107,12 @@ def test_deserialize_restores_str_enum_member_not_plain_string() -> None:
 
 def test_deserialize_old_notification_event_defaults_category() -> None:
     registry = _registry()
-    event_type, payload = serialize_event(_sample_event())
+    event_type, payload = serialize_event(
+        _sample_event(
+            kind="registration_prompt",
+            category=NotificationCategory.PRODUCT_MANAGEMENT,
+        )
+    )
     payload.pop("category", None)
 
     restored = deserialize_event(registry, event_type, payload)

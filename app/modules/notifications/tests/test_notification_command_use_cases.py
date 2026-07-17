@@ -443,6 +443,42 @@ async def test_send_notification_push_sends_to_registered_devices() -> None:
     assert unit_of_work.commit_count == 0
 
 
+async def test_send_notification_push_uses_persisted_category_for_legacy_event() -> None:
+    repository = InMemoryNotificationRepository()
+    push_token_repository = InMemoryPushTokenRepository()
+    await push_token_repository.register(
+        user_id=TEST_USER_ID,
+        token="token-1",
+        platform=DevicePlatform.ANDROID,
+    )
+    command = _send_push_command(
+        kind="warranty_risk",
+        title="보증 만료 임박",
+        message="보증 만료가 임박했습니다.",
+    )
+    repository.notifications[command.notification_id] = UserNotification.create(
+        notification_id=command.notification_id,
+        user_id=command.user_id,
+        message_type=command.message_type,
+        category=NotificationCategory.WARRANTY,
+        kind=command.kind,
+        title=command.title,
+        message=command.message,
+        created_at=CREATED_AT,
+    )
+    push_sender = FakePushSender()
+    use_case = _send_push_use_case(
+        repository=repository,
+        push_token_repository=push_token_repository,
+        push_sender=push_sender,
+        unit_of_work=FakeUnitOfWork(),
+    )
+
+    await use_case.execute(command)
+
+    assert push_sender.calls[0][1].data["category"] == "보증"
+
+
 async def test_send_notification_push_skips_deleted_notification_from_stale_outbox_event() -> None:
     # Given: outbox에는 생성 이벤트가 남아 있지만 알림 행은 이미 삭제되었다.
     repository = InMemoryNotificationRepository()

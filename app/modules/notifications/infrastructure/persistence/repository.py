@@ -144,6 +144,21 @@ class SqlAlchemyNotificationRepository(NotificationRepository):
             return None
         return mapper.notification_to_domain(record)
 
+    async def find_by_id_for_user_for_update(
+        self,
+        *,
+        notification_id: UUID,
+        user_id: UUID,
+    ) -> UserNotification | None:
+        record = await self._find_record_by_id_for_user(
+            notification_id=notification_id,
+            user_id=user_id,
+            for_update=True,
+        )
+        if record is None:
+            return None
+        return mapper.notification_to_domain(record)
+
     async def mark_read(
         self,
         *,
@@ -163,10 +178,12 @@ class SqlAlchemyNotificationRepository(NotificationRepository):
 
     async def delete_by_id_for_user(self, *, notification_id: UUID, user_id: UUID) -> bool:
         record = await self._session.scalar(
-            select(UserNotificationRecord).where(
+            select(UserNotificationRecord)
+            .where(
                 UserNotificationRecord.id == notification_id,
                 UserNotificationRecord.user_id == user_id,
             )
+            .with_for_update()
         )
         if record is None:
             return False
@@ -242,6 +259,7 @@ class SqlAlchemyNotificationRepository(NotificationRepository):
         *,
         notification_id: UUID,
         user_id: UUID,
+        for_update: bool = False,
     ) -> UserNotificationRecord | None:
         marketing_visible = exists(
             select(NotificationSettingsRecord.user_id).where(
@@ -254,7 +272,10 @@ class SqlAlchemyNotificationRepository(NotificationRepository):
             UserNotificationRecord.user_id == user_id,
             or_(UserNotificationRecord.message_type != "marketing", marketing_visible),
         ]
-        return await self._session.scalar(select(UserNotificationRecord).where(*filters))
+        statement = select(UserNotificationRecord).where(*filters)
+        if for_update:
+            statement = statement.with_for_update()
+        return await self._session.scalar(statement)
 
 
 class SqlAlchemyPushTokenRepository(PushTokenRepository):
