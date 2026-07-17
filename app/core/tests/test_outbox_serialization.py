@@ -12,7 +12,10 @@ from app.core.db.outbox.serialization import (
 )
 from app.core.domain.events import DomainEvent
 from app.modules.notifications.domain.events import NotificationCreated
-from app.modules.notifications.domain.value_objects import NotificationMessageType
+from app.modules.notifications.domain.value_objects import (
+    NotificationCategory,
+    NotificationMessageType,
+)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -95,6 +98,17 @@ def test_deserialize_restores_str_enum_member_not_plain_string() -> None:
     assert isinstance(restored, NotificationCreated)
     assert isinstance(restored.message_type, NotificationMessageType)
     assert restored.message_type is NotificationMessageType.TRANSACTIONAL
+
+
+def test_deserialize_old_notification_event_defaults_category() -> None:
+    registry = _registry()
+    event_type, payload = serialize_event(_sample_event())
+    payload.pop("category", None)
+
+    restored = deserialize_event(registry, event_type, payload)
+
+    assert isinstance(restored, NotificationCreated)
+    assert restored.category is NotificationCategory.PRODUCT_MANAGEMENT
 
 
 def test_serialize_uses_class_name_as_event_type() -> None:

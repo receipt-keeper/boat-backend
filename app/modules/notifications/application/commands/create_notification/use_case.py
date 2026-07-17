@@ -27,6 +27,7 @@ def _result_from_notification(notification: UserNotification) -> CreateNotificat
     return CreateNotificationResult(
         notification_id=notification.id,
         message_type=notification.message_type,
+        category=notification.category,
         kind=notification.kind.value,
         title=notification.title.value,
         message=notification.message.value,
@@ -72,6 +73,7 @@ class NotificationCreator:
         return UserNotification.create(
             user_id=command.user_id,
             message_type=command.message_type,
+            category=command.category,
             kind=command.kind,
             title=command.title,
             message=command.message,

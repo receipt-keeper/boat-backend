@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 from app.core.db.session import build_engine
 
 _EXPECTED_MESSAGE_TYPE_CHECK = "ck_user_notifications_message_type_allowed"
+_EXPECTED_CATEGORY_CHECK = "ck_user_notifications_category_allowed"
 _EXPECTED_RESOURCE_PAIR_CHECK = "ck_user_notifications_resource_pair"
 
 _PUSH_TITLE_BY_KIND = {
@@ -73,12 +74,14 @@ async def assert_backfill_is_correct(database_url: str, row_ids: dict[str, UUID]
     try:
         async with engine.connect() as connection:
             await _assert_message_type_backfill(connection, row_ids)
+            await _assert_category_backfill(connection, row_ids)
             await _assert_title_backfill(connection, row_ids)
             await _assert_resource_pair_backfill(connection, row_ids)
             await _assert_metadata_backfill(connection, row_ids)
             await _assert_not_null_constraints(connection)
             await _assert_check_constraint_names(connection)
         await _assert_resource_pair_check_rejects_partial_pair(engine)
+        await _assert_category_check_rejects_unknown_value(engine)
     finally:
         await engine.dispose()
 
@@ -87,7 +90,7 @@ async def _row(connection: AsyncConnection, row_id: UUID) -> RowMapping:
     result = await connection.execute(
         text(
             """
-            SELECT message_type, title, kind, resource_type, resource_id
+            SELECT message_type, category, title, kind, resource_type, resource_id
             FROM user_notifications
             WHERE id = :id
             """
@@ -106,6 +109,20 @@ async def _assert_message_type_backfill(
         kind = key.split(":", 1)[0]
         expected_message_type = "marketing" if kind == "benefit" else "transactional"
         assert row["message_type"] == expected_message_type, key
+
+
+async def _assert_category_backfill(connection: AsyncConnection, row_ids: dict[str, UUID]) -> None:
+    for key, row_id in row_ids.items():
+        row = await _row(connection, row_id)
+        kind = key.split(":", 1)[0]
+        expected_category = (
+            "보증"
+            if kind.startswith("warranty_")
+            else "혜택"
+            if kind in {"benefit", "credit_prompt"}
+            else "제품 관리"
+        )
+        assert row["category"] == expected_category, key
 
 
 async def _assert_title_backfill(connection: AsyncConnection, row_ids: dict[str, UUID]) -> None:
@@ -133,7 +150,7 @@ async def _assert_resource_pair_backfill(
 
 
 async def _assert_not_null_constraints(connection: AsyncConnection) -> None:
-    for column_name in ("message_type", "title", "metadata"):
+    for column_name in ("category", "message_type", "title", "metadata"):
         is_nullable = await connection.scalar(
             text(
                 """
@@ -172,6 +189,7 @@ async def _assert_check_constraint_names(connection: AsyncConnection) -> None:
     )
     constraint_names = {row[0] for row in constraint_rows.tuples()}
     assert _EXPECTED_MESSAGE_TYPE_CHECK in constraint_names
+    assert _EXPECTED_CATEGORY_CHECK in constraint_names
     assert _EXPECTED_RESOURCE_PAIR_CHECK in constraint_names
 
 
@@ -188,6 +206,20 @@ async def _assert_resource_pair_check_rejects_partial_pair(engine: AsyncEngine) 
                         (:id, :user_id, 'benefit', 'marketing', '알림', 'msg',
                          'receipt', :created_at)
                     """
+                ),
+                {"id": uuid4(), "user_id": uuid4(), "created_at": datetime.now(UTC)},
+            )
+
+
+async def _assert_category_check_rejects_unknown_value(engine: AsyncEngine) -> None:
+    with pytest.raises(IntegrityError):
+        async with engine.begin() as connection:
+            await connection.execute(
+                text(
+                    "INSERT INTO user_notifications "
+                    "(id, user_id, category, kind, message_type, title, message, created_at) "
+                    "VALUES (:id, :user_id, '알 수 없음', 'benefit', 'marketing', '알림', "
+                    "'msg', :created_at)"
                 ),
                 {"id": uuid4(), "user_id": uuid4(), "created_at": datetime.now(UTC)},
             )

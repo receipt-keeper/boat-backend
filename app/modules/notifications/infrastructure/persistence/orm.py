@@ -47,6 +47,10 @@ class UserNotification(Base):
             name=conv("ck_user_notifications_message_type_allowed"),
         ),
         CheckConstraint(
+            "category IN ('제품 관리', '보증', '혜택')",
+            name=conv("ck_user_notifications_category_allowed"),
+        ),
+        CheckConstraint(
             "(resource_type IS NULL) = (resource_id IS NULL)",
             name=conv("ck_user_notifications_resource_pair"),
         ),
@@ -61,6 +65,12 @@ class UserNotification(Base):
         type_=PostgreSQLUUID(as_uuid=True),
         nullable=False,
         index=True,
+    )
+    category: Mapped[str] = mapped_column(
+        type_=String(50),
+        nullable=False,
+        default="제품 관리",
+        server_default=sa.text("'제품 관리'"),
     )
     message_type: Mapped[str] = mapped_column(type_=String(20), nullable=False)
     kind: Mapped[str] = mapped_column(type_=String(50), nullable=False)

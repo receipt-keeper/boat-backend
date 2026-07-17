@@ -180,6 +180,7 @@ async def _assert_downgrade_restored_legacy_columns(database_url: str) -> None:
             assert "resource_type" not in column_names
             assert "resource_id" not in column_names
             assert "message_type" not in column_names
+            assert "category" not in column_names
             assert "title" not in column_names
             assert "metadata" not in column_names
 
@@ -277,6 +278,7 @@ async def _assert_head_columns_present(database_url: str) -> None:
         async with engine.connect() as connection:
             column_names = await _column_names(connection)
             assert "message_type" in column_names
+            assert "category" in column_names
             assert "title" in column_names
             assert "resource_type" in column_names
             assert "resource_id" in column_names

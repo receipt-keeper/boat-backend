@@ -74,6 +74,7 @@ async def test_list_notifications_returns_persisted_current_user_notifications(
     assert first_body["data"]["notifications"] == [
         {
             "notificationId": str(newer_notification_id),
+            "category": "제품 관리",
             "messageType": "transactional",
             "kind": "registration_prompt",
             "title": "영수증 등록 안내",

@@ -118,6 +118,18 @@ class InMemoryNotificationRepository(NotificationRepository):
         self.notifications[notification_id] = read_notification
         return read_notification
 
+    async def delete_by_id_for_user(
+        self,
+        *,
+        notification_id: UUID,
+        user_id: UUID,
+    ) -> bool:
+        notification = self.notifications.get(notification_id)
+        if notification is None or notification.user_id != user_id:
+            return False
+        del self.notifications[notification_id]
+        return True
+
     async def get_settings(self, *, user_id: UUID) -> NotificationSettings:
         self.settings_get_count += 1
         return self.settings.get(user_id, NotificationSettings.create(user_id=user_id))

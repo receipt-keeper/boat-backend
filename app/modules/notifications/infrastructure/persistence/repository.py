@@ -161,6 +161,19 @@ class SqlAlchemyNotificationRepository(NotificationRepository):
         await self._session.flush()
         return mapper.notification_to_domain(record)
 
+    async def delete_by_id_for_user(self, *, notification_id: UUID, user_id: UUID) -> bool:
+        record = await self._session.scalar(
+            select(UserNotificationRecord).where(
+                UserNotificationRecord.id == notification_id,
+                UserNotificationRecord.user_id == user_id,
+            )
+        )
+        if record is None:
+            return False
+        await self._session.delete(record)
+        await self._session.flush()
+        return True
+
     async def get_settings(self, *, user_id: UUID) -> NotificationSettings:
         record = await self._session.get(NotificationSettingsRecord, user_id)
         if record is None:

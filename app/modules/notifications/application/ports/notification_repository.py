@@ -54,6 +54,10 @@ class NotificationRepository(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    async def delete_by_id_for_user(self, *, notification_id: UUID, user_id: UUID) -> bool:
+        raise NotImplementedError
+
+    @abstractmethod
     async def get_settings(self, *, user_id: UUID) -> NotificationSettings:
         raise NotImplementedError
 

@@ -82,6 +82,7 @@ async def _handle_notification_created(
             user_id=event.user_id,
             notification_id=event.notification_id,
             message_type=event.message_type,
+            category=event.category,
             kind=event.kind,
             title=event.title,
             message=event.message,

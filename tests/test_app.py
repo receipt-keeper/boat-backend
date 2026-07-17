@@ -48,7 +48,7 @@ def test_notifications_openapi_exposes_read_routes_without_alias_routes() -> Non
     paths = schema["paths"]
 
     assert set(paths["/api/v1/notifications"]) == {"get"}
-    assert set(paths["/api/v1/notifications/{notification_id}"]) == {"patch"}
+    assert set(paths["/api/v1/notifications/{notification_id}"]) == {"patch", "delete"}
     assert set(paths["/api/v1/notifications/settings"]) == {"get", "patch"}
     assert set(paths["/api/v1/notifications/devices"]) == {"put"}
     assert set(paths["/api/v1/notifications/devices/{token}"]) == {"delete"}
@@ -62,7 +62,7 @@ def test_notifications_openapi_exposes_read_routes_without_alias_routes() -> Non
     }
     assert notification_paths == {
         "/api/v1/notifications": {"get"},
-        "/api/v1/notifications/{notification_id}": {"patch"},
+        "/api/v1/notifications/{notification_id}": {"patch", "delete"},
         "/api/v1/notifications/settings": {"get", "patch"},
         "/api/v1/notifications/devices": {"put"},
         "/api/v1/notifications/devices/{token}": {"delete"},

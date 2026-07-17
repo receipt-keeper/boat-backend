@@ -45,6 +45,12 @@ class SendNotificationPushCommandUseCase:
     async def execute(self, command: SendNotificationPushCommand) -> None:
         # 푸시는 best-effort — 이미 생성된 알림이 발송/정리 실패의 영향을 받으면 안 된다.
         try:
+            notification = await self._notification_repository.find_by_id_for_user(
+                notification_id=command.notification_id,
+                user_id=command.user_id,
+            )
+            if notification is None:
+                return
             settings = await self._notification_repository.get_settings(user_id=command.user_id)
             if not settings.push_enabled:
                 return
@@ -78,6 +84,7 @@ class SendNotificationPushCommandUseCase:
 def _push_data(command: SendNotificationPushCommand) -> dict[str, str]:
     data = {
         "notificationId": str(command.notification_id),
+        "category": command.category.value,
         "messageType": command.message_type.value,
         "kind": _LEGACY_SCHEDULER_KIND_ALIASES.get(command.kind, command.kind),
     }

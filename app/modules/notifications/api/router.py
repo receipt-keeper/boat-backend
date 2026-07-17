@@ -14,6 +14,9 @@ from app.modules.notifications.api.schemas import (
     RegisterDeviceRequest,
     UpdateNotificationSettingsRequest,
 )
+from app.modules.notifications.application.commands.delete_notification.command import (
+    DeleteNotificationCommand,
+)
 from app.modules.notifications.application.commands.mark_notification_read.command import (
     MarkNotificationReadCommand,
 )
@@ -33,6 +36,7 @@ from app.modules.notifications.application.queries.list_notifications.query impo
     ListNotificationsQuery,
 )
 from app.modules.notifications.dependencies import (
+    DeleteNotificationCommandUseCaseDep,
     GetNotificationSettingsQueryUseCaseDep,
     ListNotificationsQueryUseCaseDep,
     MarkNotificationReadCommandUseCaseDep,
@@ -40,12 +44,18 @@ from app.modules.notifications.dependencies import (
     UnregisterDeviceTokenCommandUseCaseDep,
     UpdateNotificationSettingsCommandUseCaseDep,
 )
-from app.modules.notifications.domain.value_objects import NotificationMessageType
+from app.modules.notifications.domain.value_objects import (
+    NotificationCategory,
+    NotificationMessageType,
+)
 
 
 class _NotificationResult(Protocol):
     @property
     def notification_id(self) -> UUID: ...
+
+    @property
+    def category(self) -> NotificationCategory: ...
 
     @property
     def message_type(self) -> NotificationMessageType: ...
@@ -207,6 +217,32 @@ async def update_notification(
     )
 
 
+@router.delete(
+    "/notifications/{notification_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses={
+        status.HTTP_404_NOT_FOUND: {
+            "model": CommonResponse[ApiErrorData],
+            "description": "알림을 찾을 수 없음",
+        },
+    },
+    summary="알림 삭제",
+    description="현재 사용자가 소유한 알림을 삭제한다. 성공하면 본문 없이 204를 반환한다.",
+)
+async def delete_notification(
+    notification_id: UUID,
+    principal: CurrentPrincipalDep,
+    command_use_case: DeleteNotificationCommandUseCaseDep,
+) -> Response:
+    await command_use_case.execute(
+        DeleteNotificationCommand(
+            user_id=principal.user_id,
+            notification_id=notification_id,
+        )
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.put(
     "/notifications/devices",
     status_code=status.HTTP_204_NO_CONTENT,
@@ -259,6 +295,7 @@ async def unregister_device(
 def _notification_response(notification: _NotificationResult) -> NotificationResponse:
     return NotificationResponse(
         notificationId=notification.notification_id,
+        category=notification.category,
         messageType=notification.message_type,
         kind=notification.kind,
         title=notification.title,

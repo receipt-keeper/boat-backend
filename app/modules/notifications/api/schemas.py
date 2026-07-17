@@ -6,12 +6,14 @@ from pydantic import ConfigDict, Field
 from app.core.http.responses import AppBaseModel, CursorPaginationResponse
 from app.modules.notifications.domain.value_objects import (
     DevicePlatform,
+    NotificationCategory,
     NotificationMessageType,
 )
 
 
 class NotificationResponse(AppBaseModel):
     notification_id: UUID = Field(alias="notificationId", description="알림 ID.")
+    category: NotificationCategory = Field(description="알림 카테고리.")
     message_type: NotificationMessageType = Field(
         alias="messageType",
         description=(
