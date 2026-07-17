@@ -17,30 +17,30 @@ def upgrade() -> None:
             "category",
             sa.String(length=50),
             nullable=True,
-            server_default=sa.text("'제품 관리'"),
+            server_default=sa.text("'product_management'"),
         ),
     )
     op.execute(
         sa.text(
             "UPDATE user_notifications "
             "SET category = CASE "
-            "WHEN kind LIKE 'warranty_%' THEN '보증' "
+            "WHEN kind LIKE 'warranty_%' THEN 'warranty' "
             "WHEN kind IN ('benefit', 'credit_prompt', 'receipt_analysis_reminder') "
-            "THEN '혜택' "
-            "ELSE '제품 관리' END"
+            "THEN 'benefit' "
+            "ELSE 'product_management' END"
         )
     )
     op.create_check_constraint(
         op.f("ck_user_notifications_category_allowed"),
         "user_notifications",
-        "category IN ('제품 관리', '보증', '혜택')",
+        "category IN ('product_management', 'warranty', 'benefit')",
     )
     op.alter_column(
         "user_notifications",
         "category",
         existing_type=sa.String(length=50),
         nullable=False,
-        server_default=sa.text("'제품 관리'"),
+        server_default=sa.text("'product_management'"),
     )
 
 

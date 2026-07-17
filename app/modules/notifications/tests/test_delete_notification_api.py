@@ -97,7 +97,7 @@ async def test_delete_waits_for_in_flight_push_row_lock(
             orm.UserNotification(
                 id=notification_id,
                 user_id=TEST_USER_ID,
-                category="보증",
+                category="warranty",
                 message_type=NotificationMessageType.TRANSACTIONAL,
                 kind="warranty_risk",
                 title="보증 만료 임박",

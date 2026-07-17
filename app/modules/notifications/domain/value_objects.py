@@ -8,9 +8,9 @@ from app.core.domain.value_object import ValueObject
 
 
 class NotificationCategory(StrEnum):
-    PRODUCT_MANAGEMENT = "제품 관리"
-    WARRANTY = "보증"
-    BENEFIT = "혜택"
+    PRODUCT_MANAGEMENT = "product_management"
+    WARRANTY = "warranty"
+    BENEFIT = "benefit"
 
 
 class NotificationMessageType(StrEnum):

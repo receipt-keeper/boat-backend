@@ -60,7 +60,7 @@ class _FakeBatchResponse:
             ScheduleRuleTargetKind.WARRANTY_RECEIPT,
             {
                 "notificationId": str(NOTIFICATION_ID),
-                "category": "보증",
+                "category": "warranty",
                 "messageType": "transactional",
                 "kind": "warranty_expiry",
                 "resourceType": "receipt",
@@ -71,7 +71,7 @@ class _FakeBatchResponse:
             ScheduleRuleTargetKind.ENGAGEMENT_UNREGISTERED_RECEIPT,
             {
                 "notificationId": str(NOTIFICATION_ID),
-                "category": "제품 관리",
+                "category": "product_management",
                 "messageType": "marketing",
                 "kind": "receipt_registration_reminder",
             },
@@ -80,7 +80,7 @@ class _FakeBatchResponse:
             ScheduleRuleTargetKind.ENGAGEMENT_INACTIVE_RECEIPT,
             {
                 "notificationId": str(NOTIFICATION_ID),
-                "category": "제품 관리",
+                "category": "product_management",
                 "messageType": "marketing",
                 "kind": "receipt_inactivity_reminder",
             },
@@ -89,7 +89,7 @@ class _FakeBatchResponse:
             ScheduleRuleTargetKind.ENGAGEMENT_ALL_USER,
             {
                 "notificationId": str(NOTIFICATION_ID),
-                "category": "혜택",
+                "category": "benefit",
                 "messageType": "marketing",
                 "kind": "receipt_analysis_reminder",
             },

@@ -116,11 +116,11 @@ async def _assert_category_backfill(connection: AsyncConnection, row_ids: dict[s
         row = await _row(connection, row_id)
         kind = key.split(":", 1)[0]
         expected_category = (
-            "보증"
+            "warranty"
             if kind.startswith("warranty_")
-            else "혜택"
-            if kind in {"benefit", "credit_prompt"}
-            else "제품 관리"
+            else "benefit"
+            if kind in {"benefit", "credit_prompt", "receipt_analysis_reminder"}
+            else "product_management"
         )
         assert row["category"] == expected_category, key
 

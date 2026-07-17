@@ -193,7 +193,7 @@ async def test_create_notification_commits_once_and_returns_expected_result() ->
     assert repository.create_count == 1
     assert saved.user_id == TEST_USER_ID
     assert result.message_type == NotificationMessageType.TRANSACTIONAL
-    assert result.category.value == "제품 관리"
+    assert result.category.value == "product_management"
     assert result.kind == "registration_prompt"
     assert result.title == "영수증 등록 안내"
     assert result.message == "영수증을 등록해 보세요."
@@ -212,7 +212,7 @@ async def test_create_notification_commits_once_and_returns_expected_result() ->
     assert published_event.notification_id == result.notification_id
     assert published_event.user_id == TEST_USER_ID
     assert published_event.message_type == NotificationMessageType.TRANSACTIONAL
-    assert published_event.category.value == "제품 관리"
+    assert published_event.category.value == "product_management"
     assert published_event.kind == "registration_prompt"
     assert published_event.title == "영수증 등록 안내"
     assert published_event.message == "영수증을 등록해 보세요."
@@ -436,7 +436,7 @@ async def test_send_notification_push_sends_to_registered_devices() -> None:
     assert sent_message.body == "보증 만료가 임박했습니다."
     assert sent_message.data == {
         "notificationId": str(command.notification_id),
-        "category": "보증",
+        "category": "warranty",
         "messageType": "transactional",
         "kind": "warranty_risk",
     }
@@ -476,7 +476,7 @@ async def test_send_notification_push_uses_persisted_category_for_legacy_event()
 
     await use_case.execute(command)
 
-    assert push_sender.calls[0][1].data["category"] == "보증"
+    assert push_sender.calls[0][1].data["category"] == "warranty"
 
 
 async def test_send_notification_push_skips_deleted_notification_from_stale_outbox_event() -> None:
@@ -547,7 +547,7 @@ async def test_send_notification_push_includes_resource_fields_when_present() ->
     _, sent_message = push_sender.calls[0]
     assert sent_message.data == {
         "notificationId": str(command.notification_id),
-        "category": "보증",
+        "category": "warranty",
         "messageType": "transactional",
         "kind": "warranty_risk",
         "resourceType": "receipt",

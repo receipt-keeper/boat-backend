@@ -47,7 +47,7 @@ class UserNotification(Base):
             name=conv("ck_user_notifications_message_type_allowed"),
         ),
         CheckConstraint(
-            "category IN ('제품 관리', '보증', '혜택')",
+            "category IN ('product_management', 'warranty', 'benefit')",
             name=conv("ck_user_notifications_category_allowed"),
         ),
         CheckConstraint(
@@ -69,8 +69,8 @@ class UserNotification(Base):
     category: Mapped[str] = mapped_column(
         type_=String(50),
         nullable=False,
-        default="제품 관리",
-        server_default=sa.text("'제품 관리'"),
+        default="product_management",
+        server_default=sa.text("'product_management'"),
     )
     message_type: Mapped[str] = mapped_column(type_=String(20), nullable=False)
     kind: Mapped[str] = mapped_column(type_=String(50), nullable=False)
