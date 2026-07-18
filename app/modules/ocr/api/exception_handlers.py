@@ -10,7 +10,6 @@ from app.modules.ocr.domain.exceptions import (
 )
 
 _UNSUPPORTED_RECEIPT_CODE = "UNSUPPORTED_RECEIPT"
-_UNSUPPORTED_RECEIPT_FIELD_MESSAGE = "지원하지 않는 영수증입니다."
 _UNREADABLE_RECEIPT_FIELD_MESSAGE = (
     "영수증 이미지를 인식하지 못했습니다. 다시 촬영하거나 수동 입력해 주세요."
 )
@@ -78,7 +77,7 @@ async def handle_unsupported_receipt_error(
         *(
             ReceiptOcrFieldError(
                 fileIndex=file_index,
-                message=_UNSUPPORTED_RECEIPT_FIELD_MESSAGE,
+                message=exception.message,
             )
             for file_index in exception.unsupported_file_indexes
         ),
