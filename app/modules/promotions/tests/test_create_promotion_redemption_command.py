@@ -1,3 +1,4 @@
+import asyncio
 from datetime import timedelta
 
 import pytest
@@ -6,8 +7,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.db.outbox.orm import OutboxEvent
 from app.core.db.outbox.publisher import OutboxEventPublisher
-from app.core.domain.exceptions import NotFoundError
+from app.core.domain.exceptions import NotFoundError, ValidationError
 from app.modules.promotions.application.ports.credit_grant import (
+    PromotionCreditBalance,
     PromotionCreditGrant,
     PromotionCreditGrantResult,
 )
@@ -16,7 +18,11 @@ from app.modules.promotions.domain.exceptions import (
     PromotionNotFoundError,
     PromotionRedemptionConflictError,
 )
-from app.modules.promotions.domain.model import PromotionContext, PromotionRedemptionStatus
+from app.modules.promotions.domain.model import (
+    PromotionContext,
+    PromotionKind,
+    PromotionRedemptionStatus,
+)
 from app.modules.promotions.infrastructure.persistence import orm
 from app.modules.promotions.tests.helpers import (
     BANNER_IMAGE_URL,
@@ -229,6 +235,143 @@ async def test_create_promotion_redemption_allows_distinct_attempts_within_user_
         f"promotionRedemption:{PROMOTION_ID}:{USER_ID}:attempt-1",
         f"promotionRedemption:{PROMOTION_ID}:{USER_ID}:attempt-2",
     ]
+
+
+async def test_rewarded_ad_redemption_requires_idempotency_key(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with postgres_session_factory() as session:
+        await _seed_rewarded_ad_promotion(session)
+        grant_port = _rewarded_ad_grant_port(remaining_count=0)
+
+        with pytest.raises(ValidationError) as exc_info:
+            await promotion_use_case(session, grant_port).execute(promotion_command())
+
+    assert exc_info.value.details[0].field == "Idempotency-Key"
+    assert grant_port.grants == []
+
+
+async def test_rewarded_ad_redemption_rejects_when_ocr_credit_remains(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with postgres_session_factory() as session:
+        await _seed_rewarded_ad_promotion(session)
+        grant_port = _rewarded_ad_grant_port(remaining_count=1)
+
+        with pytest.raises(PromotionRedemptionConflictError, match="남은 OCR 분석 횟수"):
+            await promotion_use_case(session, grant_port).execute(
+                promotion_command(idempotency_key="attempt-1")
+            )
+
+    assert grant_port.grants == []
+
+
+async def test_rewarded_ad_redemption_requires_consumption_between_daily_grants(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with postgres_session_factory() as session:
+        await _seed_rewarded_ad_promotion(session)
+        grant_port = _rewarded_ad_grant_port(remaining_count=0)
+        use_case = promotion_use_case(session, grant_port)
+
+        first = await use_case.execute(promotion_command(idempotency_key="attempt-1"))
+        replay = await use_case.execute(promotion_command(idempotency_key="attempt-1"))
+
+        with pytest.raises(PromotionRedemptionConflictError, match="남은 OCR 분석 횟수"):
+            await use_case.execute(promotion_command(idempotency_key="attempt-2"))
+
+        grant_port.balance = PromotionCreditBalance(total_granted_count=2, remaining_count=0)
+        second = await use_case.execute(promotion_command(idempotency_key="attempt-2"))
+        grant_port.balance = PromotionCreditBalance(total_granted_count=4, remaining_count=0)
+
+        with pytest.raises(PromotionRedemptionConflictError, match="이미 사용한 프로모션"):
+            await use_case.execute(promotion_command(idempotency_key="attempt-3"))
+
+    assert first.kind == PromotionKind.REWARDED_AD
+    assert first.max_redemptions_per_user == 2
+    assert first.remaining_redemptions_for_user == 1
+    assert replay.redemption_id == first.redemption_id
+    assert replay.already_redeemed is True
+    assert second.remaining_redemptions_for_user == 0
+    assert len(grant_port.grants) == 2
+
+
+async def test_rewarded_ad_daily_limit_resets_at_kst_midnight(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with postgres_session_factory() as session:
+        await _seed_rewarded_ad_promotion(session)
+        grant_port = _rewarded_ad_grant_port(remaining_count=0)
+        current_use_case = promotion_use_case(session, grant_port)
+
+        await current_use_case.execute(promotion_command(idempotency_key="attempt-1"))
+        grant_port.balance = PromotionCreditBalance(total_granted_count=2, remaining_count=0)
+        await current_use_case.execute(promotion_command(idempotency_key="attempt-2"))
+        grant_port.balance = PromotionCreditBalance(total_granted_count=4, remaining_count=0)
+
+        next_day = await promotion_use_case(
+            session,
+            grant_port,
+            clock=lambda: NOW + timedelta(hours=3),
+        ).execute(promotion_command(idempotency_key="attempt-3"))
+
+    assert next_day.remaining_redemptions_for_user == 1
+    assert len(grant_port.grants) == 3
+
+
+async def test_rewarded_ad_concurrent_distinct_requests_grant_only_once(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with postgres_session_factory() as session:
+        await _seed_rewarded_ad_promotion(session)
+
+    grant_port = _rewarded_ad_grant_port(remaining_count=0)
+    async with (
+        postgres_session_factory() as first_session,
+        postgres_session_factory() as second_session,
+    ):
+        results = await asyncio.gather(
+            promotion_use_case(first_session, grant_port).execute(
+                promotion_command(idempotency_key="attempt-1")
+            ),
+            promotion_use_case(second_session, grant_port).execute(
+                promotion_command(idempotency_key="attempt-2")
+            ),
+            return_exceptions=True,
+        )
+
+    successful = [result for result in results if not isinstance(result, BaseException)]
+    conflicts = [
+        result for result in results if isinstance(result, PromotionRedemptionConflictError)
+    ]
+    assert len(successful) == 1
+    assert len(conflicts) == 1
+    assert len(grant_port.grants) == 1
+
+
+async def _seed_rewarded_ad_promotion(session: AsyncSession) -> None:
+    await seed_promotion(
+        session,
+        context=PromotionContext.RECHARGE.value,
+        kind=PromotionKind.REWARDED_AD.value,
+        max_redemptions=None,
+        max_redemptions_per_user=2,
+        expires_at=None,
+        benefit_amount=2,
+    )
+
+
+def _rewarded_ad_grant_port(*, remaining_count: int) -> FakePromotionCreditGrantPort:
+    return FakePromotionCreditGrantPort(
+        result=PromotionCreditGrantResult(
+            credit_balance_after=2,
+            credit_remaining_after=2,
+        ),
+        balance=PromotionCreditBalance(
+            total_granted_count=0,
+            remaining_count=remaining_count,
+        ),
+    )
 
 
 @pytest.mark.parametrize(

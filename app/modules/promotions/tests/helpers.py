@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
@@ -51,6 +52,7 @@ class FakePromotionCreditGrantPort(PromotionCreditGrantPort):
             credit_remaining_after=3,
         )
     )
+    balance: PromotionCreditBalance | None = None
 
     async def grant_ocr_credit(
         self,
@@ -58,6 +60,10 @@ class FakePromotionCreditGrantPort(PromotionCreditGrantPort):
         grant: PromotionCreditGrant,
     ) -> PromotionCreditGrantResult:
         self.grants.append(grant)
+        self.balance = PromotionCreditBalance(
+            total_granted_count=self.result.credit_balance_after or 0,
+            remaining_count=self.result.credit_remaining_after or 0,
+        )
         return self.result
 
     async def get_ocr_credit_balance(
@@ -65,6 +71,8 @@ class FakePromotionCreditGrantPort(PromotionCreditGrantPort):
         *,
         user_id: UUID,
     ) -> PromotionCreditBalance:
+        if self.balance is not None:
+            return self.balance
         return PromotionCreditBalance(
             total_granted_count=self.result.credit_balance_after or 0,
             remaining_count=self.result.credit_remaining_after or 0,
@@ -85,13 +93,14 @@ def promotion_use_case(
     grant_port: FakePromotionCreditGrantPort,
     *,
     event_publisher: EventPublisher | None = None,
+    clock: Callable[[], datetime] = lambda: NOW,
 ) -> CreatePromotionRedemptionCommandUseCase:
     return CreatePromotionRedemptionCommandUseCase(
         promotion_repository=SqlAlchemyPromotionRepository(session),
         credit_grant_port=grant_port,
         unit_of_work=SqlAlchemyUnitOfWork(session),
         event_publisher=_event_publisher_for(session, event_publisher),
-        clock=lambda: NOW,
+        clock=clock,
     )
 
 

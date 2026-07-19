@@ -288,8 +288,11 @@ def test_promotions_openapi_documents_recharge_lookup_and_redemption_flow() -> N
     assert isinstance(get_description, str)
     assert isinstance(redemption_description, str)
     assert "/api/v1/promotions?featureKey=ocr&context=recharge" in get_description
+    assert "kind=rewardedAd" in get_description
     assert "state=redeemable" in get_description
     assert "Idempotency-Key" in redemption_description
+    assert "하루 2회" in redemption_description
+    assert "새 키" in redemption_description
     assert "크레딧" in get_description
     assert "token" not in get_description.casefold()
     assert "token" not in redemption_description.casefold()

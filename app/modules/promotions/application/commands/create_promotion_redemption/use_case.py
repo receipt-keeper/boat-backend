@@ -4,6 +4,7 @@ from typing import assert_never
 
 from app.core.application.event_publisher import EventPublisher
 from app.core.application.unit_of_work import UnitOfWork
+from app.core.domain.exceptions import ErrorDetail, ValidationError
 from app.modules.promotions.application.commands.create_promotion_redemption.command import (
     CreatePromotionRedemptionCommand,
 )
@@ -20,7 +21,7 @@ from app.modules.promotions.application.ports.promotion_repository import (
     PromotionRepository,
 )
 from app.modules.promotions.domain.exceptions import PromotionNotFoundError
-from app.modules.promotions.domain.model import PromotionContext
+from app.modules.promotions.domain.model import PromotionContext, PromotionKind
 
 
 def _utc_now() -> datetime:
@@ -50,7 +51,6 @@ class CreatePromotionRedemptionCommandUseCase:
         self,
         command: CreatePromotionRedemptionCommand,
     ) -> CreatePromotionRedemptionResult:
-        idempotency_key = _idempotency_key(command)
         promotion = await self._promotion_repository.find_promotion_for_update(
             promotion_id=command.promotion_id,
         )
@@ -63,6 +63,17 @@ class CreatePromotionRedemptionCommandUseCase:
                 pass
             case unreachable:
                 assert_never(unreachable)
+        if promotion.kind == PromotionKind.REWARDED_AD and command.idempotency_key is None:
+            raise ValidationError(
+                [
+                    ErrorDetail(
+                        field="Idempotency-Key",
+                        message="광고 보상 프로모션 수령에는 Idempotency-Key 헤더가 필요합니다.",
+                    )
+                ]
+            )
+
+        idempotency_key = _idempotency_key(command)
 
         replayed = await self._redemption_executor.replay_if_existing(
             PromotionRedemptionReplay(

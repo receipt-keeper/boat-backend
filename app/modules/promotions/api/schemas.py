@@ -174,16 +174,23 @@ class PromotionResponse(AppBaseModel):
         *,
         banner_image_url: str | None,
     ) -> "PromotionResponse":
+        state = (
+            PromotionState.ALREADY_REDEEMED
+            if result.remaining_redemptions_for_user == 0
+            else PromotionState.REDEEMABLE
+        )
         return cls(
-            state=PromotionState.ALREADY_REDEEMED,
+            state=state,
             promotionId=result.promotion_id,
-            kind=None,
+            kind=result.kind,
             benefit=PromotionBenefitResponse(
                 featureKey=PromotionBenefitFeatureKey.OCR,
                 amount=result.benefit_amount,
             ),
             redemption=PromotionRedemptionResponse(
                 remainingRedemptions=result.remaining_redemptions,
+                maxRedemptionsPerUser=result.max_redemptions_per_user,
+                remainingRedemptionsForUser=result.remaining_redemptions_for_user,
             ),
             balance=PromotionBalanceResponse(
                 totalGrantedCount=result.credit_balance_after,

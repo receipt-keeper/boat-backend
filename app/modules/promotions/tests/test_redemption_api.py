@@ -28,8 +28,8 @@ async def test_create_promotion_redemption_returns_balance_and_benefit() -> None
     assert data["benefit"] == {"featureKey": "ocr", "amount": 3}
     assert data["redemption"] == {
         "remainingRedemptions": 7,
-        "maxRedemptionsPerUser": None,
-        "remainingRedemptionsForUser": None,
+        "maxRedemptionsPerUser": 1,
+        "remainingRedemptionsForUser": 0,
     }
     assert data["balance"] == {"totalGrantedCount": 8, "remainingCount": 6}
     assert data["bannerImage"] == {"imageUrl": PUBLIC_BANNER_IMAGE_URL}
@@ -53,8 +53,8 @@ async def test_create_promotion_code_redemption_uses_static_route() -> None:
     assert data["promotionId"] == str(PROMOTION_ID)
     assert data["redemption"] == {
         "remainingRedemptions": 7,
-        "maxRedemptionsPerUser": None,
-        "remainingRedemptionsForUser": None,
+        "maxRedemptionsPerUser": 1,
+        "remainingRedemptionsForUser": 0,
     }
     assert data["bannerImage"] == {"imageUrl": PUBLIC_BANNER_IMAGE_URL}
 
@@ -104,8 +104,8 @@ async def test_repeat_redemption_returns_already_redeemed_with_unchanged_balance
     assert data["state"] == "alreadyRedeemed"
     assert data["redemption"] == {
         "remainingRedemptions": 7,
-        "maxRedemptionsPerUser": None,
-        "remainingRedemptionsForUser": None,
+        "maxRedemptionsPerUser": 1,
+        "remainingRedemptionsForUser": 0,
     }
     assert data["balance"] == {"totalGrantedCount": 8, "remainingCount": 6}
 
