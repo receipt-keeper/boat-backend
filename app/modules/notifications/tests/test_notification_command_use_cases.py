@@ -441,6 +441,7 @@ async def test_send_notification_push_sends_to_registered_devices() -> None:
         "kind": "warranty_risk",
     }
     assert unit_of_work.commit_count == 0
+    assert unit_of_work.rollback_count == 1
 
 
 async def test_send_notification_push_uses_persisted_category_for_legacy_event() -> None:
@@ -627,6 +628,7 @@ async def test_send_notification_push_deletes_invalid_registrations_and_commits(
     assert "token-dead" not in push_token_repository.tokens
     assert "token-live" in push_token_repository.tokens
     assert unit_of_work.commit_count == 1
+    assert unit_of_work.rollback_count == 1
 
 
 async def test_send_notification_push_swallows_any_send_failure() -> None:

@@ -48,7 +48,7 @@ class SendNotificationPushCommandUseCase:
     async def execute(self, command: SendNotificationPushCommand) -> None:
         # 푸시는 best-effort — 이미 생성된 알림이 발송/정리 실패의 영향을 받으면 안 된다.
         try:
-            notification = await self._notification_repository.find_by_id_for_user_for_update(
+            notification = await self._notification_repository.find_by_id_for_user(
                 notification_id=command.notification_id,
                 user_id=command.user_id,
             )
@@ -67,6 +67,10 @@ class SendNotificationPushCommandUseCase:
             if not tokens:
                 return
 
+            # 외부 FCM 응답을 기다리는 동안 DB 트랜잭션과 커넥션을 점유하지 않는다.
+            # 이 지점 이전에는 조회만 수행했으므로 rollback으로 스냅샷을 종료해도
+            # 영속화할 변경은 없다. 무효 토큰 정리는 발송 후 새 트랜잭션에서 처리한다.
+            await self._unit_of_work.rollback()
             message = PushMessage(
                 title=command.title,
                 body=command.message,
