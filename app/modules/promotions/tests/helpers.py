@@ -145,6 +145,7 @@ async def seed_promotion(
     times_redeemed: int = 0,
     max_redemptions_per_user: int = 1,
     context: str | None = None,
+    kind: str | None = None,
     benefit_amount: int = 3,
 ) -> None:
     session.add(
@@ -159,6 +160,7 @@ async def seed_promotion(
             max_redemptions_per_user=max_redemptions_per_user,
             benefit_feature_key="ocr",
             context=context,
+            kind=kind,
             benefit_amount=benefit_amount,
         )
     )

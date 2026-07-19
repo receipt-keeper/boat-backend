@@ -15,6 +15,7 @@ from app.modules.promotions.tests.migration_promotion_duplicate_probes import (
 class InvalidPromotionProbe:
     benefit_feature_key: str
     context: str | None
+    kind: str | None
     benefit_amount: int
     expected_constraint: str
 
@@ -27,20 +28,30 @@ async def assert_invalid_promotion_insert_probes(
         InvalidPromotionProbe(
             benefit_feature_key="receipt_analysis",
             context=None,
+            kind=None,
             benefit_amount=10,
             expected_constraint="ck_promotions_benefit_feature_key_allowed",
         ),
         InvalidPromotionProbe(
             benefit_feature_key="ocr",
             context="receipt_analysis",
+            kind=None,
             benefit_amount=10,
             expected_constraint="ck_promotions_context_allowed",
         ),
         InvalidPromotionProbe(
             benefit_feature_key="ocr",
             context=None,
+            kind=None,
             benefit_amount=-1,
             expected_constraint="ck_promotions_benefit_amount_positive",
+        ),
+        InvalidPromotionProbe(
+            benefit_feature_key="ocr",
+            context="recharge",
+            kind="daily",
+            benefit_amount=10,
+            expected_constraint="ck_promotions_kind_allowed",
         ),
     ):
         observed_failures.append(await _assert_invalid_promotion_is_rejected(connection, probe))
@@ -71,6 +82,7 @@ async def _assert_invalid_promotion_is_rejected(
                         starts_at,
                         benefit_feature_key,
                         context,
+                        kind,
                         benefit_amount
                     )
                     VALUES (
@@ -80,6 +92,7 @@ async def _assert_invalid_promotion_is_rejected(
                         now(),
                         :benefit_feature_key,
                         :context,
+                        :kind,
                         :benefit_amount
                     )
                     """
@@ -87,6 +100,7 @@ async def _assert_invalid_promotion_is_rejected(
                 {
                     "benefit_feature_key": probe.benefit_feature_key,
                     "context": probe.context,
+                    "kind": probe.kind,
                     "benefit_amount": probe.benefit_amount,
                 },
             )

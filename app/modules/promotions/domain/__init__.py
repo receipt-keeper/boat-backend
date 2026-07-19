@@ -9,6 +9,7 @@ from app.modules.promotions.domain.model import (
     PromotionBenefitFeatureKey,
     PromotionCode,
     PromotionContext,
+    PromotionKind,
     PromotionRedemption,
     PromotionRedemptionStatus,
 )
@@ -20,6 +21,7 @@ __all__ = [
     "PromotionCode",
     "PromotionCodeNotFoundError",
     "PromotionContext",
+    "PromotionKind",
     "PromotionNotFoundError",
     "PromotionRedemption",
     "PromotionRedemptionConflictError",

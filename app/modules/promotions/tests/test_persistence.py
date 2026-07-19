@@ -3,12 +3,13 @@ from uuid import UUID
 
 from sqlalchemy import CheckConstraint, ForeignKeyConstraint, Table, UniqueConstraint
 
-from app.modules.promotions.domain.model import PromotionContext
+from app.modules.promotions.domain.model import PromotionContext, PromotionKind
 from app.modules.promotions.infrastructure.persistence import mapper, orm
 
 EXPECTED_PROMOTION_CHECKS = {
     "ck_promotions_benefit_feature_key_allowed": "benefit_feature_key IN ('ocr')",
     "ck_promotions_context_allowed": "context IS NULL OR context IN ('recharge', 'signup')",
+    "ck_promotions_kind_allowed": "kind IS NULL OR kind IN ('monthlyAllowance', 'rewardedAd')",
     "ck_promotions_benefit_amount_positive": "benefit_amount > 0",
     "ck_promotions_max_redemptions_positive": ("max_redemptions IS NULL OR max_redemptions > 0"),
     "ck_promotions_times_redeemed_non_negative": "times_redeemed >= 0",
@@ -52,11 +53,13 @@ def test_promotion_orm_declares_exact_tables_and_columns() -> None:
         "max_redemptions_per_user",
         "benefit_feature_key",
         "context",
+        "kind",
         "benefit_amount",
         "created_at",
         "updated_at",
     }
     assert tables["promotions"].c.context.nullable is True
+    assert tables["promotions"].c.kind.nullable is True
     assert set(tables["promotion_codes"].c.keys()) == {
         "id",
         "promotion_id",
@@ -127,23 +130,36 @@ def test_promotion_orm_declares_constraints_and_unique_guards() -> None:
     # Then: DB가 benefit/status/count/idempotency/code 중복 계약을 강제한다.
     assert promotion_checks == EXPECTED_PROMOTION_CHECKS
     assert tuple(
-        column.name for column in promotion_indexes["ix_promotions_current_benefit_context"].columns
+        column.name
+        for column in promotion_indexes["ix_promotions_current_benefit_context_kind"].columns
     ) == (
         "benefit_feature_key",
         "context",
+        "kind",
         "active",
         "expires_at",
         "starts_at",
     )
-    unique_business_key = promotion_indexes["uq_promotions_benefit_context_starts_at"]
+    unique_business_key = promotion_indexes["uq_promotions_benefit_context_kind_starts_at"]
     assert unique_business_key.unique is True
     assert tuple(column.name for column in unique_business_key.columns) == (
         "benefit_feature_key",
         "context",
+        "kind",
         "starts_at",
     )
     assert str(unique_business_key.dialect_options["postgresql"]["where"]) == (
-        "promotions.context IS NOT NULL"
+        "promotions.context IS NOT NULL AND promotions.kind IS NOT NULL"
+    )
+    legacy_business_key = promotion_indexes["uq_promotions_benefit_context_starts_at_without_kind"]
+    assert legacy_business_key.unique is True
+    assert tuple(column.name for column in legacy_business_key.columns) == (
+        "benefit_feature_key",
+        "context",
+        "starts_at",
+    )
+    assert str(legacy_business_key.dialect_options["postgresql"]["where"]) == (
+        "promotions.context IS NOT NULL AND promotions.kind IS NULL"
     )
     assert code_checks == EXPECTED_PROMOTION_CODE_CHECKS
     assert redemption_checks == EXPECTED_REDEMPTION_CHECKS
@@ -210,6 +226,7 @@ def test_promotion_mapper_round_trips_recharge_context() -> None:
         max_redemptions_per_user=1,
         benefit_feature_key="ocr",
         context="recharge",
+        kind="monthlyAllowance",
         benefit_amount=5,
     )
 
@@ -218,6 +235,7 @@ def test_promotion_mapper_round_trips_recharge_context() -> None:
 
     # Then: context 값이 domain enum으로 보존된다.
     assert promotion.context == PromotionContext.RECHARGE
+    assert promotion.kind == PromotionKind.MONTHLY_ALLOWANCE
 
 
 def test_promotion_mapper_preserves_legacy_null_context() -> None:

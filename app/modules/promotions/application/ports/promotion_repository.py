@@ -8,6 +8,7 @@ from app.modules.promotions.domain.model import (
     PromotionCode,
     PromotionContent,
     PromotionContext,
+    PromotionKind,
     PromotionRedemption,
 )
 
@@ -28,6 +29,7 @@ class PromotionRepository(ABC):
         *,
         at: datetime,
         context: PromotionContext,
+        kind: PromotionKind | None = None,
     ) -> Promotion | None:
         raise NotImplementedError
 
@@ -45,6 +47,7 @@ class PromotionRepository(ABC):
         *,
         benefit_feature_key: PromotionBenefitFeatureKey,
         context: PromotionContext,
+        kind: PromotionKind | None,
         starts_at: datetime,
     ) -> Promotion | None:
         raise NotImplementedError

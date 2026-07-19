@@ -21,6 +21,7 @@ from app.modules.promotions.domain.model import (
     PromotionBenefitAmount,
     PromotionBenefitFeatureKey,
     PromotionContext,
+    PromotionKind,
 )
 from app.modules.promotions.infrastructure.persistence.repository import (
     SqlAlchemyPromotionRepository,
@@ -64,6 +65,7 @@ async def ensure_monthly_recharge_promotion(
     promotion = await promotion_repository.find_promotion_by_benefit_context_start_for_update(
         benefit_feature_key=PromotionBenefitFeatureKey.OCR,
         context=PromotionContext.RECHARGE,
+        kind=PromotionKind.MONTHLY_ALLOWANCE,
         starts_at=spec.starts_at,
     )
     created = promotion is None
@@ -156,6 +158,7 @@ def _new_monthly_recharge_promotion(spec: MonthlyRechargePromotionSpec) -> Promo
         max_redemptions_per_user=MONTHLY_RECHARGE_USER_LIMIT,
         benefit_feature_key=PromotionBenefitFeatureKey.OCR,
         context=PromotionContext.RECHARGE,
+        kind=PromotionKind.MONTHLY_ALLOWANCE,
         benefit_amount=spec.benefit_amount,
     )
 
@@ -174,6 +177,7 @@ async def _create_or_load_monthly_recharge_promotion(
         existing = await promotion_repository.find_promotion_by_benefit_context_start_for_update(
             benefit_feature_key=PromotionBenefitFeatureKey.OCR,
             context=PromotionContext.RECHARGE,
+            kind=PromotionKind.MONTHLY_ALLOWANCE,
             starts_at=spec.starts_at,
         )
         if existing is None:
@@ -197,6 +201,7 @@ def _apply_monthly_recharge_spec(
     promotion.max_redemptions_per_user = MONTHLY_RECHARGE_USER_LIMIT
     promotion.benefit_feature_key = PromotionBenefitFeatureKey.OCR
     promotion.context = PromotionContext.RECHARGE
+    promotion.kind = PromotionKind.MONTHLY_ALLOWANCE
     promotion.benefit_amount = PromotionBenefitAmount(value=spec.benefit_amount)
 
 
