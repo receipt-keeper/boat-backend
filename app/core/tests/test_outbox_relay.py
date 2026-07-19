@@ -1,6 +1,7 @@
 import asyncio
 from collections.abc import AsyncIterator, Iterator
 from datetime import UTC, datetime, timedelta
+from uuid import UUID
 
 import pytest
 from sqlalchemy import select
@@ -78,20 +79,21 @@ async def test_run_once_deletes_row_on_dispatch_success(
 ) -> None:
     dispatched: list[DomainEvent] = []
 
-    async def handle_event(event: DomainEvent) -> None:
-        dispatched.append(event)
-
-    dispatcher = EventDispatcher()
-    dispatcher.register(DomainEvent, handle_event)
-    relay = OutboxRelay(
-        registry=_registry(),
-        dispatcher=dispatcher,
-        redeliver_after_seconds=30,
-        max_retry=10,
-        batch_size=100,
-    )
-
     async with session_factory() as session:
+
+        async def handle_event(event: DomainEvent) -> None:
+            assert session.in_transaction() is False
+            dispatched.append(event)
+
+        dispatcher = EventDispatcher()
+        dispatcher.register(DomainEvent, handle_event)
+        relay = OutboxRelay(
+            registry=_registry(),
+            dispatcher=dispatcher,
+            redeliver_after_seconds=30,
+            max_retry=10,
+            batch_size=100,
+        )
         await _insert_event(session, occurred_at=_stale_timestamp(30))
 
         processed = await relay.run_once(session)
@@ -122,12 +124,42 @@ async def test_run_once_keeps_row_and_bumps_retry_count_on_handler_failure(
         inserted = await _insert_event(session, occurred_at=_stale_timestamp(30))
 
         processed = await relay.run_once(session)
+        processed_again = await relay.run_once(session)
 
         assert processed == 1
+        assert processed_again == 0
         remaining = (await session.execute(select(OutboxEvent))).scalars().all()
         assert len(remaining) == 1
         assert remaining[0].id == inserted.id
         assert remaining[0].retry_count == 1
+
+
+async def test_run_once_does_not_consume_retry_when_worker_is_cancelled(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async def cancel_handler(_event: DomainEvent) -> None:
+        raise asyncio.CancelledError
+
+    dispatcher = EventDispatcher()
+    dispatcher.register(DomainEvent, cancel_handler)
+    relay = OutboxRelay(
+        registry=_registry(),
+        dispatcher=dispatcher,
+        redeliver_after_seconds=30,
+        max_retry=10,
+        batch_size=100,
+    )
+
+    async with session_factory() as session:
+        inserted = await _insert_event(session, occurred_at=_stale_timestamp(30))
+
+        with pytest.raises(asyncio.CancelledError):
+            await relay.run_once(session)
+
+        remaining = (await session.execute(select(OutboxEvent))).scalars().all()
+        assert len(remaining) == 1
+        assert remaining[0].id == inserted.id
+        assert remaining[0].retry_count == 0
 
 
 async def test_run_once_skips_row_within_redeliver_after_window(
@@ -196,12 +228,12 @@ async def test_concurrent_run_once_does_not_dispatch_same_row_twice(
     dispatched_a: list[DomainEvent] = []
     dispatched_b: list[DomainEvent] = []
     barrier = asyncio.Event()
+    relay_b_finished = asyncio.Event()
 
     async def handle_event_a(event: DomainEvent) -> None:
         dispatched_a.append(event)
         barrier.set()
-        # 두 번째 run_once가 SELECT ... FOR UPDATE SKIP LOCKED를 실행할 시간을 준다.
-        await asyncio.sleep(0.2)
+        await relay_b_finished.wait()
 
     async def handle_event_b(event: DomainEvent) -> None:
         dispatched_b.append(event)
@@ -235,13 +267,55 @@ async def test_concurrent_run_once_does_not_dispatch_same_row_twice(
 
     async def run_b() -> int:
         await barrier.wait()
-        async with session_factory() as session:
-            return await relay_b.run_once(session)
+        try:
+            async with session_factory() as session:
+                return await relay_b.run_once(session)
+        finally:
+            relay_b_finished.set()
 
     processed_a, processed_b = await asyncio.gather(run_a(), run_b())
 
     assert processed_a + processed_b == 1
     assert len(dispatched_a) + len(dispatched_b) == 1
+
+
+async def test_run_once_claims_later_rows_only_after_earlier_dispatch(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with session_factory() as setup_session:
+        first = await _insert_event(setup_session, occurred_at=_stale_timestamp(30))
+        second = await _insert_event(setup_session, occurred_at=_stale_timestamp(30))
+
+    dispatched: list[UUID] = []
+
+    async def handle_event(event: DomainEvent) -> None:
+        dispatched.append(event.event_id)
+        if event.event_id != first.event_id:
+            return
+
+        async with session_factory() as inspection_session:
+            rows = list(
+                await inspection_session.scalars(select(OutboxEvent).order_by(OutboxEvent.id))
+            )
+        assert len(rows) == 2
+        assert rows[0].occurred_at > first.occurred_at
+        assert rows[1].occurred_at == second.occurred_at
+
+    dispatcher = EventDispatcher()
+    dispatcher.register(DomainEvent, handle_event)
+    relay = OutboxRelay(
+        registry=_registry(),
+        dispatcher=dispatcher,
+        redeliver_after_seconds=30,
+        max_retry=10,
+        batch_size=2,
+    )
+
+    async with session_factory() as session:
+        processed = await relay.run_once(session)
+
+    assert processed == 2
+    assert dispatched == [first.event_id, second.event_id]
 
 
 async def test_run_forever_stops_gracefully_on_cancellation(
