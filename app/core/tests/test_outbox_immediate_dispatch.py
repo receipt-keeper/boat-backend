@@ -72,13 +72,14 @@ async def test_dispatch_immediately_deletes_row_on_success(
     event = await _insert_committed_event(session_factory, registry=registry)
     dispatched: list[DomainEvent] = []
 
-    async def handle_event(dispatched_event: DomainEvent) -> None:
-        dispatched.append(dispatched_event)
-
-    dispatcher = EventDispatcher()
-    dispatcher.register(DomainEvent, handle_event)
-
     async with session_factory() as session:
+
+        async def handle_event(dispatched_event: DomainEvent) -> None:
+            assert session.in_transaction() is False
+            dispatched.append(dispatched_event)
+
+        dispatcher = EventDispatcher()
+        dispatcher.register(DomainEvent, handle_event)
         await dispatch_outbox_event_immediately(
             session,
             event_id=event.event_id,
@@ -112,12 +113,12 @@ async def test_dispatch_immediately_restores_row_when_handler_fails(
             dispatcher=dispatcher,
         )
 
-    # Then: 발행 실패 시 row는 삭제되지 않고 잔존한다(rollback으로 복원) - 폴러의 재시도 대상.
+    # Then: 발행 실패 시 claim된 row가 삭제되지 않고 잔존해 폴러의 재시도 대상이 된다.
     async with session_factory() as session:
         rows = list(await session.scalars(select(OutboxEvent)))
     assert len(rows) == 1
     assert rows[0].event_id == event.event_id
-    assert rows[0].retry_count == 0
+    assert rows[0].retry_count == 1
 
 
 async def test_dispatch_immediately_skips_when_row_already_gone(

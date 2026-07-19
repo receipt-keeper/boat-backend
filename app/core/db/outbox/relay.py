@@ -1,9 +1,11 @@
 import asyncio
 import logging
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import and_, delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.application.event_dispatcher import EventDispatcher
@@ -15,6 +17,14 @@ logger = logging.getLogger(__name__)
 
 def _utc_now() -> datetime:
     return datetime.now(UTC)
+
+
+@dataclass(frozen=True, slots=True)
+class _ClaimedEvent:
+    event_id: UUID
+    event_type: str
+    payload: dict[str, object]
+    retry_count: int
 
 
 class OutboxRelay:
@@ -44,7 +54,8 @@ class OutboxRelay:
 
     async def run_once(self, session: AsyncSession) -> int:
         """대상 배치를 한 번 처리하고 처리 건수를 반환한다."""
-        threshold = self._clock() - timedelta(seconds=self._redeliver_after_seconds)
+        claimed_at = self._clock()
+        threshold = claimed_at - timedelta(seconds=self._redeliver_after_seconds)
 
         statement = (
             select(OutboxEvent)
@@ -58,27 +69,59 @@ class OutboxRelay:
         )
         rows = (await session.execute(statement)).scalars().all()
 
-        processed = 0
+        claims: list[_ClaimedEvent] = []
         for row in rows:
-            processed += 1
+            row.retry_count += 1
+            row.occurred_at = claimed_at
+            claims.append(
+                _ClaimedEvent(
+                    event_id=row.event_id,
+                    event_type=row.event_type,
+                    payload=row.payload,
+                    retry_count=row.retry_count,
+                )
+            )
+
+        # claim을 먼저 확정해 행 잠금과 DB 커넥션을 해제한다. dispatch가 실패하거나
+        # 프로세스가 중단되면 row는 redeliver_after_seconds 이후 다시 선택된다.
+        await session.commit()
+
+        succeeded: list[_ClaimedEvent] = []
+        for claim in claims:
             try:
-                event = deserialize_event(self._registry, row.event_type, row.payload)
+                event = deserialize_event(self._registry, claim.event_type, claim.payload)
                 await self._dispatcher.dispatch([event])
             except Exception:
-                row.retry_count += 1
                 logger.warning(
                     "outbox 이벤트 재발행에 실패했습니다. id=%s event_type=%s retry_count=%d",
-                    row.id,
-                    row.event_type,
-                    row.retry_count,
+                    claim.event_id,
+                    claim.event_type,
+                    claim.retry_count,
                     exc_info=True,
                 )
                 continue
 
-            await session.delete(row)
+            succeeded.append(claim)
 
-        await session.commit()
-        return processed
+        if succeeded:
+            # dispatch 중 claim lease가 만료돼 다른 worker가 다시 claim했다면 그 결과를
+            # 지우지 않도록 event_id와 retry_count가 모두 같은 row만 삭제한다.
+            await session.execute(
+                delete(OutboxEvent).where(
+                    or_(
+                        *(
+                            and_(
+                                OutboxEvent.event_id == claim.event_id,
+                                OutboxEvent.retry_count == claim.retry_count,
+                            )
+                            for claim in succeeded
+                        )
+                    )
+                )
+            )
+            await session.commit()
+
+        return len(claims)
 
     async def run_forever(
         self,

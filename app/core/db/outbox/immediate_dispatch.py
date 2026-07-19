@@ -1,7 +1,8 @@
 import logging
+from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import delete
+from sqlalchemy import delete, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.application.event_dispatcher import EventDispatcher
@@ -18,38 +19,55 @@ async def dispatch_outbox_event_immediately(
     registry: EventTypeRegistry,
     dispatcher: EventDispatcher,
 ) -> None:
-    """응답 반환 이후 새 세션에서 outbox row 1건을 delete-then-dispatch한다.
+    """응답 반환 이후 새 세션에서 outbox row 1건을 claim-then-dispatch한다.
 
-    row를 먼저 DELETE ... RETURNING으로 회수해 rowcount가 0이면(원 커밋 실패로
-    row가 애초에 없거나 폴러가 이미 처리한 경우) 아무 것도 하지 않고 조용히
-    반환한다. row를 회수했다면 역직렬화 후 dispatch하고, 성공 시 commit해
-    row 삭제를 확정하며, 실패 시 rollback으로 row를 복원해 폴러의 재시도
-    대상으로 남긴다.
+    retry_count와 occurred_at을 갱신해 row를 짧게 claim하고 즉시 commit한다.
+    이후 DB 트랜잭션 없이 dispatch하며, 성공한 claim만 조건부 삭제한다.
+    실패하거나 프로세스가 중단되면 row가 남아 폴러의 재시도 대상이 된다.
     """
-    statement = delete(OutboxEvent).where(OutboxEvent.event_id == event_id).returning(OutboxEvent)
+    statement = (
+        update(OutboxEvent)
+        .where(OutboxEvent.event_id == event_id)
+        .values(
+            retry_count=OutboxEvent.retry_count + 1,
+            occurred_at=datetime.now(UTC),
+        )
+        .returning(OutboxEvent)
+    )
     result = await session.execute(statement)
     row = result.scalar_one_or_none()
     if row is None:
         # 원 요청의 커밋이 실패했거나 폴러가 이미 처리한 row다 - 유령 발행 방지를 위해 skip한다.
+        await session.commit()
         return
 
     event_type = row.event_type
+    payload = row.payload
+    claimed_retry_count = row.retry_count
+    await session.commit()
+
     try:
-        event = deserialize_event(registry, event_type, row.payload)
+        event = deserialize_event(registry, event_type, payload)
         await dispatcher.dispatch([event])
     except Exception:
-        # rollback은 세션의 row 객체를 expire시키므로, 로그에 쓸 값은 rollback 전에
-        # 미리 캡처해 둔다(rollback 이후 attribute 접근은 추가 IO를 유발해 실패한다).
-        await session.rollback()
         logger.warning(
             "outbox 이벤트 즉시 발행에 실패했습니다. 폴러 재시도 대상으로 남깁니다. "
-            "event_id=%s event_type=%s",
+            "event_id=%s event_type=%s retry_count=%d",
             event_id,
             event_type,
+            claimed_retry_count,
             exc_info=True,
         )
         return
 
+    # claim 이후 다른 worker가 같은 row를 다시 claim했다면 해당 worker의 처리 결과를
+    # 지우지 않도록 retry_count까지 비교한다.
+    await session.execute(
+        delete(OutboxEvent).where(
+            OutboxEvent.event_id == event_id,
+            OutboxEvent.retry_count == claimed_retry_count,
+        )
+    )
     await session.commit()
 
 
