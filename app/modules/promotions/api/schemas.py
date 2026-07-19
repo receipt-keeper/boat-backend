@@ -174,11 +174,7 @@ class PromotionResponse(AppBaseModel):
         *,
         banner_image_url: str | None,
     ) -> "PromotionResponse":
-        state = (
-            PromotionState.ALREADY_REDEEMED
-            if result.remaining_redemptions_for_user == 0
-            else PromotionState.REDEEMABLE
-        )
+        state = _redemption_state(result)
         return cls(
             state=state,
             promotionId=result.promotion_id,
@@ -204,3 +200,14 @@ def _banner_image_response(image_url: str | None) -> PromotionBannerImageRespons
     if image_url is None:
         return None
     return PromotionBannerImageResponse(imageUrl=image_url)
+
+
+def _redemption_state(result: CreatePromotionRedemptionResult) -> PromotionState:
+    rewarded_ad_credit_remains = (
+        result.kind == PromotionKind.REWARDED_AD
+        and result.credit_remaining_after is not None
+        and result.credit_remaining_after > 0
+    )
+    if result.remaining_redemptions_for_user == 0 or rewarded_ad_credit_remains:
+        return PromotionState.ALREADY_REDEEMED
+    return PromotionState.REDEEMABLE

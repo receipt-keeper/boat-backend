@@ -11,6 +11,7 @@ from app.modules.promotions.application.commands.create_promotion_redemption.res
 from app.modules.promotions.application.ports.credit_grant import (
     PromotionCreditGrant,
     PromotionCreditGrantPort,
+    PromotionCreditGrantRejectedError,
 )
 from app.modules.promotions.application.ports.promotion_repository import (
     PromotionRepository,
@@ -111,14 +112,6 @@ class PromotionRedemptionExecutor:
         if attempt.promotion_code is not None:
             attempt.promotion_code.ensure_redeemable(at=now)
         attempt.promotion.ensure_redeemable(at=now)
-        if attempt.promotion.kind == PromotionKind.REWARDED_AD:
-            balance = await self._credit_grant_port.get_ocr_credit_balance(
-                user_id=attempt.user_id,
-            )
-            if balance.remaining_count != 0:
-                raise PromotionRedemptionConflictError(
-                    "남은 OCR 분석 횟수를 모두 사용한 후 광고 보상을 받을 수 있습니다."
-                )
         user_redemption_count = await self._user_redemption_count(
             user_id=attempt.user_id,
             promotion=attempt.promotion,
@@ -146,13 +139,19 @@ class PromotionRedemptionExecutor:
         # 소거되도록 하기 위함이다(멱등 replay에서 유령 이벤트 방지, credits T3와 동일 원칙).
         events = redemption.pull_events()
         await self._event_publisher.publish(events)
-        grant_result = await self._credit_grant_port.grant_ocr_credit(
-            grant=_credit_grant(
-                redemption=redemption,
-                amount=attempt.promotion.benefit_amount.value,
-                idempotency_key=attempt.idempotency_key,
+        try:
+            grant_result = await self._credit_grant_port.grant_ocr_credit(
+                grant=_credit_grant(
+                    redemption=redemption,
+                    promotion=attempt.promotion,
+                    idempotency_key=attempt.idempotency_key,
+                )
             )
-        )
+        except PromotionCreditGrantRejectedError as exc:
+            await self._unit_of_work.rollback()
+            raise PromotionRedemptionConflictError(
+                "남은 OCR 분석 횟수를 모두 사용한 후 광고 보상을 받을 수 있습니다."
+            ) from exc
         await self._unit_of_work.commit()
         content = await self._promotion_repository.find_content_by_promotion_id(
             promotion_id=attempt.promotion.id,
@@ -187,14 +186,15 @@ class PromotionRedemptionExecutor:
 def _credit_grant(
     *,
     redemption: PromotionRedemption,
-    amount: int,
+    promotion: Promotion,
     idempotency_key: str,
 ) -> PromotionCreditGrant:
     return PromotionCreditGrant(
         user_id=redemption.user_id,
-        amount=amount,
+        amount=promotion.benefit_amount.value,
         redemption_id=redemption.id,
         idempotency_key=idempotency_key,
+        required_remaining_count=(0 if promotion.kind == PromotionKind.REWARDED_AD else None),
     )
 
 

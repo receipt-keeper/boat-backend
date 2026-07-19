@@ -310,6 +310,7 @@ async def test_rewarded_ad_redemption_requires_consumption_between_daily_grants(
     assert first.kind == PromotionKind.REWARDED_AD
     assert first.max_redemptions_per_user == 2
     assert first.remaining_redemptions_for_user == 1
+    assert grant_port.grants[0].required_remaining_count == 0
     assert replay.redemption_id == first.redemption_id
     assert replay.already_redeemed is True
     assert second.remaining_redemptions_for_user == 0

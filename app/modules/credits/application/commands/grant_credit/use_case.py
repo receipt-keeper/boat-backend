@@ -11,6 +11,7 @@ from app.modules.credits.application.ports.credit_repository import (
     CreditTransactionWriteConflictError,
 )
 from app.modules.credits.domain import CreditAction
+from app.modules.credits.domain.exceptions import CreditBalancePreconditionError
 
 
 class GrantCreditCommandUseCase:
@@ -34,6 +35,10 @@ class GrantCreditCommandUseCase:
             )
         user_credit = await self._credit_repository.get_user_credit_for_update(
             user_id=command.user_id,
+        )
+        _ensure_required_remaining_count(
+            command=command,
+            remaining_count=user_credit.remaining_count,
         )
         user_credit.grant(
             command.amount,
@@ -67,6 +72,10 @@ class GrantCreditCommandUseCase:
                 raise
             await self._unit_of_work.rollback()
             balance = await self._credit_repository.get_balance(user_id=command.user_id)
+            _ensure_required_remaining_count(
+                command=command,
+                remaining_count=balance.remaining_count,
+            )
             return GrantCreditCommandResult(
                 total_granted_count=balance.total_granted_count,
                 remaining_count=balance.remaining_count,
@@ -99,3 +108,13 @@ def _has_idempotent_identity(command: GrantCreditCommand) -> bool:
     return command.idempotency_key is not None or (
         command.source_type is not None and command.source_id is not None
     )
+
+
+def _ensure_required_remaining_count(
+    *,
+    command: GrantCreditCommand,
+    remaining_count: int,
+) -> None:
+    required = command.required_remaining_count
+    if required is not None and remaining_count != required:
+        raise CreditBalancePreconditionError()

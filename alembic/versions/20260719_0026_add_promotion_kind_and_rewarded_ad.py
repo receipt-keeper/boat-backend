@@ -91,6 +91,18 @@ def upgrade() -> None:
                 'rewardedAd',
                 2
             )
+            ON CONFLICT (id) DO UPDATE SET
+                name = EXCLUDED.name,
+                active = EXCLUDED.active,
+                starts_at = EXCLUDED.starts_at,
+                expires_at = EXCLUDED.expires_at,
+                max_redemptions = EXCLUDED.max_redemptions,
+                max_redemptions_per_user = EXCLUDED.max_redemptions_per_user,
+                benefit_feature_key = EXCLUDED.benefit_feature_key,
+                context = EXCLUDED.context,
+                kind = EXCLUDED.kind,
+                benefit_amount = EXCLUDED.benefit_amount,
+                updated_at = now()
             """
         ).bindparams(promotion_id=REWARDED_AD_PROMOTION_ID)
     )
@@ -98,9 +110,38 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.execute(
-        sa.text("DELETE FROM promotions WHERE id = CAST(:promotion_id AS UUID)").bindparams(
-            promotion_id=REWARDED_AD_PROMOTION_ID
-        )
+        sa.text(
+            """
+            DELETE FROM promotions AS promotion
+            WHERE promotion.id = CAST(:promotion_id AS UUID)
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM promotion_redemptions AS redemption
+                  WHERE redemption.promotion_id = promotion.id
+              )
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM promotion_codes AS code
+                  WHERE code.promotion_id = promotion.id
+              )
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM promotion_contents AS content
+                  WHERE content.promotion_id = promotion.id
+              )
+            """
+        ).bindparams(promotion_id=REWARDED_AD_PROMOTION_ID)
+    )
+    op.execute(
+        sa.text(
+            """
+            UPDATE promotions
+            SET active = false,
+                context = NULL,
+                updated_at = now()
+            WHERE id = CAST(:promotion_id AS UUID)
+            """
+        ).bindparams(promotion_id=REWARDED_AD_PROMOTION_ID)
     )
     op.drop_index(
         "uq_promotions_benefit_context_starts_at_without_kind",

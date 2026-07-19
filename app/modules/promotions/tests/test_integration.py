@@ -226,13 +226,14 @@ async def test_rewarded_ad_redemption_enforces_real_balance_and_daily_limit(
     assert invalid_key.status_code == 422
     assert first.status_code == 200
     assert first.json()["data"]["kind"] == "rewardedAd"
-    assert first.json()["data"]["state"] == "redeemable"
+    assert first.json()["data"]["state"] == "alreadyRedeemed"
     assert first.json()["data"]["redemption"] == {
         "remainingRedemptions": None,
         "maxRedemptionsPerUser": 2,
         "remainingRedemptionsForUser": 1,
     }
     assert replay.status_code == 200
+    assert replay.json()["data"]["state"] == "alreadyRedeemed"
     assert replay.json()["data"]["balance"]["remainingCount"] == 2
     assert before_consumption.status_code == 409
     assert second.status_code == 200

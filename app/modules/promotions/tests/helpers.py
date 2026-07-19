@@ -24,6 +24,7 @@ from app.modules.promotions.application.ports.credit_grant import (
     PromotionCreditBalance,
     PromotionCreditGrant,
     PromotionCreditGrantPort,
+    PromotionCreditGrantRejectedError,
     PromotionCreditGrantResult,
 )
 from app.modules.promotions.dependencies import build_promotions_event_registry
@@ -59,6 +60,15 @@ class FakePromotionCreditGrantPort(PromotionCreditGrantPort):
         *,
         grant: PromotionCreditGrant,
     ) -> PromotionCreditGrantResult:
+        current_balance = self.balance or PromotionCreditBalance(
+            total_granted_count=self.result.credit_balance_after or 0,
+            remaining_count=self.result.credit_remaining_after or 0,
+        )
+        if (
+            grant.required_remaining_count is not None
+            and current_balance.remaining_count != grant.required_remaining_count
+        ):
+            raise PromotionCreditGrantRejectedError()
         self.grants.append(grant)
         self.balance = PromotionCreditBalance(
             total_granted_count=self.result.credit_balance_after or 0,
