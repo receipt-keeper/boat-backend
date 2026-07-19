@@ -4,6 +4,7 @@ from app.modules.promotions.domain.model import (
     PromotionCode,
     PromotionContent,
     PromotionContext,
+    PromotionKind,
     PromotionRedemption,
     PromotionRedemptionStatus,
 )
@@ -22,6 +23,7 @@ def promotion_to_domain(record: orm.Promotion) -> Promotion:
         max_redemptions_per_user=record.max_redemptions_per_user,
         benefit_feature_key=PromotionBenefitFeatureKey(record.benefit_feature_key),
         context=None if record.context is None else PromotionContext(record.context),
+        kind=None if record.kind is None else PromotionKind(record.kind),
         benefit_amount=record.benefit_amount,
     )
 

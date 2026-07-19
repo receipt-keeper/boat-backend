@@ -38,6 +38,12 @@ SIGNUP_BENEFICIARY_MIGRATION_PATH = (
     / "versions"
     / "20260712_0024_add_signup_beneficiary_key_to_promotion_redemptions.py"
 )
+PROMOTION_KIND_MIGRATION_PATH = (
+    PROJECT_ROOT / "alembic" / "versions" / "20260719_0026_add_promotion_kind_and_rewarded_ad.py"
+)
+DAILY_REDEMPTION_INDEX_MIGRATION_PATH = (
+    PROJECT_ROOT / "alembic" / "versions" / "20260719_0027_add_daily_redemption_lookup_index.py"
+)
 
 
 def test_promotion_migration_revision_is_linear_through_signup_beneficiary_extension() -> None:
@@ -55,6 +61,8 @@ def test_promotion_migration_revision_is_linear_through_signup_beneficiary_exten
     assert PROMOTION_CONTENT_MIGRATION_PATH.is_file()
     assert PROMOTION_CONTEXT_MIGRATION_PATH.is_file()
     assert SIGNUP_BENEFICIARY_MIGRATION_PATH.is_file()
+    assert PROMOTION_KIND_MIGRATION_PATH.is_file()
+    assert DAILY_REDEMPTION_INDEX_MIGRATION_PATH.is_file()
 
     migration_source = PROMOTION_MIGRATION_PATH.read_text(encoding="utf-8")
     assert 'revision: str = "20260705_0016"' in migration_source
@@ -70,6 +78,12 @@ def test_promotion_migration_revision_is_linear_through_signup_beneficiary_exten
     signup_beneficiary = SIGNUP_BENEFICIARY_MIGRATION_PATH.read_text(encoding="utf-8")
     assert 'revision: str = "20260712_0024"' in signup_beneficiary
     assert 'down_revision: str | Sequence[str] | None = "20260712_0023"' in signup_beneficiary
+    promotion_kind = PROMOTION_KIND_MIGRATION_PATH.read_text(encoding="utf-8")
+    assert 'revision: str = "20260719_0026"' in promotion_kind
+    assert 'down_revision: str | Sequence[str] | None = "20260717_0025"' in promotion_kind
+    daily_redemption_index = DAILY_REDEMPTION_INDEX_MIGRATION_PATH.read_text(encoding="utf-8")
+    assert 'revision: str = "20260719_0027"' in daily_redemption_index
+    assert 'down_revision: str | Sequence[str] | None = "20260719_0026"' in daily_redemption_index
 
 
 def test_promotion_migration_creates_constrained_tables(
@@ -118,7 +132,7 @@ def test_promotion_migration_rejects_invalid_context_schema_inputs(
         # Then: DB가 각 제약 위반을 실제로 거절한다.
         for failure in observed_failures:
             print(failure)
-        assert len(observed_failures) == 8
+        assert len(observed_failures) == 9
     finally:
         if upgraded:
             command.downgrade(config, "base")
@@ -147,6 +161,50 @@ def test_promotion_contents_reject_duplicate_promotion_content(
 
         # Then: DB unique constraint가 실제 중복 저장을 거절한다.
         assert "uq_promotion_contents_promotion_id" in failure
+    finally:
+        if upgraded:
+            command.downgrade(config, "base")
+        get_settings.cache_clear()
+
+
+def test_promotion_kind_migration_preserves_referenced_seed_across_downgrade(
+    postgres_async_database_url: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given: kind 도입 직전 schema에 월간 충전과 일반 프로모션이 존재한다.
+    configure_database_environment(monkeypatch, postgres_async_database_url)
+    get_settings.cache_clear()
+    config = _alembic_config()
+
+    upgraded = False
+    try:
+        command.upgrade(config, "20260717_0025")
+        upgraded = True
+        anyio.run(_insert_pre_kind_promotions, postgres_async_database_url)
+
+        # When: 광고 프로모션 지급 이력을 만든 뒤 직전 revision으로 내리고 재적용한다.
+        command.upgrade(config, "head")
+        kinds = anyio.run(_read_promotion_kinds, postgres_async_database_url)
+        anyio.run(_insert_rewarded_ad_redemption, postgres_async_database_url)
+        command.downgrade(config, "20260717_0025")
+        remaining_ids = anyio.run(_read_promotion_ids, postgres_async_database_url)
+        downgraded = anyio.run(_read_downgraded_rewarded_ad, postgres_async_database_url)
+        command.upgrade(config, "head")
+        reupgraded = anyio.run(_read_reupgraded_rewarded_ad, postgres_async_database_url)
+
+        # Then: 월간 row만 backfill되고 참조된 seed와 redemption은 비활성 이력으로 보존된다.
+        assert kinds == {
+            "00000000-0000-0000-0000-000000000801": "monthlyAllowance",
+            "00000000-0000-0000-0000-000000000802": None,
+            "67a6b0f8-a628-47ae-a2c3-1a5688736829": "rewardedAd",
+        }
+        assert remaining_ids == {
+            "00000000-0000-0000-0000-000000000801",
+            "00000000-0000-0000-0000-000000000802",
+            "67a6b0f8-a628-47ae-a2c3-1a5688736829",
+        }
+        assert downgraded == (False, None, 1, 1)
+        assert reupgraded == (True, "recharge", "rewardedAd", 1, 1)
     finally:
         if upgraded:
             command.downgrade(config, "base")
@@ -243,6 +301,146 @@ async def _duplicate_promotion_content_failure(database_url: str) -> str:
                     )
                 )
             return str(exc_info.value.orig)
+    finally:
+        await engine.dispose()
+
+
+async def _insert_pre_kind_promotions(database_url: str) -> None:
+    engine = build_engine(database_url)
+    try:
+        async with engine.begin() as connection:
+            await connection.execute(
+                text(
+                    """
+                    INSERT INTO promotions (
+                        id, name, active, starts_at, benefit_feature_key, context, benefit_amount
+                    )
+                    VALUES
+                        ('00000000-0000-0000-0000-000000000801', '기존 월간 충전', true,
+                         '2026-06-30 15:00:00+00', 'ocr', 'recharge', 5),
+                        ('00000000-0000-0000-0000-000000000802', '기존 일반 프로모션', true,
+                         '2026-07-01 00:00:00+00', 'ocr', NULL, 3)
+                    """
+                )
+            )
+    finally:
+        await engine.dispose()
+
+
+async def _read_promotion_kinds(database_url: str) -> dict[str, str | None]:
+    engine = build_engine(database_url)
+    try:
+        async with engine.connect() as connection:
+            result = await connection.execute(
+                text("SELECT id::text, kind FROM promotions ORDER BY id")
+            )
+            return {row[0]: row[1] for row in result.tuples()}
+    finally:
+        await engine.dispose()
+
+
+async def _read_promotion_ids(database_url: str) -> set[str]:
+    engine = build_engine(database_url)
+    try:
+        async with engine.connect() as connection:
+            result = await connection.execute(text("SELECT id::text FROM promotions"))
+            return {row[0] for row in result.tuples()}
+    finally:
+        await engine.dispose()
+
+
+async def _insert_rewarded_ad_redemption(database_url: str) -> None:
+    engine = build_engine(database_url)
+    try:
+        async with engine.begin() as connection:
+            await connection.execute(
+                text(
+                    """
+                    INSERT INTO promotion_redemptions (
+                        id,
+                        promotion_id,
+                        user_id,
+                        status,
+                        idempotency_key,
+                        redeemed_at
+                    )
+                    VALUES (
+                        '00000000-0000-0000-0000-000000000803',
+                        '67a6b0f8-a628-47ae-a2c3-1a5688736829',
+                        '00000000-0000-0000-0000-000000000804',
+                        'granted',
+                        'rewarded-ad-migration-downgrade',
+                        now()
+                    )
+                    """
+                )
+            )
+            await connection.execute(
+                text(
+                    """
+                    UPDATE promotions
+                    SET times_redeemed = 1
+                    WHERE id = '67a6b0f8-a628-47ae-a2c3-1a5688736829'
+                    """
+                )
+            )
+    finally:
+        await engine.dispose()
+
+
+async def _read_downgraded_rewarded_ad(
+    database_url: str,
+) -> tuple[bool, str | None, int, int]:
+    engine = build_engine(database_url)
+    try:
+        async with engine.connect() as connection:
+            result = await connection.execute(
+                text(
+                    """
+                    SELECT
+                        promotion.active,
+                        promotion.context,
+                        promotion.times_redeemed,
+                        count(redemption.id)
+                    FROM promotions AS promotion
+                    LEFT JOIN promotion_redemptions AS redemption
+                      ON redemption.promotion_id = promotion.id
+                    WHERE promotion.id = '67a6b0f8-a628-47ae-a2c3-1a5688736829'
+                    GROUP BY promotion.id
+                    """
+                )
+            )
+            row = result.one()
+            return row[0], row[1], row[2], row[3]
+    finally:
+        await engine.dispose()
+
+
+async def _read_reupgraded_rewarded_ad(
+    database_url: str,
+) -> tuple[bool, str | None, str | None, int, int]:
+    engine = build_engine(database_url)
+    try:
+        async with engine.connect() as connection:
+            result = await connection.execute(
+                text(
+                    """
+                    SELECT
+                        promotion.active,
+                        promotion.context,
+                        promotion.kind,
+                        promotion.times_redeemed,
+                        count(redemption.id)
+                    FROM promotions AS promotion
+                    LEFT JOIN promotion_redemptions AS redemption
+                      ON redemption.promotion_id = promotion.id
+                    WHERE promotion.id = '67a6b0f8-a628-47ae-a2c3-1a5688736829'
+                    GROUP BY promotion.id
+                    """
+                )
+            )
+            row = result.one()
+            return row[0], row[1], row[2], row[3], row[4]
     finally:
         await engine.dispose()
 

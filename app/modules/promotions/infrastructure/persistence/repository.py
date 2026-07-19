@@ -13,6 +13,7 @@ from app.modules.promotions.domain.model import (
     PromotionCode,
     PromotionContent,
     PromotionContext,
+    PromotionKind,
     PromotionRedemption,
     PromotionRedemptionStatus,
 )
@@ -28,6 +29,7 @@ class SqlAlchemyPromotionRepository(PromotionRepository):
         *,
         at: datetime,
         context: PromotionContext | None = None,
+        kind: PromotionKind | None = None,
     ) -> Promotion | None:
         conditions = [
             orm.Promotion.active.is_(True),
@@ -43,6 +45,10 @@ class SqlAlchemyPromotionRepository(PromotionRepository):
             conditions.append(orm.Promotion.context == context.value)
         else:
             conditions.append(orm.Promotion.context.is_(None))
+        if kind is not None:
+            conditions.append(orm.Promotion.kind == kind.value)
+        else:
+            conditions.append(orm.Promotion.kind.is_(None))
 
         record = await self._session.scalar(
             select(orm.Promotion)
@@ -59,13 +65,18 @@ class SqlAlchemyPromotionRepository(PromotionRepository):
         *,
         at: datetime,
         context: PromotionContext,
+        kind: PromotionKind | None = None,
     ) -> Promotion | None:
+        kind_condition = (
+            orm.Promotion.kind.is_(None) if kind is None else orm.Promotion.kind == kind.value
+        )
         record = await self._session.scalar(
             select(orm.Promotion)
             .where(
                 orm.Promotion.active.is_(True),
                 orm.Promotion.benefit_feature_key == PromotionBenefitFeatureKey.OCR.value,
                 orm.Promotion.context == context.value,
+                kind_condition,
                 orm.Promotion.starts_at <= at,
                 or_(orm.Promotion.expires_at.is_(None), orm.Promotion.expires_at > at),
                 or_(
@@ -104,13 +115,18 @@ class SqlAlchemyPromotionRepository(PromotionRepository):
         *,
         benefit_feature_key: PromotionBenefitFeatureKey,
         context: PromotionContext,
+        kind: PromotionKind | None,
         starts_at: datetime,
     ) -> Promotion | None:
+        kind_condition = (
+            orm.Promotion.kind.is_(None) if kind is None else orm.Promotion.kind == kind.value
+        )
         record = await self._session.scalar(
             select(orm.Promotion)
             .where(
                 orm.Promotion.benefit_feature_key == benefit_feature_key.value,
                 orm.Promotion.context == context.value,
+                kind_condition,
                 orm.Promotion.starts_at == starts_at,
             )
             .with_for_update()
@@ -179,16 +195,26 @@ class SqlAlchemyPromotionRepository(PromotionRepository):
             return None
         return mapper.redemption_to_domain(record)
 
-    async def count_user_redemptions(self, *, user_id: UUID, promotion_id: UUID) -> int:
+    async def count_user_redemptions(
+        self,
+        *,
+        user_id: UUID,
+        promotion_id: UUID,
+        redeemed_at_from: datetime | None = None,
+        redeemed_at_before: datetime | None = None,
+    ) -> int:
+        conditions = [
+            orm.PromotionRedemption.user_id == user_id,
+            orm.PromotionRedemption.promotion_id == promotion_id,
+            orm.PromotionRedemption.status == PromotionRedemptionStatus.GRANTED.value,
+        ]
+        if redeemed_at_from is not None:
+            conditions.append(orm.PromotionRedemption.redeemed_at >= redeemed_at_from)
+        if redeemed_at_before is not None:
+            conditions.append(orm.PromotionRedemption.redeemed_at < redeemed_at_before)
         return (
             await self._session.scalar(
-                select(func.count())
-                .select_from(orm.PromotionRedemption)
-                .where(
-                    orm.PromotionRedemption.user_id == user_id,
-                    orm.PromotionRedemption.promotion_id == promotion_id,
-                    orm.PromotionRedemption.status == PromotionRedemptionStatus.GRANTED.value,
-                )
+                select(func.count()).select_from(orm.PromotionRedemption).where(*conditions)
             )
             or 0
         )
@@ -210,6 +236,7 @@ class SqlAlchemyPromotionRepository(PromotionRepository):
                 max_redemptions_per_user=promotion.max_redemptions_per_user,
                 benefit_feature_key=promotion.benefit_feature_key.value,
                 context=None if promotion.context is None else promotion.context.value,
+                kind=None if promotion.kind is None else promotion.kind.value,
                 benefit_amount=promotion.benefit_amount.value,
             )
         )
@@ -228,6 +255,7 @@ class SqlAlchemyPromotionRepository(PromotionRepository):
         record.max_redemptions_per_user = promotion.max_redemptions_per_user
         record.benefit_feature_key = promotion.benefit_feature_key.value
         record.context = None if promotion.context is None else promotion.context.value
+        record.kind = None if promotion.kind is None else promotion.kind.value
         record.benefit_amount = promotion.benefit_amount.value
         await self._session.flush()
 

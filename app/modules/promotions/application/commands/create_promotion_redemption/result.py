@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from uuid import UUID
 
-from app.modules.promotions.domain.model import PromotionRedemptionStatus
+from app.modules.promotions.domain.model import PromotionKind, PromotionRedemptionStatus
 
 
 @dataclass(frozen=True, slots=True)
@@ -12,8 +12,11 @@ class CreatePromotionRedemptionResult:
     status: PromotionRedemptionStatus
     already_redeemed: bool
     credit_granted: bool
+    kind: PromotionKind | None
     benefit_amount: int
     remaining_redemptions: int | None
+    max_redemptions_per_user: int
+    remaining_redemptions_for_user: int
     credit_balance_after: int | None
     credit_remaining_after: int | None
     banner_image_url: str | None = None

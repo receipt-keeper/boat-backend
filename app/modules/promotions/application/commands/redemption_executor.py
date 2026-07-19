@@ -11,15 +11,23 @@ from app.modules.promotions.application.commands.create_promotion_redemption.res
 from app.modules.promotions.application.ports.credit_grant import (
     PromotionCreditGrant,
     PromotionCreditGrantPort,
+    PromotionCreditGrantRejectedError,
 )
 from app.modules.promotions.application.ports.promotion_repository import (
     PromotionRepository,
 )
-from app.modules.promotions.domain.exceptions import PromotionNotFoundError
+from app.modules.promotions.application.redemption_window import (
+    current_user_redemption_window,
+)
+from app.modules.promotions.domain.exceptions import (
+    PromotionNotFoundError,
+    PromotionRedemptionConflictError,
+)
 from app.modules.promotions.domain.model import (
     Promotion,
     PromotionCode,
     PromotionContent,
+    PromotionKind,
     PromotionRedemption,
 )
 
@@ -73,6 +81,12 @@ class PromotionRedemptionExecutor:
         )
         if promotion is None:
             raise PromotionNotFoundError()
+        now = self._clock()
+        user_redemption_count = await self._user_redemption_count(
+            user_id=replay.user_id,
+            promotion=promotion,
+            at=now,
+        )
         balance = await self._credit_grant_port.get_ocr_credit_balance(
             user_id=replay.user_id,
         )
@@ -85,6 +99,7 @@ class PromotionRedemptionExecutor:
             banner_image_url=_banner_image_url(content),
             already_redeemed=True,
             credit_granted=False,
+            user_redemption_count=user_redemption_count,
             credit_balance_after=balance.total_granted_count,
             credit_remaining_after=balance.remaining_count,
         )
@@ -97,9 +112,10 @@ class PromotionRedemptionExecutor:
         if attempt.promotion_code is not None:
             attempt.promotion_code.ensure_redeemable(at=now)
         attempt.promotion.ensure_redeemable(at=now)
-        user_redemption_count = await self._promotion_repository.count_user_redemptions(
+        user_redemption_count = await self._user_redemption_count(
             user_id=attempt.user_id,
-            promotion_id=attempt.promotion.id,
+            promotion=attempt.promotion,
+            at=now,
         )
         attempt.promotion.ensure_user_can_redeem(user_redemption_count=user_redemption_count)
 
@@ -123,13 +139,19 @@ class PromotionRedemptionExecutor:
         # 소거되도록 하기 위함이다(멱등 replay에서 유령 이벤트 방지, credits T3와 동일 원칙).
         events = redemption.pull_events()
         await self._event_publisher.publish(events)
-        grant_result = await self._credit_grant_port.grant_ocr_credit(
-            grant=_credit_grant(
-                redemption=redemption,
-                amount=attempt.promotion.benefit_amount.value,
-                idempotency_key=attempt.idempotency_key,
+        try:
+            grant_result = await self._credit_grant_port.grant_ocr_credit(
+                grant=_credit_grant(
+                    redemption=redemption,
+                    promotion=attempt.promotion,
+                    idempotency_key=attempt.idempotency_key,
+                )
             )
-        )
+        except PromotionCreditGrantRejectedError as exc:
+            await self._unit_of_work.rollback()
+            raise PromotionRedemptionConflictError(
+                "남은 OCR 분석 횟수를 모두 사용한 후 광고 보상을 받을 수 있습니다."
+            ) from exc
         await self._unit_of_work.commit()
         content = await self._promotion_repository.find_content_by_promotion_id(
             promotion_id=attempt.promotion.id,
@@ -140,22 +162,39 @@ class PromotionRedemptionExecutor:
             banner_image_url=_banner_image_url(content),
             already_redeemed=False,
             credit_granted=True,
+            user_redemption_count=user_redemption_count + 1,
             credit_balance_after=grant_result.credit_balance_after,
             credit_remaining_after=grant_result.credit_remaining_after,
+        )
+
+    async def _user_redemption_count(
+        self,
+        *,
+        user_id: UUID,
+        promotion: Promotion,
+        at: datetime,
+    ) -> int:
+        window = current_user_redemption_window(promotion=promotion, at=at)
+        return await self._promotion_repository.count_user_redemptions(
+            user_id=user_id,
+            promotion_id=promotion.id,
+            redeemed_at_from=window.starts_at,
+            redeemed_at_before=window.expires_at,
         )
 
 
 def _credit_grant(
     *,
     redemption: PromotionRedemption,
-    amount: int,
+    promotion: Promotion,
     idempotency_key: str,
 ) -> PromotionCreditGrant:
     return PromotionCreditGrant(
         user_id=redemption.user_id,
-        amount=amount,
+        amount=promotion.benefit_amount.value,
         redemption_id=redemption.id,
         idempotency_key=idempotency_key,
+        required_remaining_count=(0 if promotion.kind == PromotionKind.REWARDED_AD else None),
     )
 
 
@@ -172,6 +211,7 @@ def _result(
     banner_image_url: str | None,
     already_redeemed: bool,
     credit_granted: bool,
+    user_redemption_count: int,
     credit_balance_after: int | None,
     credit_remaining_after: int | None,
 ) -> CreatePromotionRedemptionResult:
@@ -182,8 +222,14 @@ def _result(
         status=redemption.status,
         already_redeemed=already_redeemed,
         credit_granted=credit_granted,
+        kind=promotion.kind,
         benefit_amount=promotion.benefit_amount.value,
         remaining_redemptions=_remaining_redemptions(promotion),
+        max_redemptions_per_user=promotion.max_redemptions_per_user,
+        remaining_redemptions_for_user=max(
+            promotion.max_redemptions_per_user - user_redemption_count,
+            0,
+        ),
         credit_balance_after=credit_balance_after,
         credit_remaining_after=credit_remaining_after,
         banner_image_url=banner_image_url,

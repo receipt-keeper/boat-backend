@@ -9,6 +9,7 @@ class PromotionCreditGrant:
     amount: int
     redemption_id: UUID
     idempotency_key: str
+    required_remaining_count: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -21,6 +22,10 @@ class PromotionCreditGrantResult:
 class PromotionCreditBalance:
     total_granted_count: int
     remaining_count: int
+
+
+class PromotionCreditGrantRejectedError(RuntimeError):
+    pass
 
 
 class PromotionCreditGrantPort(Protocol):

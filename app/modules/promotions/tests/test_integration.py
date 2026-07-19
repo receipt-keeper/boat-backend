@@ -31,7 +31,55 @@ from app.modules.promotions.tests.helpers import (
 )
 
 CODE_PROMOTION_ID = UUID("00000000-0000-0000-0000-000000000203")
+REWARDED_AD_PROMOTION_ID = UUID("00000000-0000-0000-0000-000000000204")
 RECHARGE_CONTEXT = "recharge"
+
+
+async def test_recharge_query_without_kind_selects_monthly_allowance_through_real_wiring(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    test_app = _promotion_integration_app(postgres_session_factory)
+    async with postgres_session_factory() as session:
+        await seed_promotion(
+            session,
+            expires_at=None,
+            context=RECHARGE_CONTEXT,
+            kind="monthlyAllowance",
+            benefit_amount=5,
+        )
+        await seed_promotion(
+            session,
+            promotion_id=REWARDED_AD_PROMOTION_ID,
+            expires_at=None,
+            max_redemptions=None,
+            max_redemptions_per_user=2,
+            context=RECHARGE_CONTEXT,
+            kind="rewardedAd",
+            benefit_amount=2,
+        )
+
+    async with api_client(test_app) as test_client:
+        monthly_response = await test_client.get(
+            "/api/v1/promotions?featureKey=ocr&context=recharge"
+        )
+        rewarded_ad_response = await test_client.get(
+            "/api/v1/promotions?featureKey=ocr&context=recharge&kind=rewardedAd"
+        )
+
+    assert monthly_response.status_code == 200
+    assert monthly_response.json()["data"]["promotionId"] == str(PROMOTION_ID)
+    assert monthly_response.json()["data"]["kind"] == "monthlyAllowance"
+    assert monthly_response.json()["data"]["benefit"] == {
+        "featureKey": "ocr",
+        "amount": 5,
+    }
+    assert rewarded_ad_response.status_code == 200
+    assert rewarded_ad_response.json()["data"]["promotionId"] == str(REWARDED_AD_PROMOTION_ID)
+    assert rewarded_ad_response.json()["data"]["kind"] == "rewardedAd"
+    assert rewarded_ad_response.json()["data"]["benefit"] == {
+        "featureKey": "ocr",
+        "amount": 2,
+    }
 
 
 async def test_no_code_promotion_redemption_grants_credit_once_through_real_wiring(
@@ -108,6 +156,97 @@ async def test_no_code_promotion_redemption_grants_credit_once_through_real_wiri
     assert outbox_events[1].payload["amount"] == 5
     assert outbox_events[1].payload["source_id"] == str(redemption.id)
     assert outbox_events[1].payload["idempotency_key"] == PROMOTION_IDEMPOTENCY_KEY
+
+
+async def test_rewarded_ad_redemption_enforces_real_balance_and_daily_limit(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    test_app = _promotion_integration_app(postgres_session_factory)
+    async with postgres_session_factory() as session:
+        await seed_promotion(
+            session,
+            expires_at=None,
+            max_redemptions=None,
+            max_redemptions_per_user=2,
+            context=RECHARGE_CONTEXT,
+            kind="rewardedAd",
+            benefit_amount=2,
+        )
+
+    async with api_client(test_app) as test_client:
+        missing_key = await test_client.post(f"/api/v1/promotions/{PROMOTION_ID}/redemptions")
+        invalid_key = await test_client.post(
+            f"/api/v1/promotions/{PROMOTION_ID}/redemptions",
+            headers={"Idempotency-Key": "not-a-uuid"},
+        )
+        first = await test_client.post(
+            f"/api/v1/promotions/{PROMOTION_ID}/redemptions",
+            headers={"Idempotency-Key": "00000000-0000-0000-0000-000000000001"},
+        )
+        replay = await test_client.post(
+            f"/api/v1/promotions/{PROMOTION_ID}/redemptions",
+            headers={"Idempotency-Key": "00000000-0000-0000-0000-000000000001"},
+        )
+        before_consumption = await test_client.post(
+            f"/api/v1/promotions/{PROMOTION_ID}/redemptions",
+            headers={"Idempotency-Key": "00000000-0000-0000-0000-000000000002"},
+        )
+
+        async with postgres_session_factory() as session:
+            user_credit = await session.get(
+                credits_orm.UserCredit,
+                {"user_id": USER_ID, "feature_key": "ocr"},
+            )
+            assert user_credit is not None
+            user_credit.used_count = user_credit.total_granted_count
+            user_credit.remaining_count = 0
+            await session.commit()
+
+        second = await test_client.post(
+            f"/api/v1/promotions/{PROMOTION_ID}/redemptions",
+            headers={"Idempotency-Key": "00000000-0000-0000-0000-000000000002"},
+        )
+
+        async with postgres_session_factory() as session:
+            user_credit = await session.get(
+                credits_orm.UserCredit,
+                {"user_id": USER_ID, "feature_key": "ocr"},
+            )
+            assert user_credit is not None
+            user_credit.used_count = user_credit.total_granted_count
+            user_credit.remaining_count = 0
+            await session.commit()
+
+        third = await test_client.post(
+            f"/api/v1/promotions/{PROMOTION_ID}/redemptions",
+            headers={"Idempotency-Key": "00000000-0000-0000-0000-000000000003"},
+        )
+
+    assert missing_key.status_code == 422
+    assert invalid_key.status_code == 422
+    assert first.status_code == 200
+    assert first.json()["data"]["kind"] == "rewardedAd"
+    assert first.json()["data"]["state"] == "alreadyRedeemed"
+    assert first.json()["data"]["redemption"] == {
+        "remainingRedemptions": None,
+        "maxRedemptionsPerUser": 2,
+        "remainingRedemptionsForUser": 1,
+    }
+    assert replay.status_code == 200
+    assert replay.json()["data"]["state"] == "alreadyRedeemed"
+    assert replay.json()["data"]["balance"]["remainingCount"] == 2
+    assert before_consumption.status_code == 409
+    assert second.status_code == 200
+    assert second.json()["data"]["state"] == "alreadyRedeemed"
+    assert second.json()["data"]["redemption"]["remainingRedemptionsForUser"] == 0
+    assert third.status_code == 409
+
+    async with postgres_session_factory() as session:
+        redemptions = tuple(await session.scalars(select(promotions_orm.PromotionRedemption)))
+        transactions = tuple(await session.scalars(select(credits_orm.CreditTransaction)))
+
+    assert len(redemptions) == 2
+    assert len(transactions) == 2
 
 
 async def test_public_signup_promotion_redemption_returns_404_without_redemption_or_credit(

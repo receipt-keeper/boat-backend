@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -9,7 +9,11 @@ from app.modules.promotions.application.queries.get_current_ocr_credit_promotion
 from app.modules.promotions.application.queries.get_current_ocr_credit_promotion.use_case import (
     GetCurrentOcrCreditPromotionQueryUseCase,
 )
-from app.modules.promotions.domain.model import PromotionContext, PromotionRedemptionStatus
+from app.modules.promotions.domain.model import (
+    PromotionContext,
+    PromotionKind,
+    PromotionRedemptionStatus,
+)
 from app.modules.promotions.infrastructure.persistence import orm
 from app.modules.promotions.infrastructure.persistence.repository import (
     SqlAlchemyPromotionRepository,
@@ -44,6 +48,9 @@ async def test_get_current_ocr_credit_promotion_returns_user_status(
     assert result is not None
     assert result.promotion_id == PROMOTION_ID
     assert result.benefit_amount == 3
+    assert result.kind is None
+    assert result.max_redemptions_per_user == 1
+    assert result.remaining_redemptions_for_user == 1
     assert result.banner_image_url is None
     assert result.already_redeemed is False
     assert result.redemption_status is None
@@ -139,6 +146,52 @@ async def test_get_current_ocr_credit_promotion_returns_recharge_context_when_ne
     assert result.benefit_amount == 5
 
 
+async def test_rewarded_ad_query_counts_only_current_kst_day(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    current_day_start = datetime(2026, 7, 2, 15, 0, tzinfo=NOW.tzinfo)
+    async with postgres_session_factory() as session:
+        await seed_promotion(
+            session,
+            context=PromotionContext.RECHARGE.value,
+            kind=PromotionKind.REWARDED_AD.value,
+            max_redemptions_per_user=2,
+        )
+        session.add_all(
+            [
+                _granted_redemption(
+                    redemption_id=UUID("00000000-0000-0000-0000-000000000601"),
+                    redeemed_at=current_day_start - timedelta(seconds=1),
+                    idempotency_key="previous-day",
+                ),
+                _granted_redemption(
+                    redemption_id=UUID("00000000-0000-0000-0000-000000000602"),
+                    redeemed_at=current_day_start,
+                    idempotency_key="current-day",
+                ),
+            ]
+        )
+        await session.commit()
+        use_case = GetCurrentOcrCreditPromotionQueryUseCase(
+            promotion_repository=SqlAlchemyPromotionRepository(session),
+            clock=lambda: NOW,
+        )
+
+        result = await use_case.execute(
+            GetCurrentOcrCreditPromotionQuery(
+                user_id=USER_ID,
+                context=PromotionContext.RECHARGE,
+                kind=PromotionKind.REWARDED_AD,
+            )
+        )
+
+    assert result is not None
+    assert result.kind == PromotionKind.REWARDED_AD
+    assert result.max_redemptions_per_user == 2
+    assert result.remaining_redemptions_for_user == 1
+    assert result.already_redeemed is False
+
+
 async def test_get_current_ocr_credit_promotion_preserves_legacy_lookup_when_context_omitted(
     postgres_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
@@ -192,3 +245,20 @@ async def _seed_ocr_promotion(
         )
     )
     await session.commit()
+
+
+def _granted_redemption(
+    *,
+    redemption_id: UUID,
+    redeemed_at: datetime,
+    idempotency_key: str,
+) -> orm.PromotionRedemption:
+    return orm.PromotionRedemption(
+        id=redemption_id,
+        promotion_id=PROMOTION_ID,
+        promotion_code_id=None,
+        user_id=USER_ID,
+        status=PromotionRedemptionStatus.GRANTED.value,
+        idempotency_key=idempotency_key,
+        redeemed_at=redeemed_at,
+    )

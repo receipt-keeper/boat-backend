@@ -28,7 +28,7 @@ from app.modules.promotions.dependencies import (
     CreatePromotionRedemptionCommandUseCaseDep,
     CurrentOcrCreditPromotionQueryUseCaseDep,
 )
-from app.modules.promotions.domain.model import PromotionContext
+from app.modules.promotions.domain.model import PromotionContext, PromotionKind
 
 _OpenApiResponse = dict[str, type[CommonResponse[ApiErrorData]] | str]
 
@@ -88,8 +88,9 @@ router = APIRouter(
     description=(
         "앱이 OCR 혜택 수령 가능 여부와 지급 크레딧 수량을 판단할 수 있는 상태 값을 반환한다. "
         "GET /api/v1/usage에서 ocr.canAnalyze=false이면 "
-        "GET /api/v1/promotions?featureKey=ocr&context=recharge로 월간 OCR 크레딧 "
-        "충전 혜택을 조회하고, state=redeemable일 때 프로모션 ID로 수령을 요청한다."
+        "월간 충전은 GET /api/v1/promotions?featureKey=ocr&context=recharge, "
+        "광고 보상은 같은 요청에 kind=rewardedAd를 추가해 조회한다. "
+        "state=redeemable일 때 프로모션 ID로 수령을 요청한다."
     ),
 )
 async def get_promotions(
@@ -101,6 +102,7 @@ async def get_promotions(
         GetCurrentOcrCreditPromotionQuery(
             user_id=context.user_id,
             context=_to_domain_promotion_context(query.context),
+            kind=_to_domain_promotion_kind(query.context, query.kind),
         )
     )
     data = (
@@ -148,9 +150,10 @@ async def create_promotion_code_redemption(
     response_model=CommonResponse[PromotionResponse],
     summary="OCR 프로모션 혜택 받기",
     description=(
-        "프로모션 ID로 OCR 크레딧 혜택을 요청한다. 월간 OCR 크레딧 충전은 "
-        "GET /api/v1/promotions?featureKey=ocr&context=recharge 응답의 promotionId를 사용하며, "
-        "중복 요청 방지를 위해 Idempotency-Key 헤더를 함께 보낸다."
+        "프로모션 ID로 OCR 크레딧 혜택을 요청한다. 광고 보상 프로모션은 OCR 잔여 횟수가 "
+        "0일 때만 KST 기준 하루 2회까지 받을 수 있고 Idempotency-Key 헤더가 필수다. "
+        "값은 광고 시청 건별 UUID이며, 같은 광고 요청의 재시도에는 같은 키를, "
+        "다음 광고에는 새 키를 사용한다."
     ),
 )
 async def create_promotion_redemption(
@@ -192,3 +195,12 @@ def _to_domain_promotion_context(
             return None
         case unreachable:
             assert_never(unreachable)
+
+
+def _to_domain_promotion_kind(
+    context: PromotionQueryContext | None,
+    kind: PromotionKind | None,
+) -> PromotionKind | None:
+    if context == PromotionQueryContext.RECHARGE and kind is None:
+        return PromotionKind.MONTHLY_ALLOWANCE
+    return kind

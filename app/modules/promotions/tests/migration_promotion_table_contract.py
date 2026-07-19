@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
@@ -16,6 +18,7 @@ from app.modules.promotions.tests.migration_promotion_nullability_contract impor
 EXPECTED_PROMOTION_CHECKS = {
     "ck_promotions_benefit_feature_key_allowed",
     "ck_promotions_context_allowed",
+    "ck_promotions_kind_allowed",
     "ck_promotions_benefit_amount_positive",
     "ck_promotions_max_redemptions_positive",
     "ck_promotions_times_redeemed_non_negative",
@@ -48,6 +51,7 @@ async def assert_promotion_tables_are_constrained(database_url: str) -> list[str
                     "max_redemptions_per_user",
                     "benefit_feature_key",
                     "context",
+                    "kind",
                     "benefit_amount",
                     "created_at",
                     "updated_at",
@@ -90,6 +94,7 @@ async def assert_promotion_tables_are_constrained(database_url: str) -> list[str
             await _assert_check_constraint_names(connection)
             await _assert_same_bc_foreign_keys(connection)
             await _assert_unique_indexes(connection)
+            await _assert_rewarded_ad_promotion(connection)
             await assert_promotion_nullability(connection)
             await assert_signup_context_insert_is_accepted(connection)
             return await assert_invalid_promotion_insert_probes(connection)
@@ -211,8 +216,10 @@ async def _assert_unique_indexes(connection: AsyncConnection) -> None:
                   'ix_promotion_codes_code_unique',
                   'uq_promotion_redemptions_idempotency_key',
                   'uq_promotion_redemptions_promotion_beneficiary',
-                  'ix_promotions_current_benefit_context',
-                  'uq_promotions_benefit_context_starts_at'
+                  'ix_promotion_redemptions_user_promotion_status_redeemed_at',
+                  'ix_promotions_current_benefit_context_kind',
+                  'uq_promotions_benefit_context_kind_starts_at',
+                  'uq_promotions_benefit_context_starts_at_without_kind'
               )
             """
         )
@@ -235,16 +242,68 @@ async def _assert_unique_indexes(connection: AsyncConnection) -> None:
             "ON public.promotion_redemptions USING btree (promotion_id, beneficiary_key) "
             "WHERE (beneficiary_key IS NOT NULL)",
         ),
-        "ix_promotions_current_benefit_context": (
+        "ix_promotion_redemptions_user_promotion_status_redeemed_at": (
             False,
-            "CREATE INDEX ix_promotions_current_benefit_context "
-            "ON public.promotions USING btree "
-            "(benefit_feature_key, context, active, expires_at, starts_at DESC)",
+            "CREATE INDEX ix_promotion_redemptions_user_promotion_status_redeemed_at "
+            "ON public.promotion_redemptions USING btree "
+            "(user_id, promotion_id, status, redeemed_at)",
         ),
-        "uq_promotions_benefit_context_starts_at": (
-            True,
-            "CREATE UNIQUE INDEX uq_promotions_benefit_context_starts_at "
+        "ix_promotions_current_benefit_context_kind": (
+            False,
+            "CREATE INDEX ix_promotions_current_benefit_context_kind "
             "ON public.promotions USING btree "
-            "(benefit_feature_key, context, starts_at) WHERE (context IS NOT NULL)",
+            "(benefit_feature_key, context, kind, active, expires_at, starts_at DESC)",
+        ),
+        "uq_promotions_benefit_context_kind_starts_at": (
+            True,
+            "CREATE UNIQUE INDEX uq_promotions_benefit_context_kind_starts_at "
+            "ON public.promotions USING btree "
+            "(benefit_feature_key, context, kind, starts_at) "
+            "WHERE ((context IS NOT NULL) AND (kind IS NOT NULL))",
+        ),
+        "uq_promotions_benefit_context_starts_at_without_kind": (
+            True,
+            "CREATE UNIQUE INDEX uq_promotions_benefit_context_starts_at_without_kind "
+            "ON public.promotions USING btree "
+            "(benefit_feature_key, context, starts_at) "
+            "WHERE ((context IS NOT NULL) AND (kind IS NULL))",
         ),
     }
+
+
+async def _assert_rewarded_ad_promotion(connection: AsyncConnection) -> None:
+    result = await connection.execute(
+        text(
+            """
+            SELECT
+                id::text,
+                name,
+                active,
+                starts_at,
+                expires_at,
+                max_redemptions,
+                times_redeemed,
+                max_redemptions_per_user,
+                benefit_feature_key,
+                context,
+                kind,
+                benefit_amount
+            FROM promotions
+            WHERE id = '67a6b0f8-a628-47ae-a2c3-1a5688736829'
+            """
+        )
+    )
+    assert result.one() == (
+        "67a6b0f8-a628-47ae-a2c3-1a5688736829",
+        "광고 시청 OCR 크레딧 충전",
+        True,
+        datetime(2026, 7, 16, 15, 0, tzinfo=UTC),
+        None,
+        None,
+        0,
+        2,
+        "ocr",
+        "recharge",
+        "rewardedAd",
+        2,
+    )

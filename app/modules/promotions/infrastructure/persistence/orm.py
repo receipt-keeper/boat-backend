@@ -31,6 +31,10 @@ class Promotion(Base):
             name=conv("ck_promotions_context_allowed"),
         ),
         CheckConstraint(
+            "kind IS NULL OR kind IN ('monthlyAllowance', 'rewardedAd')",
+            name=conv("ck_promotions_kind_allowed"),
+        ),
+        CheckConstraint(
             "benefit_amount > 0",
             name=conv("ck_promotions_benefit_amount_positive"),
         ),
@@ -80,6 +84,7 @@ class Promotion(Base):
     )
     benefit_feature_key: Mapped[str] = mapped_column(type_=String(50), nullable=False)
     context: Mapped[str | None] = mapped_column(type_=String(50), nullable=True)
+    kind: Mapped[str | None] = mapped_column(type_=String(50), nullable=True)
     benefit_amount: Mapped[int] = mapped_column(type_=Integer, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         type_=DateTime(timezone=True),
@@ -95,20 +100,30 @@ class Promotion(Base):
 
 
 Index(
-    "ix_promotions_current_benefit_context",
+    "ix_promotions_current_benefit_context_kind",
     Promotion.benefit_feature_key,
     Promotion.context,
+    Promotion.kind,
     Promotion.active,
     Promotion.expires_at,
     Promotion.starts_at.desc(),
 )
 Index(
-    "uq_promotions_benefit_context_starts_at",
+    "uq_promotions_benefit_context_kind_starts_at",
+    Promotion.benefit_feature_key,
+    Promotion.context,
+    Promotion.kind,
+    Promotion.starts_at,
+    unique=True,
+    postgresql_where=Promotion.context.is_not(None) & Promotion.kind.is_not(None),
+)
+Index(
+    "uq_promotions_benefit_context_starts_at_without_kind",
     Promotion.benefit_feature_key,
     Promotion.context,
     Promotion.starts_at,
     unique=True,
-    postgresql_where=Promotion.context.is_not(None),
+    postgresql_where=Promotion.context.is_not(None) & Promotion.kind.is_(None),
 )
 
 
@@ -262,4 +277,11 @@ Index(
     PromotionRedemption.beneficiary_key,
     unique=True,
     postgresql_where=PromotionRedemption.beneficiary_key.is_not(None),
+)
+Index(
+    "ix_promotion_redemptions_user_promotion_status_redeemed_at",
+    PromotionRedemption.user_id,
+    PromotionRedemption.promotion_id,
+    PromotionRedemption.status,
+    PromotionRedemption.redeemed_at,
 )

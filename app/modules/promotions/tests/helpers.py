@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
@@ -23,6 +24,7 @@ from app.modules.promotions.application.ports.credit_grant import (
     PromotionCreditBalance,
     PromotionCreditGrant,
     PromotionCreditGrantPort,
+    PromotionCreditGrantRejectedError,
     PromotionCreditGrantResult,
 )
 from app.modules.promotions.dependencies import build_promotions_event_registry
@@ -51,13 +53,27 @@ class FakePromotionCreditGrantPort(PromotionCreditGrantPort):
             credit_remaining_after=3,
         )
     )
+    balance: PromotionCreditBalance | None = None
 
     async def grant_ocr_credit(
         self,
         *,
         grant: PromotionCreditGrant,
     ) -> PromotionCreditGrantResult:
+        current_balance = self.balance or PromotionCreditBalance(
+            total_granted_count=self.result.credit_balance_after or 0,
+            remaining_count=self.result.credit_remaining_after or 0,
+        )
+        if (
+            grant.required_remaining_count is not None
+            and current_balance.remaining_count != grant.required_remaining_count
+        ):
+            raise PromotionCreditGrantRejectedError()
         self.grants.append(grant)
+        self.balance = PromotionCreditBalance(
+            total_granted_count=self.result.credit_balance_after or 0,
+            remaining_count=self.result.credit_remaining_after or 0,
+        )
         return self.result
 
     async def get_ocr_credit_balance(
@@ -65,6 +81,8 @@ class FakePromotionCreditGrantPort(PromotionCreditGrantPort):
         *,
         user_id: UUID,
     ) -> PromotionCreditBalance:
+        if self.balance is not None:
+            return self.balance
         return PromotionCreditBalance(
             total_granted_count=self.result.credit_balance_after or 0,
             remaining_count=self.result.credit_remaining_after or 0,
@@ -85,13 +103,14 @@ def promotion_use_case(
     grant_port: FakePromotionCreditGrantPort,
     *,
     event_publisher: EventPublisher | None = None,
+    clock: Callable[[], datetime] = lambda: NOW,
 ) -> CreatePromotionRedemptionCommandUseCase:
     return CreatePromotionRedemptionCommandUseCase(
         promotion_repository=SqlAlchemyPromotionRepository(session),
         credit_grant_port=grant_port,
         unit_of_work=SqlAlchemyUnitOfWork(session),
         event_publisher=_event_publisher_for(session, event_publisher),
-        clock=lambda: NOW,
+        clock=clock,
     )
 
 
@@ -145,6 +164,7 @@ async def seed_promotion(
     times_redeemed: int = 0,
     max_redemptions_per_user: int = 1,
     context: str | None = None,
+    kind: str | None = None,
     benefit_amount: int = 3,
 ) -> None:
     session.add(
@@ -159,6 +179,7 @@ async def seed_promotion(
             max_redemptions_per_user=max_redemptions_per_user,
             benefit_feature_key="ocr",
             context=context,
+            kind=kind,
             benefit_amount=benefit_amount,
         )
     )

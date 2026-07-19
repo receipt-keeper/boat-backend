@@ -14,12 +14,12 @@ def duplicate_probes() -> tuple[DuplicateProbe, ...]:
             name="duplicate promotions monthly recharge business key",
             statement="""
                 INSERT INTO promotions (
-                    id, name, active, starts_at, benefit_feature_key, context, benefit_amount
+                    id, name, active, starts_at, benefit_feature_key, context, kind, benefit_amount
                 )
                 VALUES ('00000000-0000-0000-0000-000000000102', 'duplicate monthly recharge', true,
-                        '2026-06-30 15:00:00+00', 'ocr', 'recharge', 5)
+                        '2026-06-30 15:00:00+00', 'ocr', 'recharge', NULL, 5)
             """,
-            expected_constraint="uq_promotions_benefit_context_starts_at",
+            expected_constraint="uq_promotions_benefit_context_starts_at_without_kind",
         ),
         DuplicateProbe(
             name="duplicate promotion_codes.code",
