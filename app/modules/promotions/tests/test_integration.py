@@ -31,7 +31,55 @@ from app.modules.promotions.tests.helpers import (
 )
 
 CODE_PROMOTION_ID = UUID("00000000-0000-0000-0000-000000000203")
+REWARDED_AD_PROMOTION_ID = UUID("00000000-0000-0000-0000-000000000204")
 RECHARGE_CONTEXT = "recharge"
+
+
+async def test_recharge_query_without_kind_selects_monthly_allowance_through_real_wiring(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    test_app = _promotion_integration_app(postgres_session_factory)
+    async with postgres_session_factory() as session:
+        await seed_promotion(
+            session,
+            expires_at=None,
+            context=RECHARGE_CONTEXT,
+            kind="monthlyAllowance",
+            benefit_amount=5,
+        )
+        await seed_promotion(
+            session,
+            promotion_id=REWARDED_AD_PROMOTION_ID,
+            expires_at=None,
+            max_redemptions=None,
+            max_redemptions_per_user=2,
+            context=RECHARGE_CONTEXT,
+            kind="rewardedAd",
+            benefit_amount=2,
+        )
+
+    async with api_client(test_app) as test_client:
+        monthly_response = await test_client.get(
+            "/api/v1/promotions?featureKey=ocr&context=recharge"
+        )
+        rewarded_ad_response = await test_client.get(
+            "/api/v1/promotions?featureKey=ocr&context=recharge&kind=rewardedAd"
+        )
+
+    assert monthly_response.status_code == 200
+    assert monthly_response.json()["data"]["promotionId"] == str(PROMOTION_ID)
+    assert monthly_response.json()["data"]["kind"] == "monthlyAllowance"
+    assert monthly_response.json()["data"]["benefit"] == {
+        "featureKey": "ocr",
+        "amount": 5,
+    }
+    assert rewarded_ad_response.status_code == 200
+    assert rewarded_ad_response.json()["data"]["promotionId"] == str(REWARDED_AD_PROMOTION_ID)
+    assert rewarded_ad_response.json()["data"]["kind"] == "rewardedAd"
+    assert rewarded_ad_response.json()["data"]["benefit"] == {
+        "featureKey": "ocr",
+        "amount": 2,
+    }
 
 
 async def test_no_code_promotion_redemption_grants_credit_once_through_real_wiring(
