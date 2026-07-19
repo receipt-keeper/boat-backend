@@ -38,6 +38,10 @@ from app.modules.promotions.tests.helpers import (
     seed_promotion_content,
 )
 
+AD_ATTEMPT_1 = "00000000-0000-0000-0000-000000000001"
+AD_ATTEMPT_2 = "00000000-0000-0000-0000-000000000002"
+AD_ATTEMPT_3 = "00000000-0000-0000-0000-000000000003"
+
 
 async def test_create_promotion_redemption_grants_credit_and_persists_redemption(
     postgres_session_factory: async_sessionmaker[AsyncSession],
@@ -251,6 +255,22 @@ async def test_rewarded_ad_redemption_requires_idempotency_key(
     assert grant_port.grants == []
 
 
+async def test_rewarded_ad_redemption_rejects_non_uuid_idempotency_key(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with postgres_session_factory() as session:
+        await _seed_rewarded_ad_promotion(session)
+        grant_port = _rewarded_ad_grant_port(remaining_count=0)
+
+        with pytest.raises(ValidationError) as exc_info:
+            await promotion_use_case(session, grant_port).execute(
+                promotion_command(idempotency_key="not-a-uuid")
+            )
+
+    assert "UUID 형식" in exc_info.value.details[0].message
+    assert grant_port.grants == []
+
+
 async def test_rewarded_ad_redemption_rejects_when_ocr_credit_remains(
     postgres_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
@@ -260,7 +280,7 @@ async def test_rewarded_ad_redemption_rejects_when_ocr_credit_remains(
 
         with pytest.raises(PromotionRedemptionConflictError, match="남은 OCR 분석 횟수"):
             await promotion_use_case(session, grant_port).execute(
-                promotion_command(idempotency_key="attempt-1")
+                promotion_command(idempotency_key=AD_ATTEMPT_1)
             )
 
     assert grant_port.grants == []
@@ -274,18 +294,18 @@ async def test_rewarded_ad_redemption_requires_consumption_between_daily_grants(
         grant_port = _rewarded_ad_grant_port(remaining_count=0)
         use_case = promotion_use_case(session, grant_port)
 
-        first = await use_case.execute(promotion_command(idempotency_key="attempt-1"))
-        replay = await use_case.execute(promotion_command(idempotency_key="attempt-1"))
+        first = await use_case.execute(promotion_command(idempotency_key=AD_ATTEMPT_1))
+        replay = await use_case.execute(promotion_command(idempotency_key=AD_ATTEMPT_1))
 
         with pytest.raises(PromotionRedemptionConflictError, match="남은 OCR 분석 횟수"):
-            await use_case.execute(promotion_command(idempotency_key="attempt-2"))
+            await use_case.execute(promotion_command(idempotency_key=AD_ATTEMPT_2))
 
         grant_port.balance = PromotionCreditBalance(total_granted_count=2, remaining_count=0)
-        second = await use_case.execute(promotion_command(idempotency_key="attempt-2"))
+        second = await use_case.execute(promotion_command(idempotency_key=AD_ATTEMPT_2))
         grant_port.balance = PromotionCreditBalance(total_granted_count=4, remaining_count=0)
 
         with pytest.raises(PromotionRedemptionConflictError, match="이미 사용한 프로모션"):
-            await use_case.execute(promotion_command(idempotency_key="attempt-3"))
+            await use_case.execute(promotion_command(idempotency_key=AD_ATTEMPT_3))
 
     assert first.kind == PromotionKind.REWARDED_AD
     assert first.max_redemptions_per_user == 2
@@ -304,16 +324,16 @@ async def test_rewarded_ad_daily_limit_resets_at_kst_midnight(
         grant_port = _rewarded_ad_grant_port(remaining_count=0)
         current_use_case = promotion_use_case(session, grant_port)
 
-        await current_use_case.execute(promotion_command(idempotency_key="attempt-1"))
+        await current_use_case.execute(promotion_command(idempotency_key=AD_ATTEMPT_1))
         grant_port.balance = PromotionCreditBalance(total_granted_count=2, remaining_count=0)
-        await current_use_case.execute(promotion_command(idempotency_key="attempt-2"))
+        await current_use_case.execute(promotion_command(idempotency_key=AD_ATTEMPT_2))
         grant_port.balance = PromotionCreditBalance(total_granted_count=4, remaining_count=0)
 
         next_day = await promotion_use_case(
             session,
             grant_port,
             clock=lambda: NOW + timedelta(hours=3),
-        ).execute(promotion_command(idempotency_key="attempt-3"))
+        ).execute(promotion_command(idempotency_key=AD_ATTEMPT_3))
 
     assert next_day.remaining_redemptions_for_user == 1
     assert len(grant_port.grants) == 3
@@ -332,10 +352,10 @@ async def test_rewarded_ad_concurrent_distinct_requests_grant_only_once(
     ):
         results = await asyncio.gather(
             promotion_use_case(first_session, grant_port).execute(
-                promotion_command(idempotency_key="attempt-1")
+                promotion_command(idempotency_key=AD_ATTEMPT_1)
             ),
             promotion_use_case(second_session, grant_port).execute(
-                promotion_command(idempotency_key="attempt-2")
+                promotion_command(idempotency_key=AD_ATTEMPT_2)
             ),
             return_exceptions=True,
         )

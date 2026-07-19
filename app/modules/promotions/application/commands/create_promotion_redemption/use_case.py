@@ -1,6 +1,7 @@
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import assert_never
+from uuid import UUID
 
 from app.core.application.event_publisher import EventPublisher
 from app.core.application.unit_of_work import UnitOfWork
@@ -63,15 +64,8 @@ class CreatePromotionRedemptionCommandUseCase:
                 pass
             case unreachable:
                 assert_never(unreachable)
-        if promotion.kind == PromotionKind.REWARDED_AD and command.idempotency_key is None:
-            raise ValidationError(
-                [
-                    ErrorDetail(
-                        field="Idempotency-Key",
-                        message="광고 보상 프로모션 수령에는 Idempotency-Key 헤더가 필요합니다.",
-                    )
-                ]
-            )
+        if promotion.kind == PromotionKind.REWARDED_AD:
+            _validate_rewarded_ad_idempotency_key(command.idempotency_key)
 
         idempotency_key = _idempotency_key(command)
 
@@ -98,3 +92,16 @@ def _idempotency_key(command: CreatePromotionRedemptionCommand) -> str:
     if command.idempotency_key is None:
         return f"promotionRedemption:{command.promotion_id}:{command.user_id}"
     return f"promotionRedemption:{command.promotion_id}:{command.user_id}:{command.idempotency_key}"
+
+
+def _validate_rewarded_ad_idempotency_key(idempotency_key: str | None) -> None:
+    if idempotency_key is None:
+        message = "광고 보상 프로모션 수령에는 Idempotency-Key 헤더가 필요합니다."
+    else:
+        try:
+            UUID(idempotency_key)
+        except ValueError:
+            message = "광고 보상 프로모션의 Idempotency-Key는 UUID 형식이어야 합니다."
+        else:
+            return
+    raise ValidationError([ErrorDetail(field="Idempotency-Key", message=message)])

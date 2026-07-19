@@ -291,6 +291,7 @@ def test_promotions_openapi_documents_recharge_lookup_and_redemption_flow() -> N
     assert "kind=rewardedAd" in get_description
     assert "state=redeemable" in get_description
     assert "Idempotency-Key" in redemption_description
+    assert "UUID" in redemption_description
     assert "하루 2회" in redemption_description
     assert "새 키" in redemption_description
     assert "크레딧" in get_description

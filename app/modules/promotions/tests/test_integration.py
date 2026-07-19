@@ -127,17 +127,21 @@ async def test_rewarded_ad_redemption_enforces_real_balance_and_daily_limit(
 
     async with api_client(test_app) as test_client:
         missing_key = await test_client.post(f"/api/v1/promotions/{PROMOTION_ID}/redemptions")
+        invalid_key = await test_client.post(
+            f"/api/v1/promotions/{PROMOTION_ID}/redemptions",
+            headers={"Idempotency-Key": "not-a-uuid"},
+        )
         first = await test_client.post(
             f"/api/v1/promotions/{PROMOTION_ID}/redemptions",
-            headers={"Idempotency-Key": "ad-attempt-1"},
+            headers={"Idempotency-Key": "00000000-0000-0000-0000-000000000001"},
         )
         replay = await test_client.post(
             f"/api/v1/promotions/{PROMOTION_ID}/redemptions",
-            headers={"Idempotency-Key": "ad-attempt-1"},
+            headers={"Idempotency-Key": "00000000-0000-0000-0000-000000000001"},
         )
         before_consumption = await test_client.post(
             f"/api/v1/promotions/{PROMOTION_ID}/redemptions",
-            headers={"Idempotency-Key": "ad-attempt-2"},
+            headers={"Idempotency-Key": "00000000-0000-0000-0000-000000000002"},
         )
 
         async with postgres_session_factory() as session:
@@ -152,7 +156,7 @@ async def test_rewarded_ad_redemption_enforces_real_balance_and_daily_limit(
 
         second = await test_client.post(
             f"/api/v1/promotions/{PROMOTION_ID}/redemptions",
-            headers={"Idempotency-Key": "ad-attempt-2"},
+            headers={"Idempotency-Key": "00000000-0000-0000-0000-000000000002"},
         )
 
         async with postgres_session_factory() as session:
@@ -167,10 +171,11 @@ async def test_rewarded_ad_redemption_enforces_real_balance_and_daily_limit(
 
         third = await test_client.post(
             f"/api/v1/promotions/{PROMOTION_ID}/redemptions",
-            headers={"Idempotency-Key": "ad-attempt-3"},
+            headers={"Idempotency-Key": "00000000-0000-0000-0000-000000000003"},
         )
 
     assert missing_key.status_code == 422
+    assert invalid_key.status_code == 422
     assert first.status_code == 200
     assert first.json()["data"]["kind"] == "rewardedAd"
     assert first.json()["data"]["state"] == "redeemable"

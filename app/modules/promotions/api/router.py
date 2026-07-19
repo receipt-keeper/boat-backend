@@ -152,7 +152,8 @@ async def create_promotion_code_redemption(
     description=(
         "프로모션 ID로 OCR 크레딧 혜택을 요청한다. 광고 보상 프로모션은 OCR 잔여 횟수가 "
         "0일 때만 KST 기준 하루 2회까지 받을 수 있고 Idempotency-Key 헤더가 필수다. "
-        "같은 광고 요청의 재시도에는 같은 키를, 다음 광고에는 새 키를 사용한다."
+        "값은 광고 시청 건별 UUID이며, 같은 광고 요청의 재시도에는 같은 키를, "
+        "다음 광고에는 새 키를 사용한다."
     ),
 )
 async def create_promotion_redemption(
