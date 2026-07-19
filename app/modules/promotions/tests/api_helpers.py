@@ -37,7 +37,7 @@ from app.modules.promotions.domain.exceptions import (
     PromotionNotFoundError,
     PromotionRedemptionConflictError,
 )
-from app.modules.promotions.domain.model import PromotionRedemptionStatus
+from app.modules.promotions.domain.model import PromotionKind, PromotionRedemptionStatus
 
 TEST_SETTINGS = Settings(app_name="Boat Backend")
 TEST_USER_ID = UUID("00000000-0000-0000-0000-000000000101")
@@ -171,8 +171,11 @@ def _current_result(
     return GetCurrentOcrCreditPromotionResult(
         promotion_id=PROMOTION_ID,
         name="Internal OCR promotion",
+        kind=PromotionKind.MONTHLY_ALLOWANCE,
         benefit_amount=3,
         remaining_redemptions=10,
+        max_redemptions_per_user=1,
+        remaining_redemptions_for_user=0 if already_redeemed else 1,
         starts_at=datetime(2026, 7, 1, tzinfo=UTC),
         expires_at=datetime(2026, 8, 1, tzinfo=UTC),
         already_redeemed=already_redeemed,

@@ -8,6 +8,7 @@ from app.modules.promotions.application.queries.get_current_ocr_credit_promotion
 from app.modules.promotions.application.queries.get_current_ocr_credit_promotion.result import (
     GetCurrentOcrCreditPromotionResult,
 )
+from app.modules.promotions.application.redemption_window import current_user_redemption_window
 from app.modules.promotions.domain.model import Promotion
 
 
@@ -33,13 +34,17 @@ class GetCurrentOcrCreditPromotionQueryUseCase:
         promotion = await self._promotion_repository.find_current_ocr_credit_promotion(
             at=now,
             context=query.context,
+            kind=query.kind,
         )
         if promotion is None:
             return None
         promotion.ensure_redeemable(at=now)
+        window = current_user_redemption_window(promotion=promotion, at=now)
         user_redemption_count = await self._promotion_repository.count_user_redemptions(
             user_id=query.user_id,
             promotion_id=promotion.id,
+            redeemed_at_from=window.starts_at,
+            redeemed_at_before=window.expires_at,
         )
         already_redeemed = user_redemption_count >= promotion.max_redemptions_per_user
         redemption = (
@@ -56,8 +61,14 @@ class GetCurrentOcrCreditPromotionQueryUseCase:
         return GetCurrentOcrCreditPromotionResult(
             promotion_id=promotion.id,
             name=promotion.name,
+            kind=promotion.kind,
             benefit_amount=promotion.benefit_amount.value,
             remaining_redemptions=_remaining_redemptions(promotion),
+            max_redemptions_per_user=promotion.max_redemptions_per_user,
+            remaining_redemptions_for_user=max(
+                promotion.max_redemptions_per_user - user_redemption_count,
+                0,
+            ),
             starts_at=promotion.starts_at,
             expires_at=promotion.expires_at,
             already_redeemed=already_redeemed,

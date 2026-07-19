@@ -41,6 +41,9 @@ SIGNUP_BENEFICIARY_MIGRATION_PATH = (
 PROMOTION_KIND_MIGRATION_PATH = (
     PROJECT_ROOT / "alembic" / "versions" / "20260719_0026_add_promotion_kind_and_rewarded_ad.py"
 )
+DAILY_REDEMPTION_INDEX_MIGRATION_PATH = (
+    PROJECT_ROOT / "alembic" / "versions" / "20260719_0027_add_daily_redemption_lookup_index.py"
+)
 
 
 def test_promotion_migration_revision_is_linear_through_signup_beneficiary_extension() -> None:
@@ -59,6 +62,7 @@ def test_promotion_migration_revision_is_linear_through_signup_beneficiary_exten
     assert PROMOTION_CONTEXT_MIGRATION_PATH.is_file()
     assert SIGNUP_BENEFICIARY_MIGRATION_PATH.is_file()
     assert PROMOTION_KIND_MIGRATION_PATH.is_file()
+    assert DAILY_REDEMPTION_INDEX_MIGRATION_PATH.is_file()
 
     migration_source = PROMOTION_MIGRATION_PATH.read_text(encoding="utf-8")
     assert 'revision: str = "20260705_0016"' in migration_source
@@ -77,6 +81,9 @@ def test_promotion_migration_revision_is_linear_through_signup_beneficiary_exten
     promotion_kind = PROMOTION_KIND_MIGRATION_PATH.read_text(encoding="utf-8")
     assert 'revision: str = "20260719_0026"' in promotion_kind
     assert 'down_revision: str | Sequence[str] | None = "20260717_0025"' in promotion_kind
+    daily_redemption_index = DAILY_REDEMPTION_INDEX_MIGRATION_PATH.read_text(encoding="utf-8")
+    assert 'revision: str = "20260719_0027"' in daily_redemption_index
+    assert 'down_revision: str | Sequence[str] | None = "20260719_0026"' in daily_redemption_index
 
 
 def test_promotion_migration_creates_constrained_tables(

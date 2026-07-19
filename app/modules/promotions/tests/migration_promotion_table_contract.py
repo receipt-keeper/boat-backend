@@ -216,6 +216,7 @@ async def _assert_unique_indexes(connection: AsyncConnection) -> None:
                   'ix_promotion_codes_code_unique',
                   'uq_promotion_redemptions_idempotency_key',
                   'uq_promotion_redemptions_promotion_beneficiary',
+                  'ix_promotion_redemptions_user_promotion_status_redeemed_at',
                   'ix_promotions_current_benefit_context_kind',
                   'uq_promotions_benefit_context_kind_starts_at',
                   'uq_promotions_benefit_context_starts_at_without_kind'
@@ -240,6 +241,12 @@ async def _assert_unique_indexes(connection: AsyncConnection) -> None:
             "CREATE UNIQUE INDEX uq_promotion_redemptions_promotion_beneficiary "
             "ON public.promotion_redemptions USING btree (promotion_id, beneficiary_key) "
             "WHERE (beneficiary_key IS NOT NULL)",
+        ),
+        "ix_promotion_redemptions_user_promotion_status_redeemed_at": (
+            False,
+            "CREATE INDEX ix_promotion_redemptions_user_promotion_status_redeemed_at "
+            "ON public.promotion_redemptions USING btree "
+            "(user_id, promotion_id, status, redeemed_at)",
         ),
         "ix_promotions_current_benefit_context_kind": (
             False,

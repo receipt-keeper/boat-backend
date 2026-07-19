@@ -179,6 +179,16 @@ def test_promotion_orm_declares_constraints_and_unique_guards() -> None:
     assert str(beneficiary_unique.dialect_options["postgresql"]["where"]) == (
         "promotion_redemptions.beneficiary_key IS NOT NULL"
     )
+    daily_lookup_index = redemption_indexes[
+        "ix_promotion_redemptions_user_promotion_status_redeemed_at"
+    ]
+    assert daily_lookup_index.unique is False
+    assert tuple(column.name for column in daily_lookup_index.columns) == (
+        "user_id",
+        "promotion_id",
+        "status",
+        "redeemed_at",
+    )
     assert content_uniques == {"uq_promotion_contents_promotion_id"}
     assert promotion_contents.c.banner_image_url.nullable is True
 

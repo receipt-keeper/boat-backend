@@ -13,7 +13,7 @@ from app.modules.promotions.application.queries.get_current_ocr_credit_promotion
 from app.modules.promotions.dependencies import (
     get_current_ocr_credit_promotion_query_use_case,
 )
-from app.modules.promotions.domain.model import PromotionContext
+from app.modules.promotions.domain.model import PromotionContext, PromotionKind
 from app.modules.promotions.tests.api_helpers import (
     PUBLIC_BANNER_IMAGE_URL,
     TEST_SETTINGS,
@@ -55,8 +55,13 @@ async def test_get_promotions_route_returns_redeemable_app_state() -> None:
     assert body["data"] == {
         "state": "redeemable",
         "promotionId": "00000000-0000-0000-0000-000000000201",
+        "kind": "monthlyAllowance",
         "benefit": {"featureKey": "ocr", "amount": 3},
-        "redemption": {"remainingRedemptions": 10},
+        "redemption": {
+            "remainingRedemptions": 10,
+            "maxRedemptionsPerUser": 1,
+            "remainingRedemptionsForUser": 1,
+        },
         "balance": None,
         "bannerImage": {"imageUrl": PUBLIC_BANNER_IMAGE_URL},
     }
@@ -90,8 +95,13 @@ async def test_get_promotions_route_returns_unavailable_without_display_fields()
     assert response.json()["data"] == {
         "state": "unavailable",
         "promotionId": None,
+        "kind": None,
         "benefit": None,
-        "redemption": {"remainingRedemptions": None},
+        "redemption": {
+            "remainingRedemptions": None,
+            "maxRedemptionsPerUser": None,
+            "remainingRedemptionsForUser": None,
+        },
         "balance": None,
         "bannerImage": None,
     }
@@ -108,7 +118,11 @@ async def test_get_promotions_route_marks_already_redeemed() -> None:
     # Then: 중복 수령 버튼을 막을 수 있는 alreadyRedeemed 상태를 받는다.
     assert response.status_code == 200
     assert response.json()["data"]["state"] == "alreadyRedeemed"
-    assert response.json()["data"]["redemption"] == {"remainingRedemptions": 10}
+    assert response.json()["data"]["redemption"] == {
+        "remainingRedemptions": 10,
+        "maxRedemptionsPerUser": 1,
+        "remainingRedemptionsForUser": 0,
+    }
 
 
 async def test_get_promotions_route_passes_recharge_context_and_returns_amount_5() -> None:
@@ -130,10 +144,35 @@ async def test_get_promotions_route_passes_recharge_context_and_returns_amount_5
         GetCurrentOcrCreditPromotionQuery(
             user_id=UUID("00000000-0000-0000-0000-000000000101"),
             context=PromotionContext.RECHARGE,
+            kind=PromotionKind.MONTHLY_ALLOWANCE,
         )
     ]
     assert body["data"]["promotionId"] == str(RECHARGE_PROMOTION_ID)
+    assert body["data"]["kind"] == "monthlyAllowance"
     assert body["data"]["benefit"] == {"featureKey": "ocr", "amount": 5}
+
+
+async def test_get_promotions_route_passes_rewarded_ad_kind() -> None:
+    query_use_case = RechargePromotionQueryUseCaseStub(kind=PromotionKind.REWARDED_AD)
+    test_app = promotion_api_app()
+    test_app.dependency_overrides[get_current_ocr_credit_promotion_query_use_case] = lambda: (
+        query_use_case
+    )
+
+    async with api_client(test_app) as test_client:
+        response = await test_client.get(
+            "/api/v1/promotions?featureKey=ocr&context=recharge&kind=rewardedAd"
+        )
+
+    assert response.status_code == 200
+    assert query_use_case.queries == [
+        GetCurrentOcrCreditPromotionQuery(
+            user_id=UUID("00000000-0000-0000-0000-000000000101"),
+            context=PromotionContext.RECHARGE,
+            kind=PromotionKind.REWARDED_AD,
+        )
+    ]
+    assert response.json()["data"]["kind"] == "rewardedAd"
 
 
 async def test_get_promotions_route_rejects_invalid_context() -> None:
@@ -184,6 +223,19 @@ def test_promotions_openapi_exposes_optional_context_query_parameter() -> None:
     assert isinstance(recharge_schema, dict)
     assert recharge_schema["$ref"] == "#/components/schemas/PromotionQueryContext"
     assert openapi_schema["components"]["schemas"]["PromotionQueryContext"]["enum"] == ["recharge"]
+    kind_parameter = _parameter_by_name(parameters, "kind")
+    assert kind_parameter["required"] is False
+    kind_schema = kind_parameter["schema"]
+    assert isinstance(kind_schema, dict)
+    kind_any_of = kind_schema["anyOf"]
+    assert isinstance(kind_any_of, list)
+    kind_reference = kind_any_of[0]
+    assert isinstance(kind_reference, dict)
+    assert kind_reference["$ref"] == "#/components/schemas/PromotionKind"
+    assert openapi_schema["components"]["schemas"]["PromotionKind"]["enum"] == [
+        "monthlyAllowance",
+        "rewardedAd",
+    ]
     example = openapi_schema["components"]["schemas"]["PromotionResponse"]["examples"][0]
     assert isinstance(example, dict)
     assert example["benefit"] == {"featureKey": "ocr", "amount": 5}
@@ -275,6 +327,7 @@ def _assert_public_promotion_fields(data: dict[str, object]) -> None:
     assert set(data) == {
         "state",
         "promotionId",
+        "kind",
         "benefit",
         "redemption",
         "balance",
@@ -292,6 +345,7 @@ def _assert_public_promotion_fields(data: dict[str, object]) -> None:
 
 @dataclass(slots=True)  # noqa: RUF100  # noqa: MUTABLE_OK
 class RechargePromotionQueryUseCaseStub:
+    kind: PromotionKind = PromotionKind.MONTHLY_ALLOWANCE
     queries: list[GetCurrentOcrCreditPromotionQuery] = field(default_factory=list)
 
     async def execute(
@@ -302,8 +356,11 @@ class RechargePromotionQueryUseCaseStub:
         return GetCurrentOcrCreditPromotionResult(
             promotion_id=RECHARGE_PROMOTION_ID,
             name="월간 OCR 크레딧 충전 2026-07",
+            kind=self.kind,
             benefit_amount=5,
             remaining_redemptions=None,
+            max_redemptions_per_user=1,
+            remaining_redemptions_for_user=1,
             starts_at=datetime(2026, 6, 30, 15, tzinfo=UTC),
             expires_at=datetime(2026, 7, 31, 15, tzinfo=UTC),
             already_redeemed=False,

@@ -278,3 +278,10 @@ Index(
     unique=True,
     postgresql_where=PromotionRedemption.beneficiary_key.is_not(None),
 )
+Index(
+    "ix_promotion_redemptions_user_promotion_status_redeemed_at",
+    PromotionRedemption.user_id,
+    PromotionRedemption.promotion_id,
+    PromotionRedemption.status,
+    PromotionRedemption.redeemed_at,
+)

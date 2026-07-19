@@ -29,6 +29,7 @@ class SqlAlchemyPromotionRepository(PromotionRepository):
         *,
         at: datetime,
         context: PromotionContext | None = None,
+        kind: PromotionKind | None = None,
     ) -> Promotion | None:
         conditions = [
             orm.Promotion.active.is_(True),
@@ -44,6 +45,10 @@ class SqlAlchemyPromotionRepository(PromotionRepository):
             conditions.append(orm.Promotion.context == context.value)
         else:
             conditions.append(orm.Promotion.context.is_(None))
+        if kind is not None:
+            conditions.append(orm.Promotion.kind == kind.value)
+        else:
+            conditions.append(orm.Promotion.kind.is_(None))
 
         record = await self._session.scalar(
             select(orm.Promotion)
@@ -190,16 +195,26 @@ class SqlAlchemyPromotionRepository(PromotionRepository):
             return None
         return mapper.redemption_to_domain(record)
 
-    async def count_user_redemptions(self, *, user_id: UUID, promotion_id: UUID) -> int:
+    async def count_user_redemptions(
+        self,
+        *,
+        user_id: UUID,
+        promotion_id: UUID,
+        redeemed_at_from: datetime | None = None,
+        redeemed_at_before: datetime | None = None,
+    ) -> int:
+        conditions = [
+            orm.PromotionRedemption.user_id == user_id,
+            orm.PromotionRedemption.promotion_id == promotion_id,
+            orm.PromotionRedemption.status == PromotionRedemptionStatus.GRANTED.value,
+        ]
+        if redeemed_at_from is not None:
+            conditions.append(orm.PromotionRedemption.redeemed_at >= redeemed_at_from)
+        if redeemed_at_before is not None:
+            conditions.append(orm.PromotionRedemption.redeemed_at < redeemed_at_before)
         return (
             await self._session.scalar(
-                select(func.count())
-                .select_from(orm.PromotionRedemption)
-                .where(
-                    orm.PromotionRedemption.user_id == user_id,
-                    orm.PromotionRedemption.promotion_id == promotion_id,
-                    orm.PromotionRedemption.status == PromotionRedemptionStatus.GRANTED.value,
-                )
+                select(func.count()).select_from(orm.PromotionRedemption).where(*conditions)
             )
             or 0
         )

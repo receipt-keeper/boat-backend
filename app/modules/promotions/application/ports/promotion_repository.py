@@ -20,6 +20,7 @@ class PromotionRepository(ABC):
         *,
         at: datetime,
         context: PromotionContext | None = None,
+        kind: PromotionKind | None = None,
     ) -> Promotion | None:
         raise NotImplementedError
 
@@ -88,6 +89,8 @@ class PromotionRepository(ABC):
         *,
         user_id: UUID,
         promotion_id: UUID,
+        redeemed_at_from: datetime | None = None,
+        redeemed_at_before: datetime | None = None,
     ) -> int:
         raise NotImplementedError
 

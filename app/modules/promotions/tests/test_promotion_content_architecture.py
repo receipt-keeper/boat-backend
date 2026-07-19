@@ -64,6 +64,7 @@ def test_promotion_schema_and_api_allow_only_banner_image_content() -> None:
     assert promotion_properties == {
         "state",
         "promotionId",
+        "kind",
         "benefit",
         "redemption",
         "balance",

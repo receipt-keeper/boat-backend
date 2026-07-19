@@ -28,7 +28,7 @@ from app.modules.promotions.dependencies import (
     CreatePromotionRedemptionCommandUseCaseDep,
     CurrentOcrCreditPromotionQueryUseCaseDep,
 )
-from app.modules.promotions.domain.model import PromotionContext
+from app.modules.promotions.domain.model import PromotionContext, PromotionKind
 
 _OpenApiResponse = dict[str, type[CommonResponse[ApiErrorData]] | str]
 
@@ -101,6 +101,7 @@ async def get_promotions(
         GetCurrentOcrCreditPromotionQuery(
             user_id=context.user_id,
             context=_to_domain_promotion_context(query.context),
+            kind=_to_domain_promotion_kind(query.context, query.kind),
         )
     )
     data = (
@@ -192,3 +193,12 @@ def _to_domain_promotion_context(
             return None
         case unreachable:
             assert_never(unreachable)
+
+
+def _to_domain_promotion_kind(
+    context: PromotionQueryContext | None,
+    kind: PromotionKind | None,
+) -> PromotionKind | None:
+    if context == PromotionQueryContext.RECHARGE and kind is None:
+        return PromotionKind.MONTHLY_ALLOWANCE
+    return kind
