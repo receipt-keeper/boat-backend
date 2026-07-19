@@ -1,4 +1,5 @@
 from collections.abc import AsyncIterator, Iterator
+from datetime import timedelta
 from uuid import UUID, uuid4
 
 import pytest
@@ -72,13 +73,14 @@ async def test_dispatch_immediately_deletes_row_on_success(
     event = await _insert_committed_event(session_factory, registry=registry)
     dispatched: list[DomainEvent] = []
 
-    async def handle_event(dispatched_event: DomainEvent) -> None:
-        dispatched.append(dispatched_event)
-
-    dispatcher = EventDispatcher()
-    dispatcher.register(DomainEvent, handle_event)
-
     async with session_factory() as session:
+
+        async def handle_event(dispatched_event: DomainEvent) -> None:
+            assert session.in_transaction() is False
+            dispatched.append(dispatched_event)
+
+        dispatcher = EventDispatcher()
+        dispatcher.register(DomainEvent, handle_event)
         await dispatch_outbox_event_immediately(
             session,
             event_id=event.event_id,
@@ -112,12 +114,12 @@ async def test_dispatch_immediately_restores_row_when_handler_fails(
             dispatcher=dispatcher,
         )
 
-    # Then: 발행 실패 시 row는 삭제되지 않고 잔존한다(rollback으로 복원) - 폴러의 재시도 대상.
+    # Then: 발행 실패 시 claim된 row가 삭제되지 않고 잔존해 폴러의 재시도 대상이 된다.
     async with session_factory() as session:
         rows = list(await session.scalars(select(OutboxEvent)))
     assert len(rows) == 1
     assert rows[0].event_id == event.event_id
-    assert rows[0].retry_count == 0
+    assert rows[0].retry_count == 1
 
 
 async def test_dispatch_immediately_skips_when_row_already_gone(
@@ -145,6 +147,46 @@ async def test_dispatch_immediately_skips_when_row_already_gone(
 
     # Then: 유령 발행 없이 조용히 skip한다.
     assert dispatched == []
+
+
+async def test_dispatch_immediately_does_not_overwrite_active_relay_claim(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    registry = _registry()
+    event = await _insert_committed_event(session_factory, registry=registry)
+    active_claimed_at = event.occurred_at + timedelta(seconds=1)
+
+    async with session_factory() as setup_session:
+        row = await setup_session.scalar(
+            select(OutboxEvent).where(OutboxEvent.event_id == event.event_id)
+        )
+        assert row is not None
+        row.occurred_at = active_claimed_at
+        await setup_session.commit()
+
+    dispatched: list[DomainEvent] = []
+
+    async def handle_event(dispatched_event: DomainEvent) -> None:
+        dispatched.append(dispatched_event)
+
+    dispatcher = EventDispatcher()
+    dispatcher.register(DomainEvent, handle_event)
+    async with session_factory() as session:
+        await dispatch_outbox_event_immediately(
+            session,
+            event_id=event.event_id,
+            registry=registry,
+            dispatcher=dispatcher,
+        )
+
+    assert dispatched == []
+    async with session_factory() as verification_session:
+        row = await verification_session.scalar(
+            select(OutboxEvent).where(OutboxEvent.event_id == event.event_id)
+        )
+    assert row is not None
+    assert row.occurred_at == active_claimed_at
+    assert row.retry_count == 0
 
 
 async def test_dispatch_events_immediately_processes_each_event_id_in_its_own_session(

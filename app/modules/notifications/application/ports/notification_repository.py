@@ -44,6 +44,15 @@ class NotificationRepository(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    async def find_by_id_for_user_for_update(
+        self,
+        *,
+        notification_id: UUID,
+        user_id: UUID,
+    ) -> UserNotification | None:
+        raise NotImplementedError
+
+    @abstractmethod
     async def mark_read(
         self,
         *,
@@ -51,6 +60,10 @@ class NotificationRepository(ABC):
         user_id: UUID,
         read_at: datetime,
     ) -> UserNotification | None:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def delete_by_id_for_user(self, *, notification_id: UUID, user_id: UUID) -> bool:
         raise NotImplementedError
 
     @abstractmethod

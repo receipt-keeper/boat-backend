@@ -16,7 +16,10 @@ from app.modules.notifications.application.ports.push_sender import (
 from app.modules.notifications.application.ports.push_token_repository import (
     PushTokenRepository,
 )
-from app.modules.notifications.domain.value_objects import NotificationMessageType
+from app.modules.notifications.domain.value_objects import (
+    NotificationCategory,
+    NotificationMessageType,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +48,12 @@ class SendNotificationPushCommandUseCase:
     async def execute(self, command: SendNotificationPushCommand) -> None:
         # 푸시는 best-effort — 이미 생성된 알림이 발송/정리 실패의 영향을 받으면 안 된다.
         try:
+            notification = await self._notification_repository.find_by_id_for_user(
+                notification_id=command.notification_id,
+                user_id=command.user_id,
+            )
+            if notification is None:
+                return
             settings = await self._notification_repository.get_settings(user_id=command.user_id)
             if not settings.push_enabled:
                 return
@@ -58,10 +67,14 @@ class SendNotificationPushCommandUseCase:
             if not tokens:
                 return
 
+            # 외부 FCM 응답을 기다리는 동안 DB 트랜잭션과 커넥션을 점유하지 않는다.
+            # 이 지점 이전에는 조회만 수행했으므로 rollback으로 스냅샷을 종료해도
+            # 영속화할 변경은 없다. 무효 토큰 정리는 발송 후 새 트랜잭션에서 처리한다.
+            await self._unit_of_work.rollback()
             message = PushMessage(
                 title=command.title,
                 body=command.message,
-                data=_push_data(command),
+                data=_push_data(command, category=notification.category),
             )
             report = await self._push_sender.send(tokens=tokens, message=message)
             if report.invalid_tokens:
@@ -75,9 +88,14 @@ class SendNotificationPushCommandUseCase:
             )
 
 
-def _push_data(command: SendNotificationPushCommand) -> dict[str, str]:
+def _push_data(
+    command: SendNotificationPushCommand,
+    *,
+    category: NotificationCategory,
+) -> dict[str, str]:
     data = {
         "notificationId": str(command.notification_id),
+        "category": category.value,
         "messageType": command.message_type.value,
         "kind": _LEGACY_SCHEDULER_KIND_ALIASES.get(command.kind, command.kind),
     }

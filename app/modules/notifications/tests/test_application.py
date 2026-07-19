@@ -93,6 +93,17 @@ class InMemoryNotificationRepository(NotificationRepository):
             return None
         return notification
 
+    async def find_by_id_for_user_for_update(
+        self,
+        *,
+        notification_id: UUID,
+        user_id: UUID,
+    ) -> UserNotification | None:
+        return await self.find_by_id_for_user(
+            notification_id=notification_id,
+            user_id=user_id,
+        )
+
     async def mark_read(
         self,
         *,
@@ -117,6 +128,18 @@ class InMemoryNotificationRepository(NotificationRepository):
         read_notification = notification.mark_read(read_at=read_at)
         self.notifications[notification_id] = read_notification
         return read_notification
+
+    async def delete_by_id_for_user(
+        self,
+        *,
+        notification_id: UUID,
+        user_id: UUID,
+    ) -> bool:
+        notification = self.notifications.get(notification_id)
+        if notification is None or notification.user_id != user_id:
+            return False
+        del self.notifications[notification_id]
+        return True
 
     async def get_settings(self, *, user_id: UUID) -> NotificationSettings:
         self.settings_get_count += 1

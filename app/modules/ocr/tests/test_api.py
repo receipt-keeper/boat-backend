@@ -370,7 +370,7 @@ async def test_receipt_ocr_endpoint_returns_unsupported_receipt_code_and_file_in
         {
             "field": "file",
             "fileIndex": 1,
-            "message": "지원하지 않는 영수증입니다.",
+            "message": "현재는 전자제품 영수증만 지원하고 있어요!",
         }
     ]
     assert [image.file_index for image in ocr_client.images] == [0, 1]
@@ -405,7 +405,7 @@ async def test_receipt_ocr_endpoint_returns_all_mixed_failure_indexes(
         {
             "field": "file",
             "fileIndex": 1,
-            "message": "지원하지 않는 영수증입니다.",
+            "message": "현재는 전자제품 영수증만 지원하고 있어요!",
         },
         {
             "field": "file",

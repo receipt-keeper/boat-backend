@@ -9,6 +9,7 @@ from app.core.domain.validation import Notification as ValidationNotification
 from app.modules.notifications.domain.events import NotificationCreated
 from app.modules.notifications.domain.value_objects import (
     DevicePlatform,
+    NotificationCategory,
     NotificationKind,
     NotificationMessage,
     NotificationMessageType,
@@ -34,6 +35,7 @@ def _validate_resource_pair(resource_type: str | None, resource_id: UUID | None)
 @dataclass(eq=False)
 class UserNotification(AggregateRoot[UUID]):
     user_id: UUID
+    category: NotificationCategory
     message_type: NotificationMessageType
     kind: NotificationKind
     title: NotificationTitle
@@ -50,6 +52,7 @@ class UserNotification(AggregateRoot[UUID]):
         *,
         user_id: UUID,
         message_type: NotificationMessageType,
+        category: NotificationCategory = NotificationCategory.PRODUCT_MANAGEMENT,
         kind: str,
         title: str,
         message: str,
@@ -63,6 +66,7 @@ class UserNotification(AggregateRoot[UUID]):
         created = cls._assemble(
             notification_id=notification_id,
             user_id=user_id,
+            category=category,
             message_type=message_type,
             kind=kind,
             title=title,
@@ -77,6 +81,7 @@ class UserNotification(AggregateRoot[UUID]):
             NotificationCreated(
                 notification_id=created.id,
                 user_id=created.user_id,
+                category=created.category,
                 message_type=created.message_type,
                 kind=created.kind.value,
                 title=created.title.value,
@@ -96,6 +101,7 @@ class UserNotification(AggregateRoot[UUID]):
         notification_id: UUID,
         user_id: UUID,
         message_type: NotificationMessageType,
+        category: NotificationCategory = NotificationCategory.PRODUCT_MANAGEMENT,
         kind: str,
         title: str,
         message: str,
@@ -109,6 +115,7 @@ class UserNotification(AggregateRoot[UUID]):
         return cls._assemble(
             notification_id=notification_id,
             user_id=user_id,
+            category=category,
             message_type=message_type,
             kind=kind,
             title=title,
@@ -127,6 +134,7 @@ class UserNotification(AggregateRoot[UUID]):
         notification_id: UUID | None,
         user_id: UUID,
         message_type: NotificationMessageType,
+        category: NotificationCategory,
         kind: str,
         title: str,
         message: str,
@@ -154,6 +162,7 @@ class UserNotification(AggregateRoot[UUID]):
         return cls(
             id=notification_id or uuid4(),
             user_id=user_id,
+            category=category,
             message_type=message_type,
             kind=new_kind,
             title=new_title,
@@ -169,6 +178,7 @@ class UserNotification(AggregateRoot[UUID]):
         return UserNotification(
             id=self.id,
             user_id=self.user_id,
+            category=self.category,
             message_type=self.message_type,
             kind=self.kind,
             title=self.title,

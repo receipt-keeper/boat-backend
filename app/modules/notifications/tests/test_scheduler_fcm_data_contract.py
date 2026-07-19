@@ -21,7 +21,7 @@ from app.modules.notifications.domain.due_notification import (
     DueNotificationRule,
     resolve_due_notification_rule,
 )
-from app.modules.notifications.domain.model import NotificationSettings
+from app.modules.notifications.domain.model import NotificationSettings, UserNotification
 from app.modules.notifications.domain.schedule_rule import (
     NotificationScheduleRule,
     ScheduleRuleTargetKind,
@@ -60,6 +60,7 @@ class _FakeBatchResponse:
             ScheduleRuleTargetKind.WARRANTY_RECEIPT,
             {
                 "notificationId": str(NOTIFICATION_ID),
+                "category": "warranty",
                 "messageType": "transactional",
                 "kind": "warranty_expiry",
                 "resourceType": "receipt",
@@ -70,6 +71,7 @@ class _FakeBatchResponse:
             ScheduleRuleTargetKind.ENGAGEMENT_UNREGISTERED_RECEIPT,
             {
                 "notificationId": str(NOTIFICATION_ID),
+                "category": "product_management",
                 "messageType": "marketing",
                 "kind": "receipt_registration_reminder",
             },
@@ -78,6 +80,7 @@ class _FakeBatchResponse:
             ScheduleRuleTargetKind.ENGAGEMENT_INACTIVE_RECEIPT,
             {
                 "notificationId": str(NOTIFICATION_ID),
+                "category": "product_management",
                 "messageType": "marketing",
                 "kind": "receipt_inactivity_reminder",
             },
@@ -86,6 +89,7 @@ class _FakeBatchResponse:
             ScheduleRuleTargetKind.ENGAGEMENT_ALL_USER,
             {
                 "notificationId": str(NOTIFICATION_ID),
+                "category": "benefit",
                 "messageType": "marketing",
                 "kind": "receipt_analysis_reminder",
             },
@@ -237,17 +241,29 @@ async def _send_to_fcm(
         push_sender=FcmPushSender(app=firebase_admin.App.__new__(firebase_admin.App)),
         unit_of_work=FakeUnitOfWork(),
     )
-    await use_case.execute(
-        SendNotificationPushCommand(
-            user_id=scheduled.command.user_id,
-            notification_id=NOTIFICATION_ID,
-            message_type=scheduled.command.message_type,
-            kind=scheduled.command.kind if kind is None else kind,
-            title=scheduled.command.title,
-            message=scheduled.command.message,
-            resource_type=scheduled.command.resource_type,
-            resource_id=scheduled.command.resource_id,
-        )
+    command = SendNotificationPushCommand(
+        user_id=scheduled.command.user_id,
+        notification_id=NOTIFICATION_ID,
+        message_type=scheduled.command.message_type,
+        category=scheduled.command.category,
+        kind=scheduled.command.kind if kind is None else kind,
+        title=scheduled.command.title,
+        message=scheduled.command.message,
+        resource_type=scheduled.command.resource_type,
+        resource_id=scheduled.command.resource_id,
     )
+    notification_repository.notifications[NOTIFICATION_ID] = UserNotification.create(
+        notification_id=command.notification_id,
+        user_id=command.user_id,
+        message_type=command.message_type,
+        category=command.category,
+        kind=command.kind,
+        title=command.title,
+        message=command.message,
+        resource_type=command.resource_type,
+        resource_id=command.resource_id,
+        created_at=datetime(2026, 7, 9, tzinfo=UTC),
+    )
+    await use_case.execute(command)
     assert len(sent_messages) == 1
     return sent_messages[0].data or {}

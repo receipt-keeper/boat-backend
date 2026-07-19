@@ -41,6 +41,7 @@ class NotificationRepositoryFake(NotificationRepository):
             CreatedNotification(
                 command=CreateNotificationCommand(
                     user_id=notification.user_id,
+                    category=notification.category,
                     message_type=notification.message_type,
                     kind=notification.kind.value,
                     title=notification.title.value,
@@ -72,6 +73,14 @@ class NotificationRepositoryFake(NotificationRepository):
     ) -> UserNotification | None:
         raise NotImplementedError
 
+    async def find_by_id_for_user_for_update(
+        self,
+        *,
+        notification_id: UUID,
+        user_id: UUID,
+    ) -> UserNotification | None:
+        raise NotImplementedError
+
     async def mark_read(
         self,
         *,
@@ -79,6 +88,9 @@ class NotificationRepositoryFake(NotificationRepository):
         user_id: UUID,
         read_at: datetime,
     ) -> UserNotification | None:
+        raise NotImplementedError
+
+    async def delete_by_id_for_user(self, *, notification_id: UUID, user_id: UUID) -> bool:
         raise NotImplementedError
 
     async def get_settings(self, *, user_id: UUID) -> NotificationSettings:

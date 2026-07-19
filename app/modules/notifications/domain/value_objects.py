@@ -7,6 +7,12 @@ from app.core.domain.exceptions import ErrorDetail, ValidationError
 from app.core.domain.value_object import ValueObject
 
 
+class NotificationCategory(StrEnum):
+    PRODUCT_MANAGEMENT = "product_management"
+    WARRANTY = "warranty"
+    BENEFIT = "benefit"
+
+
 class NotificationMessageType(StrEnum):
     TRANSACTIONAL = "transactional"
     MARKETING = "marketing"

@@ -15,6 +15,9 @@ from app.modules.notifications.application.commands.create_notification.use_case
     CreateNotificationCommandUseCase,
     NotificationCreator,
 )
+from app.modules.notifications.application.commands.delete_notification.use_case import (
+    DeleteNotificationCommandUseCase,
+)
 from app.modules.notifications.application.commands.delete_user_push_tokens.use_case import (
     DeleteUserPushTokensCommandUseCase,
 )
@@ -166,6 +169,19 @@ async def get_mark_notification_read_command_use_case(
     )
 
 
+async def get_delete_notification_command_use_case(
+    notification_repository: Annotated[
+        NotificationRepository,
+        Depends(get_notification_repository),
+    ],
+    unit_of_work: Annotated[UnitOfWork, Depends(get_unit_of_work)],
+) -> DeleteNotificationCommandUseCase:
+    return DeleteNotificationCommandUseCase(
+        notification_repository=notification_repository,
+        unit_of_work=unit_of_work,
+    )
+
+
 async def get_update_notification_settings_command_use_case(
     notification_repository: Annotated[
         NotificationRepository,
@@ -228,6 +244,10 @@ async def get_unregister_device_token_command_use_case(
 MarkNotificationReadCommandUseCaseDep = Annotated[
     MarkNotificationReadCommandUseCase,
     Depends(get_mark_notification_read_command_use_case),
+]
+DeleteNotificationCommandUseCaseDep = Annotated[
+    DeleteNotificationCommandUseCase,
+    Depends(get_delete_notification_command_use_case),
 ]
 UpdateNotificationSettingsCommandUseCaseDep = Annotated[
     UpdateNotificationSettingsCommandUseCase,

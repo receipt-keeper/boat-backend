@@ -71,7 +71,7 @@ _UNSUPPORTED_RECEIPT_EXAMPLE = {
             {
                 "field": "file",
                 "fileIndex": 1,
-                "message": "지원하지 않는 영수증입니다.",
+                "message": _UNSUPPORTED_RECEIPT_MESSAGE,
             }
         ],
     },
@@ -88,7 +88,7 @@ _MIXED_RECEIPT_FAILURE_EXAMPLE = {
             {
                 "field": "file",
                 "fileIndex": 1,
-                "message": "지원하지 않는 영수증입니다.",
+                "message": _UNSUPPORTED_RECEIPT_MESSAGE,
             },
             {
                 "field": "file",

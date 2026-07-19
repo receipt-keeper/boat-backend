@@ -6,7 +6,10 @@ from app.main import create_app
 from app.modules.notifications.application.commands.create_notification.command import (
     CreateNotificationCommand,
 )
-from app.modules.notifications.domain.value_objects import NotificationMessageType
+from app.modules.notifications.domain.value_objects import (
+    NotificationCategory,
+    NotificationMessageType,
+)
 from tests.support.notifications_contract import (
     TEST_SETTINGS,
     TEST_USER_ID,
@@ -16,6 +19,7 @@ from tests.support.notifications_contract import (
 NOTIFICATION_RESPONSE_FIELDS: Final[frozenset[str]] = frozenset(
     {
         "notificationId",
+        "category",
         "messageType",
         "kind",
         "title",
@@ -72,6 +76,7 @@ async def test_notifications_match_cursor_paging_contract() -> None:
         notifications.create(
             CreateNotificationCommand(
                 user_id=TEST_USER_ID,
+                category=category,
                 message_type=message_type,
                 kind=kind,
                 title=title,
@@ -81,8 +86,9 @@ async def test_notifications_match_cursor_paging_contract() -> None:
                 metadata=metadata,
             )
         )
-        for message_type, kind, title, message, metadata in (
+        for category, message_type, kind, title, message, metadata in (
             (
+                NotificationCategory.PRODUCT_MANAGEMENT,
                 NotificationMessageType.TRANSACTIONAL,
                 "registration_prompt",
                 "영수증 등록 안내",
@@ -90,6 +96,7 @@ async def test_notifications_match_cursor_paging_contract() -> None:
                 user_metadata,
             ),
             (
+                NotificationCategory.BENEFIT,
                 NotificationMessageType.MARKETING,
                 "benefit",
                 "혜택 안내",
@@ -97,6 +104,7 @@ async def test_notifications_match_cursor_paging_contract() -> None:
                 {},
             ),
             (
+                NotificationCategory.BENEFIT,
                 NotificationMessageType.TRANSACTIONAL,
                 "credit_prompt",
                 "크레딧 안내",
@@ -139,6 +147,7 @@ async def test_notifications_match_cursor_paging_contract() -> None:
         [
             {
                 "notificationId": str(notification.notification_id),
+                "category": notification.category.value,
                 "messageType": notification.message_type.value,
                 "kind": notification.kind,
                 "title": notification.title,
@@ -228,3 +237,9 @@ def test_notifications_retired_paths_are_absent_from_openapi() -> None:
     paths = set(create_app(TEST_SETTINGS).openapi()["paths"])
 
     assert FORBIDDEN_NOTIFICATION_PATHS.isdisjoint(paths)
+
+
+def test_notifications_delete_route_is_exposed_with_patch_route() -> None:
+    paths = create_app(TEST_SETTINGS).openapi()["paths"]
+
+    assert set(paths["/api/v1/notifications/{notification_id}"]) == {"patch", "delete"}
