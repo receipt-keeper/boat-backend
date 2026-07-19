@@ -87,7 +87,7 @@ async def test_delete_notification_returns_204_for_owned_marketing_notification(
     assert response.content == b""
 
 
-async def test_delete_waits_for_in_flight_push_row_lock(
+async def test_delete_does_not_wait_for_in_flight_push(
     postgres_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     notification_id = UUID("00000000-0000-0000-0000-000000000803")
@@ -157,13 +157,12 @@ async def test_delete_waits_for_in_flight_push_row_lock(
                 )
             )
         )
-        await asyncio.sleep(0.05)
-        assert not delete_task.done()
+        await asyncio.wait_for(delete_task, timeout=1)
+        assert not push_task.done()
 
         push_sender.release.set()
         await push_task
         await push_session.close()
-        await asyncio.wait_for(delete_task, timeout=1)
         assert push_sender.calls == 1
     finally:
         push_sender.release.set()
