@@ -94,11 +94,12 @@ SubCategoryLiteral = Literal[
     "선풍기",
     "공기청정기",
     "가습기",
-    "태블릿",
+    "오븐",
+    "데스크탑/TV",
     "게임기",
     "카메라",
     "스피커",
-    "무선 이어폰",
+    "무선이어폰",
     "노트북",
     "헤드셋",
     "스마트워치",
@@ -176,10 +177,10 @@ class ReceiptOcrStructuredOutput(BaseModel):
         default=None,
         description=(
             "The representative device sub-category suggestion. Allowed values are grouped as "
-            "follows: kitchen_appliance uses 냉장고, 전자레인지, 밥솥, 정수기; "
+            "follows: kitchen_appliance uses 냉장고, 전자레인지, 밥솥, 정수기, 오븐; "
             "laundry_cleaning uses 세탁기, 건조기, 청소기, 로봇청소기; living_climate uses "
-            "에어컨, 선풍기, 공기청정기, 가습기; it_device uses 태블릿, 게임기, 카메라, "
-            "스피커, 무선 이어폰, 노트북, 헤드셋, 스마트워치, 핸드폰. Use 기타 when no "
+            "에어컨, 선풍기, 공기청정기, 가습기; it_device uses 데스크탑/TV, 스피커, 카메라, "
+            "게임기, 헤드셋, 스마트워치, 핸드폰, 무선이어폰, 노트북. Use 기타 when no "
             "listed device clearly matches."
         ),
     )

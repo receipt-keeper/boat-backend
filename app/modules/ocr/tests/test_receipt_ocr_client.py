@@ -163,6 +163,34 @@ def test_structured_output_uses_english_category_enum_and_korean_api_label() -> 
         "other_device",
     ]
 
+    sub_category_schema = schema["sub_category"]["anyOf"][0]
+    sub_category_values = sub_category_schema["enum"]
+    assert sub_category_values == [
+        "냉장고",
+        "전자레인지",
+        "밥솥",
+        "정수기",
+        "세탁기",
+        "건조기",
+        "청소기",
+        "로봇청소기",
+        "에어컨",
+        "선풍기",
+        "공기청정기",
+        "가습기",
+        "오븐",
+        "데스크탑/TV",
+        "게임기",
+        "카메라",
+        "스피커",
+        "무선이어폰",
+        "노트북",
+        "헤드셋",
+        "스마트워치",
+        "핸드폰",
+        "기타",
+    ]
+
 
 def test_ocr_and_receipt_categories_share_the_same_api_labels() -> None:
     assert {category.value: category.api_label for category in OcrReceiptCategory} == {
