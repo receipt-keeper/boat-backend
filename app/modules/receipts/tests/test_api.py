@@ -45,6 +45,7 @@ class _ExtractedReceiptOcrFields:
     category: str | None
     sub_category: str | None
     expires_on: date | None = None
+    receipt_file_indexes: tuple[int, ...] = ()
     unreadable_file_indexes: tuple[int, ...] = ()
     unsupported_file_indexes: tuple[int, ...] = ()
 
@@ -76,6 +77,7 @@ class UnreadableReceiptOcrClient:
             period_months=None,
             category=None,
             sub_category=None,
+            unreadable_file_indexes=(0,),
         )
 
 
@@ -99,6 +101,7 @@ class CategoryReceiptOcrClient:
             category="주방 가전",
             sub_category="냉장고",
             expires_on=date(2028, 12, 31),
+            receipt_file_indexes=(0,),
         )
 
 

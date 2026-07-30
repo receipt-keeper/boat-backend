@@ -39,6 +39,7 @@ class CountingReceiptOcrClient:
             period_months=12,
             category="주방 가전",
             sub_category="냉장고",
+            receipt_file_indexes=(0,),
         )
 
 
