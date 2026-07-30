@@ -24,21 +24,37 @@ from app.modules.ocr.domain.model import (
 _RECEIPT_OCR_PROMPT = """
 You are an information extraction specialist for receipts.
 
-The input contains one or more images related to the same purchase in transmission order.
-Images may show different, consecutive, or overlapping sections of a receipt, or a related
-warranty document or product label.
+The input contains one or more images in transmission order.
+Classify each image by its overall document purpose before extracting any fields.
+At least one image must be an actual purchase receipt for a household appliance, electronic,
+or IT device. A supported receipt may be a paper receipt or a digital receipt whose primary
+content is a real completed transaction.
+Visible device names, brands, prices, dates, or receipt-like UI elements alone are not sufficient
+evidence that the overall image is a receipt.
+Never treat advertisements, promotional posters, app launch or onboarding screens, UI mockups,
+product pages, shopping listings, catalogs, general documents, or ordinary photos as receipts,
+even when they contain a well-known electronic product name or an embedded receipt-like screen.
+Warranty documents, protection plans, and product labels are supplementary evidence only when
+the same request contains at least one actual supported receipt.
+Images may show different, consecutive, or overlapping sections of a supported receipt, or
+supplementary warranty documents or product labels for the same purchase.
 Treat a readable partial section as valid even when it does not contain all receipt fields
 by itself.
 Treat all readable images as one evidence set and extract one combined receipt result.
-This service supports only receipts, warranty documents, protection plans, or product labels
-for household appliances, electronics, or IT devices.
-Return unsupported_file_indexes for readable receipts that are clearly for unsupported general
+Return receipt_file_indexes only for images whose overall purpose is an actual supported purchase
+receipt. Transaction evidence can include a merchant, purchased line item, payment date, total,
+receipt or order identifier, or an equivalent completed-purchase structure.
+If the request contains no actual supported receipt, return an empty receipt_file_indexes and put
+every readable image index in unsupported_file_indexes, even when electronic-product text appears.
+Return unsupported_file_indexes for readable non-receipt images other than the allowed
+supplementary evidence described above, and for receipts that are clearly for unsupported general
 purchases, including restaurants or food, groceries without a device purchase, transportation,
 lodging, medical treatment or pharmacy purchases, clothing, cosmetics, or beauty services.
 Do not mark a supported device as unsupported merely because its category is unknown; use
 category "other_device" and sub_category "기타" instead.
 Return unreadable_file_indexes only for images that are unreadable, corrupted, or cannot be
-classified from the visible evidence.
+classified from the visible evidence. A readable advertisement, screenshot, or general document
+belongs in unsupported_file_indexes, not unreadable_file_indexes.
 The indexes are zero-based and match the IMAGE_INDEX labels in the input.
 Extract only information that is clearly supported by the input images.
 Do not guess missing or ambiguous values.
@@ -184,6 +200,17 @@ class ReceiptOcrStructuredOutput(BaseModel):
             "listed device clearly matches."
         ),
     )
+    receipt_file_indexes: list[int] = Field(
+        default_factory=list,
+        description=(
+            "The zero-based IMAGE_INDEX values whose overall document purpose is an actual paper "
+            "or digital purchase receipt for a household appliance, electronic, or IT device. "
+            "The receipt must present a real completed transaction; a device name, price, date, "
+            "advertisement, product page, app screen, UI mockup, warranty document, product label, "
+            "or embedded receipt-like content alone is not enough. Return an empty list when no "
+            "actual supported receipt is present."
+        ),
+    )
     unreadable_file_indexes: list[int] = Field(
         default_factory=list,
         description=(
@@ -195,22 +222,34 @@ class ReceiptOcrStructuredOutput(BaseModel):
     unsupported_file_indexes: list[int] = Field(
         default_factory=list,
         description=(
-            "The zero-based IMAGE_INDEX values for readable receipts that are clearly not for "
-            "a household appliance, electronic, or IT device purchase. Examples include food, "
-            "restaurants, transportation, lodging, medical or pharmacy, clothing, cosmetics, "
-            "and beauty services. Do not include an unknown but supported device category; use "
+            "The zero-based IMAGE_INDEX values for readable images whose overall purpose is not "
+            "supported evidence. Include non-electronic receipts and non-receipt images such as "
+            "food, restaurants, transportation, lodging, medical or pharmacy, clothing, "
+            "cosmetics, beauty services, advertisements, promotional posters, app screens, "
+            "UI mockups, product pages, shopping listings, catalogs, general documents, and "
+            "ordinary photos. Do not include a warranty document, protection plan, or product "
+            "label when the same request contains an actual supported receipt for that purchase. "
+            "If no actual supported receipt exists, include every readable image. Do not reject "
+            "an actual receipt merely because the device brand or model is unfamiliar; use "
             "category other_device and sub_category 기타 for that case."
         ),
     )
 
     def to_extracted_fields(self, *, image_count: int) -> ExtractedReceiptOcrFields:
+        receipt_file_indexes = set(self.receipt_file_indexes)
         unreadable_file_indexes = set(self.unreadable_file_indexes)
         unsupported_file_indexes = set(self.unsupported_file_indexes)
-        all_failure_indexes = unreadable_file_indexes | unsupported_file_indexes
-        if any(index < 0 or index >= image_count for index in all_failure_indexes):
+        all_classified_indexes = (
+            receipt_file_indexes | unreadable_file_indexes | unsupported_file_indexes
+        )
+        if any(index < 0 or index >= image_count for index in all_classified_indexes):
             raise ValueError("OCR provider가 요청 범위를 벗어난 이미지 인덱스를 반환했습니다.")
         if unreadable_file_indexes & unsupported_file_indexes:
             raise ValueError("OCR provider가 동일한 이미지를 두 실패 유형으로 반환했습니다.")
+        if receipt_file_indexes & (unreadable_file_indexes | unsupported_file_indexes):
+            raise ValueError(
+                "OCR provider가 동일한 이미지를 지원 영수증과 실패 유형으로 반환했습니다."
+            )
 
         return ExtractedReceiptOcrFields(
             item_name=blank_to_none(self.item_name),
@@ -223,6 +262,7 @@ class ReceiptOcrStructuredOutput(BaseModel):
             expires_on=self.expires_on,
             category=(self.category.api_label if self.category is not None else DEFAULT_CATEGORY),
             sub_category=blank_to_none(self.sub_category) or DEFAULT_SUB_CATEGORY,
+            receipt_file_indexes=tuple(sorted(receipt_file_indexes)),
             unreadable_file_indexes=tuple(sorted(unreadable_file_indexes)),
             unsupported_file_indexes=tuple(sorted(unsupported_file_indexes)),
         )
@@ -253,6 +293,7 @@ class ReceiptOcrClient(ReceiptOcrClientPort):
             expires_on=None,
             category=OcrReceiptCategory.KITCHEN_APPLIANCE,
             sub_category="냉장고",
+            receipt_file_indexes=[0],
         )
         return structured_output.to_extracted_fields(image_count=len(images))
 

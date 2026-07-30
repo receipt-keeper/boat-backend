@@ -22,6 +22,7 @@ class ExtractedReceiptOcrFields:
     category: str | None
     sub_category: str | None
     expires_on: date | None = None
+    receipt_file_indexes: tuple[int, ...] = ()
     unreadable_file_indexes: tuple[int, ...] = ()
     unsupported_file_indexes: tuple[int, ...] = ()
 

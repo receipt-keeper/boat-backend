@@ -69,6 +69,16 @@ def test_structured_output_rejects_overlapping_failure_indexes() -> None:
         structured_output.to_extracted_fields(image_count=1)
 
 
+def test_structured_output_rejects_receipt_index_overlapping_failure_index() -> None:
+    structured_output = ReceiptOcrStructuredOutput(
+        receipt_file_indexes=[0],
+        unsupported_file_indexes=[0],
+    )
+
+    with pytest.raises(ValueError, match="지원 영수증과 실패 유형"):
+        structured_output.to_extracted_fields(image_count=1)
+
+
 def test_multimodal_prompt_separates_unsupported_receipts_from_unknown_devices() -> None:
     content = _build_openrouter_multimodal_content(
         images=(ReceiptOcrImage(file_index=0, content=b"receipt", content_type="image/png"),)
@@ -78,10 +88,15 @@ def test_multimodal_prompt_separates_unsupported_receipts_from_unknown_devices()
     schema = ReceiptOcrStructuredOutput.model_json_schema()["properties"]
 
     assert isinstance(prompt, str)
-    assert "supports only receipts" in prompt
+    assert "At least one image must be an actual purchase receipt" in prompt
+    assert "app launch or onboarding screens" in prompt
+    assert "electronic-product text appears" in prompt
     assert "restaurants or food" in prompt
     assert 'category "other_device"' in prompt
-    assert "food, restaurants" in schema["unsupported_file_indexes"]["description"]
+    assert "advertisements" in schema["unsupported_file_indexes"]["description"]
+    assert (
+        "actual paper or digital purchase receipt" in schema["receipt_file_indexes"]["description"]
+    )
 
 
 def test_structured_output_keeps_unsupported_file_indexes() -> None:
@@ -92,6 +107,20 @@ def test_structured_output_keeps_unsupported_file_indexes() -> None:
     extracted = structured_output.to_extracted_fields(image_count=3)
 
     assert extracted.unsupported_file_indexes == (1, 2)
+
+
+def test_structured_output_keeps_supported_receipt_file_indexes() -> None:
+    structured_output = ReceiptOcrStructuredOutput(
+        item_name="중소기업 전기히터 HBT-220",
+        category=OcrReceiptCategory.OTHER_DEVICE,
+        sub_category="기타",
+        receipt_file_indexes=[1, 0, 1],
+    )
+
+    extracted = structured_output.to_extracted_fields(image_count=2)
+
+    assert extracted.receipt_file_indexes == (0, 1)
+    assert extracted.item_name == "중소기업 전기히터 HBT-220"
 
 
 def test_multimodal_prompt_extracts_explicit_serial_number_from_any_image() -> None:
