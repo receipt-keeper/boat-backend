@@ -57,6 +57,10 @@ class ExtractReceiptOcrCommandUseCase:
                 raise ReceiptImageUnreadableError(
                     file_indexes=extracted.unreadable_file_indexes,
                 )
+            if not extracted.receipt_file_indexes:
+                raise UnsupportedReceiptError(
+                    file_indexes=tuple(image.file_index for image in command.images),
+                )
             if not (extracted.item_name or "").strip():
                 raise ReceiptImageUnreadableError(
                     file_indexes=tuple(image.file_index for image in command.images),

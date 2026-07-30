@@ -55,6 +55,7 @@ class PartiallyUnreadableReceiptOcrClient:
             category="주방 가전",
             sub_category="냉장고",
             unreadable_file_indexes=(1,),
+            receipt_file_indexes=(0,),
         )
 
 
@@ -75,6 +76,22 @@ class PartiallyUnsupportedReceiptOcrClient:
             category="주방 가전",
             sub_category="냉장고",
             unsupported_file_indexes=(1,),
+            receipt_file_indexes=(0,),
+        )
+
+
+class ProductMentionWithoutReceiptOcrClient:
+    async def extract(self, *, images: tuple[ReceiptOcrImage, ...]) -> ExtractedReceiptOcrFields:
+        return ExtractedReceiptOcrFields(
+            item_name="MacBook Pro 16",
+            brand_name="Apple",
+            serial_number=None,
+            payment_location=None,
+            payment_date=date(2025, 3, 13),
+            total_amount=None,
+            period_months=12,
+            category="IT 기기",
+            sub_category="노트북",
         )
 
 
@@ -92,6 +109,7 @@ class MixedFailureReceiptOcrClient:
             sub_category="냉장고",
             unreadable_file_indexes=(2,),
             unsupported_file_indexes=(1,),
+            receipt_file_indexes=(0,),
         )
 
 
@@ -112,6 +130,7 @@ class ZeroTotalAmountReceiptOcrClient:
             period_months=12,
             category=None,
             sub_category=None,
+            receipt_file_indexes=(0,),
         )
 
 
@@ -379,6 +398,39 @@ async def test_receipt_ocr_endpoint_returns_unsupported_receipt_code_and_file_in
     assert "ocr_analysis_failed reason=unsupported_receipt" in caplog.text
     assert "file_indexes=(1,)" in caplog.text
     assert repr(_PNG_BYTES) not in caplog.text
+
+
+async def test_product_mention_without_receipt_keeps_unsupported_failure_contract(
+    client: AsyncClient,
+    override_receipt_ocr_client: Callable[[ProductMentionWithoutReceiptOcrClient], None],
+    use_recording_credit_reservation_command_use_case: RecordingUseCreditCommandUseCase,
+    use_recording_credit_command_use_case: RecordingUseCreditCommandUseCase,
+) -> None:
+    override_receipt_ocr_client(ProductMentionWithoutReceiptOcrClient())
+
+    response = await client.post(
+        "/api/v1/ocr",
+        files={"file": ("promotion.png", _PNG_BYTES, "image/png")},
+    )
+
+    body = response.json()
+
+    assert response.status_code == 422
+    assert body["success"] is False
+    assert body["status"] == 422
+    assert set(body["data"]) == {"timestamp", "code", "message", "path", "errors"}
+    assert body["data"]["code"] == "UNSUPPORTED_RECEIPT"
+    assert body["data"]["message"] == "현재는 전자제품 영수증만 지원하고 있어요!"
+    assert body["data"]["path"] == "/api/v1/ocr"
+    assert body["data"]["errors"] == [
+        {
+            "field": "file",
+            "fileIndex": 0,
+            "message": "현재는 전자제품 영수증만 지원하고 있어요!",
+        }
+    ]
+    assert len(use_recording_credit_reservation_command_use_case.commands) == 1
+    assert use_recording_credit_command_use_case.commands == []
 
 
 async def test_receipt_ocr_endpoint_returns_all_mixed_failure_indexes(

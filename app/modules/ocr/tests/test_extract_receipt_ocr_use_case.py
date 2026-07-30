@@ -44,6 +44,7 @@ class ReadableReceiptOcrClient:
             category="주방 가전",
             sub_category="냉장고",
             expires_on=date(2028, 7, 1),
+            receipt_file_indexes=(0,),
         )
 
 
@@ -59,6 +60,7 @@ class UnreadableReceiptOcrClient:
             period_months=None,
             category=None,
             sub_category=None,
+            unreadable_file_indexes=(0,),
         )
 
 
@@ -95,6 +97,21 @@ class MixedFailureReceiptOcrClient:
         )
 
 
+class ProductMentionWithoutReceiptOcrClient:
+    async def extract(self, *, images: tuple[ReceiptOcrImage, ...]) -> ExtractedReceiptOcrFields:
+        return ExtractedReceiptOcrFields(
+            item_name="MacBook Pro 16",
+            brand_name="Apple",
+            serial_number=None,
+            payment_location=None,
+            payment_date=date(2025, 3, 13),
+            total_amount=None,
+            period_months=12,
+            category="IT 기기",
+            sub_category="노트북",
+        )
+
+
 @dataclass(slots=True)
 class InvalidExpirationReceiptOcrClient:
     async def extract(self, *, images: tuple[ReceiptOcrImage, ...]) -> ExtractedReceiptOcrFields:
@@ -109,6 +126,7 @@ class InvalidExpirationReceiptOcrClient:
             category="IT 기기",
             sub_category="핸드폰",
             expires_on=date(2025, 7, 1),
+            receipt_file_indexes=(0,),
         )
 
 
@@ -126,6 +144,7 @@ class MissingPurchaseDateWithPastExpirationReceiptOcrClient:
             category="IT 기기",
             sub_category="핸드폰",
             expires_on=date(2025, 7, 1),
+            receipt_file_indexes=(0,),
         )
 
 
@@ -274,6 +293,37 @@ async def test_extract_receipt_ocr_use_case_reports_all_mixed_failure_indexes() 
     assert error.value.unsupported_file_indexes == (1,)
     assert error.value.unreadable_file_indexes == (2,)
     assert error.value.file_indexes == (1, 2)
+    assert len(reserve_credit_use_case.commands) == 1
+    assert finalize_credit_use_case.commands == []
+    assert unit_of_work.rollback_count == 1
+
+
+async def test_extract_receipt_ocr_use_case_rejects_product_mention_without_receipt() -> None:
+    reserve_credit_use_case = FakeUseCreditCommandUseCase(commands=[])
+    finalize_credit_use_case = FakeUseCreditCommandUseCase(commands=[])
+    unit_of_work = FakeUnitOfWork()
+    use_case = ExtractReceiptOcrCommandUseCase(
+        ocr_client=ProductMentionWithoutReceiptOcrClient(),
+        reserve_credit_command_use_case=reserve_credit_use_case,
+        finalize_credit_usage_command_use_case=finalize_credit_use_case,
+        unit_of_work=unit_of_work,
+    )
+
+    with pytest.raises(UnsupportedReceiptError) as error:
+        await use_case.execute(
+            ExtractReceiptOcrCommand(
+                user_id=USER_ID,
+                images=(
+                    ReceiptOcrImage(
+                        file_index=0,
+                        content=b"promotional-app-screen",
+                        content_type="image/png",
+                    ),
+                ),
+            )
+        )
+
+    assert error.value.file_indexes == (0,)
     assert len(reserve_credit_use_case.commands) == 1
     assert finalize_credit_use_case.commands == []
     assert unit_of_work.rollback_count == 1
