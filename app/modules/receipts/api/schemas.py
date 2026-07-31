@@ -13,6 +13,8 @@ from app.modules.receipts.domain.value_objects import (
     ReceiptCategory,
     ReceiptSort,
     ReceiptStatusFilter,
+    TotalAmount,
+    WarrantyPeriodMonths,
 )
 
 
@@ -98,13 +100,21 @@ class CreateReceiptRequest(_ReceiptCategoryInputModel):
     payment_date: date = Field(description="구매일 또는 결제일.")
     total_amount: int | None = Field(
         default=None,
-        description="총 결제 금액. 전달하는 경우 0 이상이어야 한다.",
+        description="구매가격. 전달하는 경우 0원 이상 999,999,999원 이하여야 한다.",
+        json_schema_extra={
+            "minimum": TotalAmount.MIN_AMOUNT,
+            "maximum": TotalAmount.MAX_AMOUNT,
+        },
     )
     period_months: int | None = Field(
         default=None,
-        description="무상 AS 기간. 미전달 시 12개월 기본값을 적용한다.",
-        ge=1,
-        le=60,
+        description=(
+            "무상 AS 기간. 1개월 이상 120개월 이하이며, 미전달 시 12개월 기본값을 적용한다."
+        ),
+        json_schema_extra={
+            "minimum": WarrantyPeriodMonths.MIN_MONTHS,
+            "maximum": WarrantyPeriodMonths.MAX_MONTHS,
+        },
     )
     expires_on: date | None = Field(
         default=None,
@@ -241,13 +251,19 @@ class UpdateReceiptRequest(_ReceiptCategoryInputModel):
     payment_date: date | None = Field(default=None, description="구매일 또는 결제일.")
     total_amount: int | None = Field(
         default=None,
-        description="총 결제 금액. 전달하는 경우 0 이상이어야 한다.",
+        description="구매가격. 전달하는 경우 0원 이상 999,999,999원 이하여야 한다.",
+        json_schema_extra={
+            "minimum": TotalAmount.MIN_AMOUNT,
+            "maximum": TotalAmount.MAX_AMOUNT,
+        },
     )
     period_months: int | None = Field(
         default=None,
-        description="무상 AS 기간.",
-        ge=1,
-        le=60,
+        description="무상 AS 기간. 1개월 이상 120개월 이하여야 한다.",
+        json_schema_extra={
+            "minimum": WarrantyPeriodMonths.MIN_MONTHS,
+            "maximum": WarrantyPeriodMonths.MAX_MONTHS,
+        },
     )
     expires_on: date | None = Field(
         default=None,

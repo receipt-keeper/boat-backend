@@ -19,6 +19,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import UUID as PostgreSQLUUID
 from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.schema import conv
 
 from app.core.db.base import Base
 from app.modules.receipts.domain.value_objects import ReceiptCategory
@@ -35,12 +36,12 @@ class Receipt(Base):
     __tablename__ = "receipts"
     __table_args__ = (
         CheckConstraint(
-            "period_months BETWEEN 1 AND 60",
-            name="ck_receipts_period_months_range",
+            "period_months BETWEEN 1 AND 120",
+            name=conv("ck_receipts_period_months_range"),
         ),
         CheckConstraint(
-            "total_amount IS NULL OR total_amount >= 0",
-            name="ck_receipts_total_amount_non_negative",
+            "total_amount IS NULL OR total_amount BETWEEN 0 AND 999999999",
+            name=conv("ck_receipts_total_amount_range"),
         ),
         Index("ix_receipts_expires_on_id", "expires_on", "id"),
     )
