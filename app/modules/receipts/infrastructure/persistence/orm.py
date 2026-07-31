@@ -40,8 +40,8 @@ class Receipt(Base):
             name=conv("ck_receipts_period_months_range"),
         ),
         CheckConstraint(
-            "total_amount IS NULL OR total_amount BETWEEN 0 AND 999999999",
-            name=conv("ck_receipts_total_amount_range"),
+            "total_amount IS NULL OR total_amount >= 0",
+            name=conv("ck_receipts_total_amount_non_negative"),
         ),
         Index("ix_receipts_expires_on_id", "expires_on", "id"),
     )
