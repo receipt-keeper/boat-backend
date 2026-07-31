@@ -7,7 +7,7 @@ from app.modules.ocr.infrastructure.receipt_ocr_client import (
     OcrReceiptCategory,
     ReceiptOcrClient,
     ReceiptOcrStructuredOutput,
-    ReceiptTransactionEvidence,
+    ReceiptTransactionEvidenceOutput,
     _build_openrouter_multimodal_content,
 )
 from app.modules.receipts.domain.value_objects import ReceiptCategory
@@ -93,7 +93,8 @@ def test_multimodal_prompt_separates_unsupported_receipts_from_unknown_devices()
     assert "app launch or onboarding screens" in prompt
     assert "electronic-product text appears" in prompt
     assert "multiple independent transaction signals" in prompt
-    assert "invoice without proof of completed payment" in prompt
+    assert "explicit proof that payment" in prompt
+    assert "invoice without explicit completed-payment proof" in prompt
     assert "restaurants or food" in prompt
     assert 'category "other_device"' in prompt
     assert "advertisements" in schema["unsupported_file_indexes"]["description"]
@@ -101,10 +102,10 @@ def test_multimodal_prompt_separates_unsupported_receipts_from_unknown_devices()
         "actual paper or digital purchase receipt" in schema["receipt_file_indexes"]["description"]
     )
     evidence_schema = ReceiptOcrStructuredOutput.model_json_schema()["$defs"][
-        "ReceiptTransactionEvidence"
+        "ReceiptTransactionEvidenceOutput"
     ]["properties"]
     assert "final total paid amount" in evidence_schema["total_paid"]["description"]
-    assert "completed-transaction signal" in evidence_schema["completion_signal"]["description"]
+    assert "Explicit proof that payment" in evidence_schema["payment_proof"]["description"]
 
 
 def test_structured_output_keeps_unsupported_file_indexes() -> None:
@@ -124,11 +125,11 @@ def test_structured_output_keeps_supported_receipt_file_indexes() -> None:
         total_amount=129000,
         category=OcrReceiptCategory.OTHER_DEVICE,
         sub_category="기타",
-        transaction_evidence=ReceiptTransactionEvidence(
+        transaction_evidence=ReceiptTransactionEvidenceOutput(
             merchant=True,
             purchased_item=True,
             total_paid=True,
-            completion_signal=True,
+            payment_proof=True,
         ),
         receipt_file_indexes=[1, 0, 1],
     )
@@ -142,30 +143,32 @@ def test_structured_output_keeps_supported_receipt_file_indexes() -> None:
 
 @pytest.mark.parametrize(
     "missing_evidence",
-    ["merchant", "purchased_item", "total_paid", "completion_signal"],
+    ["merchant", "purchased_item", "total_paid", "payment_proof"],
 )
-def test_structured_output_downgrades_receipt_without_complete_transaction_evidence(
+def test_structured_output_preserves_provider_evidence_for_application_policy(
     missing_evidence: str,
 ) -> None:
     evidence = {
         "merchant": True,
         "purchased_item": True,
         "total_paid": True,
-        "completion_signal": True,
+        "payment_proof": True,
     }
     evidence[missing_evidence] = False
     structured_output = ReceiptOcrStructuredOutput(
         item_name="일반 문서에 적힌 노트북",
         payment_location="일반 문서 작성 회사",
         total_amount=1000000,
-        transaction_evidence=ReceiptTransactionEvidence(**evidence),
+        transaction_evidence=ReceiptTransactionEvidenceOutput(**evidence),
         receipt_file_indexes=[0],
     )
 
     extracted = structured_output.to_extracted_fields(image_count=1)
 
-    assert extracted.receipt_file_indexes == ()
-    assert extracted.unsupported_file_indexes == (0,)
+    assert extracted.receipt_file_indexes == (0,)
+    assert extracted.unsupported_file_indexes == ()
+    assert extracted.transaction_evidence is not None
+    assert not getattr(extracted.transaction_evidence, missing_evidence)
 
 
 def test_structured_output_combines_transaction_evidence_across_receipt_images() -> None:
@@ -173,11 +176,11 @@ def test_structured_output_combines_transaction_evidence_across_receipt_images()
         item_name="노트북",
         payment_location="전자제품 판매점",
         total_amount=1000000,
-        transaction_evidence=ReceiptTransactionEvidence(
+        transaction_evidence=ReceiptTransactionEvidenceOutput(
             merchant=True,
             purchased_item=True,
             total_paid=True,
-            completion_signal=True,
+            payment_proof=True,
         ),
         receipt_file_indexes=[0, 1],
     )
@@ -186,33 +189,6 @@ def test_structured_output_combines_transaction_evidence_across_receipt_images()
 
     assert extracted.receipt_file_indexes == (0, 1)
     assert extracted.unsupported_file_indexes == ()
-
-
-@pytest.mark.parametrize("missing_field", ["payment_location", "item_name", "total_amount"])
-def test_structured_output_downgrades_receipt_without_visible_core_transaction_field(
-    missing_field: str,
-) -> None:
-    fields: dict[str, str | int | None] = {
-        "payment_location": "전자제품 판매점",
-        "item_name": "노트북",
-        "total_amount": 1000000,
-    }
-    fields[missing_field] = None
-    structured_output = ReceiptOcrStructuredOutput(
-        **fields,
-        transaction_evidence=ReceiptTransactionEvidence(
-            merchant=True,
-            purchased_item=True,
-            total_paid=True,
-            completion_signal=True,
-        ),
-        receipt_file_indexes=[0],
-    )
-
-    extracted = structured_output.to_extracted_fields(image_count=1)
-
-    assert extracted.receipt_file_indexes == ()
-    assert extracted.unsupported_file_indexes == (0,)
 
 
 def test_multimodal_prompt_extracts_explicit_serial_number_from_any_image() -> None:

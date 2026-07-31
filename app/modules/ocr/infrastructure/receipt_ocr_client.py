@@ -13,6 +13,7 @@ from app.modules.ocr.application.ports.receipt_ocr_client import (
     ExtractedReceiptOcrFields,
     ReceiptOcrClientPort,
     ReceiptOcrImage,
+    ReceiptTransactionEvidence,
 )
 from app.modules.ocr.domain.exceptions import ReceiptOcrProviderUnavailableError
 from app.modules.ocr.domain.model import (
@@ -43,9 +44,10 @@ by itself.
 Treat all readable images as one evidence set and extract one combined receipt result.
 A supported receipt requires multiple independent transaction signals across the full image set.
 It must visibly contain all of: a merchant, a purchased device line item, and a total paid amount.
-It must also contain at least one completion signal: a payment or purchase date, a receipt/order/
-transaction identifier, or explicit payment approval/completion evidence. Product names, dates, and
-prices in a general document, quotation, estimate, invoice without proof of completed payment,
+It must also contain explicit proof that payment was approved, paid, captured, or completed.
+A payment or purchase date and a receipt/order/transaction identifier may support extraction, but
+neither proves payment by itself. Product names, dates, and prices in a general document, quotation,
+estimate, unpaid order confirmation, or invoice without explicit completed-payment proof,
 advertisement, catalog, or product page do not establish a completed purchase.
 Return receipt_file_indexes only for images whose overall purpose is an actual supported purchase
 receipt. Populate transaction_evidence only for evidence that is visibly present in the images.
@@ -131,7 +133,7 @@ SubCategoryLiteral = Literal[
 ]
 
 
-class ReceiptTransactionEvidence(BaseModel):
+class ReceiptTransactionEvidenceOutput(BaseModel):
     merchant: bool = Field(
         default=False,
         description="A merchant, seller, store, or payment recipient is visibly identified.",
@@ -146,16 +148,14 @@ class ReceiptTransactionEvidence(BaseModel):
         default=False,
         description="A final total paid amount is visibly identified, not merely a listed price.",
     )
-    completion_signal: bool = Field(
+    payment_proof: bool = Field(
         default=False,
         description=(
-            "At least one completed-transaction signal is visible: payment/purchase date, "
-            "receipt/order/transaction identifier, or explicit payment approval/completion."
+            "Explicit proof that payment was approved, paid, captured, or completed is visible. "
+            "A date, order/receipt/transaction identifier, invoice, quotation, or amount alone "
+            "is not payment proof."
         ),
     )
-
-    def supports_completed_purchase(self) -> bool:
-        return self.merchant and self.purchased_item and self.total_paid and self.completion_signal
 
 
 class ReceiptOcrStructuredOutput(BaseModel):
@@ -234,8 +234,8 @@ class ReceiptOcrStructuredOutput(BaseModel):
             "listed device clearly matches."
         ),
     )
-    transaction_evidence: ReceiptTransactionEvidence = Field(
-        default_factory=ReceiptTransactionEvidence,
+    transaction_evidence: ReceiptTransactionEvidenceOutput = Field(
+        default_factory=ReceiptTransactionEvidenceOutput,
         description=(
             "Visible evidence used to verify that the image set represents a completed purchase. "
             "Set each flag independently and never infer a missing signal from other fields."
@@ -291,17 +291,12 @@ class ReceiptOcrStructuredOutput(BaseModel):
             raise ValueError(
                 "OCR provider가 동일한 이미지를 지원 영수증과 실패 유형으로 반환했습니다."
             )
-        has_visible_core_transaction_fields = (
-            blank_to_none(self.payment_location) is not None
-            and blank_to_none(self.item_name) is not None
-            and self.total_amount is not None
+        transaction_evidence = ReceiptTransactionEvidence(
+            merchant=self.transaction_evidence.merchant,
+            purchased_item=self.transaction_evidence.purchased_item,
+            total_paid=self.transaction_evidence.total_paid,
+            payment_proof=self.transaction_evidence.payment_proof,
         )
-        if receipt_file_indexes and (
-            not self.transaction_evidence.supports_completed_purchase()
-            or not has_visible_core_transaction_fields
-        ):
-            unsupported_file_indexes.update(receipt_file_indexes)
-            receipt_file_indexes.clear()
 
         return ExtractedReceiptOcrFields(
             item_name=blank_to_none(self.item_name),
@@ -314,6 +309,7 @@ class ReceiptOcrStructuredOutput(BaseModel):
             expires_on=self.expires_on,
             category=(self.category.api_label if self.category is not None else DEFAULT_CATEGORY),
             sub_category=blank_to_none(self.sub_category) or DEFAULT_SUB_CATEGORY,
+            transaction_evidence=transaction_evidence,
             receipt_file_indexes=tuple(sorted(receipt_file_indexes)),
             unreadable_file_indexes=tuple(sorted(unreadable_file_indexes)),
             unsupported_file_indexes=tuple(sorted(unsupported_file_indexes)),
@@ -345,11 +341,11 @@ class ReceiptOcrClient(ReceiptOcrClientPort):
             expires_on=None,
             category=OcrReceiptCategory.KITCHEN_APPLIANCE,
             sub_category="냉장고",
-            transaction_evidence=ReceiptTransactionEvidence(
+            transaction_evidence=ReceiptTransactionEvidenceOutput(
                 merchant=True,
                 purchased_item=True,
                 total_paid=True,
-                completion_signal=True,
+                payment_proof=True,
             ),
             receipt_file_indexes=[0],
         )
