@@ -475,8 +475,16 @@ def test_receipts_openapi_includes_app_test_examples() -> None:
     assert "total_amount" not in create_request_examples["manual_nullable"]["value"]
     assert "serial_number" in create_request_properties
     assert {"type": "null"} in create_request_properties["total_amount"]["anyOf"]
-    assert "0 이상" in create_request_properties["total_amount"]["description"]
-    assert "0 이상" in update_request_properties["total_amount"]["description"]
+    assert create_request_properties["total_amount"]["minimum"] == 0
+    assert create_request_properties["total_amount"]["maximum"] == 999999999
+    assert update_request_properties["total_amount"]["minimum"] == 0
+    assert update_request_properties["total_amount"]["maximum"] == 999999999
+    assert create_request_properties["period_months"]["minimum"] == 1
+    assert create_request_properties["period_months"]["maximum"] == 60
+    assert update_request_properties["period_months"]["minimum"] == 1
+    assert update_request_properties["period_months"]["maximum"] == 60
+    assert "999,999,999원 이하" in create_request_properties["total_amount"]["description"]
+    assert "999,999,999원 이하" in update_request_properties["total_amount"]["description"]
     assert create_response_example["status"] == 201
     assert create_response_example["data"]["receiptFileIds"] == [
         "00000000-0000-0000-0000-000000000201"
@@ -995,6 +1003,209 @@ async def test_create_receipt_calculates_expiration_on_month_end(
     assert body["data"]["expiresOn"] == "2024-02-29"
 
 
+async def test_create_receipt_accepts_current_price_and_warranty_boundaries(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with _client(postgres_session_factory) as client:
+        minimum = await _create_receipt(
+            client,
+            item_name="가격 및 보증 최소 경계",
+            payment_date=date(2024, 1, 31),
+            total_amount=0,
+            period_months=1,
+        )
+        maximum = await _create_receipt(
+            client,
+            item_name="가격 및 보증 최대 경계",
+            payment_date=date(2024, 1, 31),
+            total_amount=999_999_999,
+            period_months=60,
+        )
+
+    assert minimum["totalAmount"] == 0
+    assert minimum["periodMonths"] == 1
+    assert minimum["expiresOn"] == "2024-02-29"
+    assert maximum["totalAmount"] == 999_999_999
+    assert maximum["periodMonths"] == 60
+    assert maximum["expiresOn"] == "2029-01-31"
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        (
+            "total_amount",
+            -1,
+            "구매가격은 0원 이상 999,999,999원 이하로 입력해 주세요.",
+        ),
+        (
+            "total_amount",
+            1_000_000_000,
+            "구매가격은 0원 이상 999,999,999원 이하로 입력해 주세요.",
+        ),
+        (
+            "period_months",
+            0,
+            "무상 AS 기간은 1개월 이상 60개월 이하로 입력해 주세요.",
+        ),
+        (
+            "period_months",
+            61,
+            "무상 AS 기간은 1개월 이상 60개월 이하로 입력해 주세요.",
+        ),
+    ],
+)
+async def test_create_receipt_returns_korean_range_validation_errors(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+    field: str,
+    value: int,
+    message: str,
+) -> None:
+    payload: dict[str, object] = {
+        "item_name": "범위 오류",
+        "payment_date": "2024-06-01",
+        "receipt_file_ids": [str(TEST_FILE_ID)],
+        field: value,
+    }
+
+    async with _client(postgres_session_factory) as client:
+        response = await client.post("/api/v1/receipts", json=payload)
+
+    assert response.status_code == 422
+    assert response.json()["data"]["errors"][0] == {
+        "field": field,
+        "message": message,
+    }
+
+
+async def test_update_receipt_accepts_current_boundaries_and_rejects_overflow(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with _client(postgres_session_factory) as client:
+        created = await _create_receipt(
+            client,
+            item_name="수정 범위 검증",
+            payment_date=date(2024, 6, 1),
+        )
+        receipt_id = created["receiptId"]
+        accepted = await client.patch(
+            f"/api/v1/receipts/{receipt_id}",
+            json={"total_amount": 999_999_999, "period_months": 60},
+        )
+        rejected_price = await client.patch(
+            f"/api/v1/receipts/{receipt_id}",
+            json={"total_amount": 1_000_000_000},
+        )
+        rejected_warranty = await client.patch(
+            f"/api/v1/receipts/{receipt_id}",
+            json={"period_months": 61},
+        )
+
+    assert accepted.status_code == 200
+    assert accepted.json()["data"]["totalAmount"] == 999_999_999
+    assert accepted.json()["data"]["periodMonths"] == 60
+    assert rejected_price.status_code == 422
+    assert rejected_price.json()["data"]["errors"][0] == {
+        "field": "total_amount",
+        "message": "구매가격은 0원 이상 999,999,999원 이하로 입력해 주세요.",
+    }
+    assert rejected_warranty.status_code == 422
+    assert rejected_warranty.json()["data"]["errors"][0] == {
+        "field": "period_months",
+        "message": "무상 AS 기간은 1개월 이상 60개월 이하로 입력해 주세요.",
+    }
+
+
+async def test_update_receipt_preserves_grandfathered_price_for_unrelated_changes(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    receipt_id = uuid4()
+    async with postgres_session_factory() as session:
+        session.add(
+            receipt_orm.Receipt(
+                id=receipt_id,
+                user_id=TEST_USER_ID,
+                item_name="기존 고액 영수증",
+                payment_date=date(2024, 6, 1),
+                total_amount=1_000_000_000,
+                period_months=12,
+                expires_on=date(2025, 6, 1),
+                requires_physical_receipt=False,
+            )
+        )
+        session.add(
+            receipt_orm.ReceiptAttachment(
+                receipt_id=receipt_id,
+                file_id=TEST_FILE_ID,
+            )
+        )
+        await session.commit()
+
+    async with _client(postgres_session_factory) as client:
+        unrelated_update = await client.patch(
+            f"/api/v1/receipts/{receipt_id}",
+            json={"memo": "가격 외 정보만 수정"},
+        )
+        explicit_price_update = await client.patch(
+            f"/api/v1/receipts/{receipt_id}",
+            json={"total_amount": 1_000_000_000},
+        )
+
+    assert unrelated_update.status_code == 200
+    assert unrelated_update.json()["data"]["totalAmount"] == 1_000_000_000
+    assert unrelated_update.json()["data"]["memo"] == "가격 외 정보만 수정"
+    assert explicit_price_update.status_code == 422
+    assert explicit_price_update.json()["data"]["errors"][0] == {
+        "field": "total_amount",
+        "message": "구매가격은 0원 이상 999,999,999원 이하로 입력해 주세요.",
+    }
+
+
+async def test_update_receipt_preserves_future_warranty_for_unrelated_changes(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    receipt_id = uuid4()
+    async with postgres_session_factory() as session:
+        session.add(
+            receipt_orm.Receipt(
+                id=receipt_id,
+                user_id=TEST_USER_ID,
+                item_name="미래 AS 계약 영수증",
+                payment_date=date(2024, 6, 1),
+                total_amount=100_000,
+                period_months=120,
+                expires_on=date(2034, 6, 1),
+                requires_physical_receipt=False,
+            )
+        )
+        session.add(
+            receipt_orm.ReceiptAttachment(
+                receipt_id=receipt_id,
+                file_id=TEST_FILE_ID,
+            )
+        )
+        await session.commit()
+
+    async with _client(postgres_session_factory) as client:
+        unrelated_update = await client.patch(
+            f"/api/v1/receipts/{receipt_id}",
+            json={"memo": "AS 기간 외 정보만 수정"},
+        )
+        explicit_period_update = await client.patch(
+            f"/api/v1/receipts/{receipt_id}",
+            json={"period_months": 120},
+        )
+
+    assert unrelated_update.status_code == 200
+    assert unrelated_update.json()["data"]["periodMonths"] == 120
+    assert unrelated_update.json()["data"]["memo"] == "AS 기간 외 정보만 수정"
+    assert explicit_period_update.status_code == 422
+    assert explicit_period_update.json()["data"]["errors"][0] == {
+        "field": "period_months",
+        "message": "무상 AS 기간은 1개월 이상 60개월 이하로 입력해 주세요.",
+    }
+
+
 @pytest.mark.parametrize(
     ("payload", "field"),
     [
@@ -1118,7 +1329,7 @@ async def test_create_receipt_aggregates_total_amount_domain_error(
     assert {error["field"] for error in errors} == {"item_name", "total_amount"}
     assert any(
         error["field"] == "total_amount"
-        and error["message"] == "총 결제 금액은 0 이상이어야 합니다."
+        and error["message"] == "구매가격은 0원 이상 999,999,999원 이하로 입력해 주세요."
         for error in errors
     )
 

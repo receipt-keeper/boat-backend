@@ -55,8 +55,16 @@ class WarrantyPeriodMonths(ValueObject[int]):
 
 @dataclass(frozen=True)
 class TotalAmount(ValueObject[int]):
+    MIN_AMOUNT: ClassVar[int] = 0
+    MAX_AMOUNT: ClassVar[int] = 999_999_999
+
     def validate(self) -> None:
-        if self.value < 0:
+        if not (self.MIN_AMOUNT <= self.value <= self.MAX_AMOUNT):
             raise ValidationError(
-                [ErrorDetail(field="total_amount", message="총 금액은 음수일 수 없습니다.")]
+                [
+                    ErrorDetail(
+                        field="total_amount",
+                        message="구매가격은 0원 이상 999,999,999원 이하로 입력해 주세요.",
+                    )
+                ]
             )

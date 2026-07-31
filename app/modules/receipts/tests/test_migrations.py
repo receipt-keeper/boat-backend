@@ -76,6 +76,42 @@ async def _assert_tables_exist(database_url: str) -> None:
                     {"column_name": column_name},
                 )
                 assert column_type == expected_type
+
+            constraint_rows = (
+                await connection.execute(
+                    text(
+                        """
+                        SELECT
+                            conname,
+                            pg_get_constraintdef(pg_constraint.oid) AS definition,
+                            convalidated
+                        FROM pg_constraint
+                        JOIN pg_class ON pg_class.oid = pg_constraint.conrelid
+                        WHERE pg_class.relname = 'receipts'
+                          AND conname IN (
+                              'ck_receipts_period_months_range',
+                              'ck_receipts_total_amount_non_negative'
+                          )
+                        """
+                    )
+                )
+            ).mappings()
+            constraints: dict[str, tuple[str, bool]] = {
+                str(row["conname"]): (str(row["definition"]), bool(row["convalidated"]))
+                for row in constraint_rows
+            }
+            assert set(constraints) == {
+                "ck_receipts_period_months_range",
+                "ck_receipts_total_amount_non_negative",
+            }
+            period_definition, period_validated = constraints["ck_receipts_period_months_range"]
+            amount_definition, amount_validated = constraints[
+                "ck_receipts_total_amount_non_negative"
+            ]
+            assert "120" in period_definition
+            assert "total_amount >= 0" in amount_definition
+            assert period_validated is True
+            assert amount_validated is True
     finally:
         await engine.dispose()
 

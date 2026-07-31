@@ -104,24 +104,42 @@ class PaymentDate(ValueObject[date]):
 
 @dataclass(frozen=True, slots=True)
 class TotalAmount(ValueObject[int]):
+    MIN_AMOUNT: ClassVar[int] = 0
+    MAX_AMOUNT: ClassVar[int] = 999_999_999
+    ERROR_MESSAGE: ClassVar[str] = "구매가격은 0원 이상 999,999,999원 이하로 입력해 주세요."
+
+    @classmethod
+    def restore_grandfathered(cls, value: int) -> "TotalAmount":
+        """이전 계약에서 저장된 상한 초과 금액을 변경 없이 복원한다."""
+        if value <= cls.MAX_AMOUNT:
+            return cls(value)
+        instance = object.__new__(cls)
+        object.__setattr__(instance, "value", value)
+        return instance
+
     def validate(self) -> None:
-        if self.value < 0:
-            raise ValidationError(
-                [ErrorDetail(field="total_amount", message="총 결제 금액은 0 이상이어야 합니다.")]
-            )
+        if not (self.MIN_AMOUNT <= self.value <= self.MAX_AMOUNT):
+            raise ValidationError([ErrorDetail(field="total_amount", message=self.ERROR_MESSAGE)])
 
 
 @dataclass(frozen=True, slots=True)
 class WarrantyPeriodMonths(ValueObject[int]):
     MIN_MONTHS: ClassVar[int] = 1
     MAX_MONTHS: ClassVar[int] = 60
+    ERROR_MESSAGE: ClassVar[str] = "무상 AS 기간은 1개월 이상 60개월 이하로 입력해 주세요."
+
+    @classmethod
+    def restore_grandfathered(cls, value: int) -> "WarrantyPeriodMonths":
+        """후속 계약에서 저장된 상한 초과 기간을 변경 없이 복원한다."""
+        if value <= cls.MAX_MONTHS:
+            return cls(value)
+        instance = object.__new__(cls)
+        object.__setattr__(instance, "value", value)
+        return instance
 
     def validate(self) -> None:
         if not (self.MIN_MONTHS <= self.value <= self.MAX_MONTHS):
-            message = (
-                f"무상 AS 기간은 {self.MIN_MONTHS}개월 이상 {self.MAX_MONTHS}개월 이하여야 합니다."
-            )
-            raise ValidationError([ErrorDetail(field="period_months", message=message)])
+            raise ValidationError([ErrorDetail(field="period_months", message=self.ERROR_MESSAGE)])
 
 
 @dataclass(frozen=True, slots=True)
