@@ -125,8 +125,17 @@ class TotalAmount(ValueObject[int]):
 @dataclass(frozen=True, slots=True)
 class WarrantyPeriodMonths(ValueObject[int]):
     MIN_MONTHS: ClassVar[int] = 1
-    MAX_MONTHS: ClassVar[int] = 120
-    ERROR_MESSAGE: ClassVar[str] = "무상 AS 기간은 1개월 이상 120개월 이하로 입력해 주세요."
+    MAX_MONTHS: ClassVar[int] = 60
+    ERROR_MESSAGE: ClassVar[str] = "무상 AS 기간은 1개월 이상 60개월 이하로 입력해 주세요."
+
+    @classmethod
+    def restore_grandfathered(cls, value: int) -> "WarrantyPeriodMonths":
+        """후속 계약에서 저장된 상한 초과 기간을 변경 없이 복원한다."""
+        if value <= cls.MAX_MONTHS:
+            return cls(value)
+        instance = object.__new__(cls)
+        object.__setattr__(instance, "value", value)
+        return instance
 
     def validate(self) -> None:
         if not (self.MIN_MONTHS <= self.value <= self.MAX_MONTHS):

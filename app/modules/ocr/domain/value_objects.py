@@ -43,7 +43,7 @@ class PaymentDate(ValueObject[date]):
 @dataclass(frozen=True)
 class WarrantyPeriodMonths(ValueObject[int]):
     MIN_MONTHS: ClassVar[int] = 1
-    MAX_MONTHS: ClassVar[int] = 120
+    MAX_MONTHS: ClassVar[int] = 60
 
     def validate(self) -> None:
         if not (self.MIN_MONTHS <= self.value <= self.MAX_MONTHS):

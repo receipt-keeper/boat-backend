@@ -9,7 +9,7 @@ from app.modules.receipts.application.ports.receipt_repository import ReceiptRep
 from app.modules.receipts.application.read_models.receipt import ReceiptReadModel
 from app.modules.receipts.domain.exceptions import ReceiptNotFoundError
 from app.modules.receipts.domain.model import Receipt
-from app.modules.receipts.domain.value_objects import TotalAmount
+from app.modules.receipts.domain.value_objects import TotalAmount, WarrantyPeriodMonths
 
 
 class UpdateReceiptCommandUseCase:
@@ -58,6 +58,10 @@ class UpdateReceiptCommandUseCase:
                 "period_months",
                 current.period_months,
                 "무상 AS 기간",
+            ),
+            preserve_future_period_months=(
+                not _has_update(command, "period_months")
+                and current.period_months > WarrantyPeriodMonths.MAX_MONTHS
             ),
             expires_on=_resolved_expires_on(command, current),
             category=command.category if _has_update(command, "category") else current.category,

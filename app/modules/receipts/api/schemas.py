@@ -109,7 +109,9 @@ class CreateReceiptRequest(_ReceiptCategoryInputModel):
     period_months: int | None = Field(
         default=None,
         description=(
-            "무상 AS 기간. 1개월 이상 120개월 이하이며, 미전달 시 12개월 기본값을 적용한다."
+            "무상 AS 기간. 현재 신규 입력은 1개월 이상 60개월 이하이며, "
+            "DB 호환 기반 배포 후 후속 릴리스에서 120개월까지 활성화한다. "
+            "미전달 시 12개월 기본값을 적용한다."
         ),
         json_schema_extra={
             "minimum": WarrantyPeriodMonths.MIN_MONTHS,
@@ -259,7 +261,10 @@ class UpdateReceiptRequest(_ReceiptCategoryInputModel):
     )
     period_months: int | None = Field(
         default=None,
-        description="무상 AS 기간. 1개월 이상 120개월 이하여야 한다.",
+        description=(
+            "무상 AS 기간. 현재 신규 입력은 1개월 이상 60개월 이하이며, "
+            "DB 호환 기반 배포 후 후속 릴리스에서 120개월까지 활성화한다."
+        ),
         json_schema_extra={
             "minimum": WarrantyPeriodMonths.MIN_MONTHS,
             "maximum": WarrantyPeriodMonths.MAX_MONTHS,

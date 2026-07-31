@@ -50,6 +50,7 @@ class Receipt(Entity[UUID]):
         total_amount: int | None = None,
         preserve_legacy_total_amount: bool = False,
         period_months: int | None = None,
+        preserve_future_period_months: bool = False,
         expires_on: date | None = None,
         category: ReceiptCategory | str | None = None,
         sub_category: str | None = None,
@@ -76,7 +77,11 @@ class Receipt(Entity[UUID]):
             )
         )
         new_period_months = notification.collect(
-            lambda: WarrantyPeriodMonths(resolved_period_months)
+            lambda: (
+                WarrantyPeriodMonths.restore_grandfathered(resolved_period_months)
+                if preserve_future_period_months
+                else WarrantyPeriodMonths(resolved_period_months)
+            )
         )
         new_brand_name = notification.collect(
             lambda: _optional_text(
