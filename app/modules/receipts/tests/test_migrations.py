@@ -1,10 +1,11 @@
 import asyncio
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from alembic.config import Config
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 
 from alembic import command
 from app.core.config.settings import get_settings
@@ -12,6 +13,7 @@ from app.core.db.session import build_engine
 from tests.support.database import configure_database_environment
 
 _PRE_CATEGORY_ENUM_REVISION = "20260710_0022"
+_PRE_RECEIPT_RANGE_REVISION = "20260717_0025"
 
 
 def test_receipts_migration_creates_receipt_tables(
@@ -81,7 +83,10 @@ async def _assert_tables_exist(database_url: str) -> None:
                 await connection.execute(
                     text(
                         """
-                        SELECT conname, pg_get_constraintdef(pg_constraint.oid) AS definition
+                        SELECT
+                            conname,
+                            pg_get_constraintdef(pg_constraint.oid) AS definition,
+                            convalidated
                         FROM pg_constraint
                         JOIN pg_class ON pg_class.oid = pg_constraint.conrelid
                         WHERE pg_class.relname = 'receipts'
@@ -93,15 +98,123 @@ async def _assert_tables_exist(database_url: str) -> None:
                     )
                 )
             ).mappings()
-            constraints: dict[str, str] = {
-                str(row["conname"]): str(row["definition"]) for row in constraint_rows
+            constraints: dict[str, tuple[str, bool]] = {
+                str(row["conname"]): (str(row["definition"]), bool(row["convalidated"]))
+                for row in constraint_rows
             }
             assert set(constraints) == {
                 "ck_receipts_period_months_range",
                 "ck_receipts_total_amount_range",
             }
-            assert "120" in constraints["ck_receipts_period_months_range"]
-            assert "999999999" in constraints["ck_receipts_total_amount_range"]
+            period_definition, period_validated = constraints["ck_receipts_period_months_range"]
+            amount_definition, amount_validated = constraints["ck_receipts_total_amount_range"]
+            assert "120" in period_definition
+            assert "999999999" in amount_definition
+            assert period_validated is True
+            assert amount_validated is True
+    finally:
+        await engine.dispose()
+
+
+def test_receipt_range_migration_preserves_legacy_high_price(
+    postgres_async_database_url: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    configure_database_environment(monkeypatch, postgres_async_database_url)
+    get_settings.cache_clear()
+    project_root = Path(__file__).parents[4]
+    config = Config()
+    config.set_main_option("script_location", str(project_root / "alembic"))
+    config.set_main_option("prepend_sys_path", str(project_root))
+    config.set_main_option("path_separator", "os")
+
+    upgraded = False
+    try:
+        command.upgrade(config, _PRE_RECEIPT_RANGE_REVISION)
+        upgraded = True
+        receipt_id = asyncio.run(_insert_legacy_high_price(postgres_async_database_url))
+
+        command.upgrade(config, "head")
+        asyncio.run(
+            _assert_legacy_high_price_is_preserved_and_new_writes_are_constrained(
+                postgres_async_database_url,
+                receipt_id,
+            )
+        )
+    finally:
+        if upgraded:
+            command.downgrade(config, "base")
+        get_settings.cache_clear()
+
+
+async def _insert_legacy_high_price(database_url: str) -> UUID:
+    receipt_id = uuid4()
+    engine = build_engine(database_url)
+    try:
+        async with engine.begin() as connection:
+            await connection.execute(
+                text(
+                    """
+                    INSERT INTO receipts (
+                        id, user_id, item_name, payment_date, total_amount,
+                        period_months, expires_on, requires_physical_receipt
+                    )
+                    VALUES (
+                        :id, :user_id, 'legacy-high-price', DATE '2026-01-01',
+                        1000000000, 12, DATE '2027-01-01', false
+                    )
+                    """
+                ),
+                {"id": receipt_id, "user_id": uuid4()},
+            )
+    finally:
+        await engine.dispose()
+    return receipt_id
+
+
+async def _assert_legacy_high_price_is_preserved_and_new_writes_are_constrained(
+    database_url: str,
+    receipt_id: UUID,
+) -> None:
+    engine = build_engine(database_url)
+    try:
+        async with engine.begin() as connection:
+            total_amount = await connection.scalar(
+                text("SELECT total_amount FROM receipts WHERE id = :id"),
+                {"id": receipt_id},
+            )
+            assert total_amount == 1_000_000_000
+
+            validated = await connection.scalar(
+                text(
+                    """
+                    SELECT convalidated
+                    FROM pg_constraint
+                    JOIN pg_class ON pg_class.oid = pg_constraint.conrelid
+                    WHERE pg_class.relname = 'receipts'
+                      AND conname = 'ck_receipts_total_amount_range'
+                    """
+                )
+            )
+            assert validated is False
+
+            with pytest.raises(IntegrityError, match="ck_receipts_total_amount_range"):
+                async with connection.begin_nested():
+                    await connection.execute(
+                        text(
+                            """
+                            INSERT INTO receipts (
+                                id, user_id, item_name, payment_date, total_amount,
+                                period_months, expires_on, requires_physical_receipt
+                            )
+                            VALUES (
+                                :id, :user_id, 'new-high-price', DATE '2026-01-01',
+                                1000000000, 12, DATE '2027-01-01', false
+                            )
+                            """
+                        ),
+                        {"id": uuid4(), "user_id": uuid4()},
+                    )
     finally:
         await engine.dispose()
 
