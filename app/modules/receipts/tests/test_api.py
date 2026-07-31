@@ -1123,6 +1123,51 @@ async def test_update_receipt_accepts_maximum_boundaries_and_rejects_overflow(
     }
 
 
+async def test_update_receipt_preserves_grandfathered_price_for_unrelated_changes(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    receipt_id = uuid4()
+    async with postgres_session_factory() as session:
+        session.add(
+            receipt_orm.Receipt(
+                id=receipt_id,
+                user_id=TEST_USER_ID,
+                item_name="기존 고액 영수증",
+                payment_date=date(2024, 6, 1),
+                total_amount=1_000_000_000,
+                period_months=12,
+                expires_on=date(2025, 6, 1),
+                requires_physical_receipt=False,
+            )
+        )
+        session.add(
+            receipt_orm.ReceiptAttachment(
+                receipt_id=receipt_id,
+                file_id=TEST_FILE_ID,
+            )
+        )
+        await session.commit()
+
+    async with _client(postgres_session_factory) as client:
+        unrelated_update = await client.patch(
+            f"/api/v1/receipts/{receipt_id}",
+            json={"memo": "가격 외 정보만 수정"},
+        )
+        explicit_price_update = await client.patch(
+            f"/api/v1/receipts/{receipt_id}",
+            json={"total_amount": 1_000_000_000},
+        )
+
+    assert unrelated_update.status_code == 200
+    assert unrelated_update.json()["data"]["totalAmount"] == 1_000_000_000
+    assert unrelated_update.json()["data"]["memo"] == "가격 외 정보만 수정"
+    assert explicit_price_update.status_code == 422
+    assert explicit_price_update.json()["data"]["errors"][0] == {
+        "field": "total_amount",
+        "message": "구매가격은 0원 이상 999,999,999원 이하로 입력해 주세요.",
+    }
+
+
 @pytest.mark.parametrize(
     ("payload", "field"),
     [

@@ -22,6 +22,14 @@ def test_total_amount_rejects_out_of_range_values_with_korean_message(value: int
     ]
 
 
+def test_total_amount_restores_grandfathered_value_without_relaxing_new_validation() -> None:
+    restored = TotalAmount.restore_grandfathered(1_000_000_000)
+
+    assert restored.value == 1_000_000_000
+    with pytest.raises(ValidationError):
+        TotalAmount(1_000_000_000)
+
+
 @pytest.mark.parametrize("value", [1, 60, 61, 99, 108, 120])
 def test_warranty_period_accepts_backend_month_boundaries(value: int) -> None:
     assert WarrantyPeriodMonths(value).value == value

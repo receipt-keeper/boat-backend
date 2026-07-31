@@ -48,6 +48,7 @@ class Receipt(Entity[UUID]):
         serial_number: str | None = None,
         payment_location: str | None = None,
         total_amount: int | None = None,
+        preserve_legacy_total_amount: bool = False,
         period_months: int | None = None,
         expires_on: date | None = None,
         category: ReceiptCategory | str | None = None,
@@ -66,7 +67,13 @@ class Receipt(Entity[UUID]):
         new_total_amount = (
             None
             if total_amount is None
-            else notification.collect(lambda: TotalAmount(total_amount))
+            else notification.collect(
+                lambda: (
+                    TotalAmount.restore_grandfathered(total_amount)
+                    if preserve_legacy_total_amount
+                    else TotalAmount(total_amount)
+                )
+            )
         )
         new_period_months = notification.collect(
             lambda: WarrantyPeriodMonths(resolved_period_months)

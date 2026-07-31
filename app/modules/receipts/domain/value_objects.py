@@ -108,6 +108,15 @@ class TotalAmount(ValueObject[int]):
     MAX_AMOUNT: ClassVar[int] = 999_999_999
     ERROR_MESSAGE: ClassVar[str] = "구매가격은 0원 이상 999,999,999원 이하로 입력해 주세요."
 
+    @classmethod
+    def restore_grandfathered(cls, value: int) -> "TotalAmount":
+        """이전 계약에서 저장된 상한 초과 금액을 변경 없이 복원한다."""
+        if value <= cls.MAX_AMOUNT:
+            return cls(value)
+        instance = object.__new__(cls)
+        object.__setattr__(instance, "value", value)
+        return instance
+
     def validate(self) -> None:
         if not (self.MIN_AMOUNT <= self.value <= self.MAX_AMOUNT):
             raise ValidationError([ErrorDetail(field="total_amount", message=self.ERROR_MESSAGE)])

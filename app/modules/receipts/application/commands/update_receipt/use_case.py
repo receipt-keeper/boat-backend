@@ -9,6 +9,7 @@ from app.modules.receipts.application.ports.receipt_repository import ReceiptRep
 from app.modules.receipts.application.read_models.receipt import ReceiptReadModel
 from app.modules.receipts.domain.exceptions import ReceiptNotFoundError
 from app.modules.receipts.domain.model import Receipt
+from app.modules.receipts.domain.value_objects import TotalAmount
 
 
 class UpdateReceiptCommandUseCase:
@@ -46,6 +47,11 @@ class UpdateReceiptCommandUseCase:
                 command.total_amount
                 if _has_update(command, "total_amount")
                 else current.total_amount
+            ),
+            preserve_legacy_total_amount=(
+                not _has_update(command, "total_amount")
+                and current.total_amount is not None
+                and current.total_amount > TotalAmount.MAX_AMOUNT
             ),
             period_months=_required_updated_value(
                 command,

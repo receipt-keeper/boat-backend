@@ -4,7 +4,25 @@ import pytest
 
 from app.core.domain.exceptions import ValidationError
 from app.modules.ocr.domain.model import ReceiptOcrResult
-from app.modules.ocr.domain.value_objects import WarrantyPeriodMonths
+from app.modules.ocr.domain.value_objects import TotalAmount, WarrantyPeriodMonths
+
+
+@pytest.mark.parametrize("value", [0, 1, 999_999_999])
+def test_ocr_total_amount_accepts_receipt_contract_boundaries(value: int) -> None:
+    assert TotalAmount(value).value == value
+
+
+@pytest.mark.parametrize("value", [-1, 1_000_000_000])
+def test_ocr_total_amount_rejects_unsavable_values(value: int) -> None:
+    with pytest.raises(ValidationError) as captured:
+        TotalAmount(value)
+
+    assert [(detail.field, detail.message) for detail in captured.value.details] == [
+        (
+            "total_amount",
+            "구매가격은 0원 이상 999,999,999원 이하로 입력해 주세요.",
+        )
+    ]
 
 
 @pytest.mark.parametrize("value", [1, 60, 61, 99, 108, 120])
