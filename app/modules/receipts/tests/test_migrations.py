@@ -77,24 +77,25 @@ async def _assert_tables_exist(database_url: str) -> None:
                 )
                 assert column_type == expected_type
 
-            constraints = dict(
-                (
-                    await connection.execute(
-                        text(
-                            """
-                            SELECT conname, pg_get_constraintdef(pg_constraint.oid)
-                            FROM pg_constraint
-                            JOIN pg_class ON pg_class.oid = pg_constraint.conrelid
-                            WHERE pg_class.relname = 'receipts'
-                              AND conname IN (
-                                  'ck_receipts_period_months_range',
-                                  'ck_receipts_total_amount_range'
-                              )
-                            """
-                        )
+            constraint_rows = (
+                await connection.execute(
+                    text(
+                        """
+                        SELECT conname, pg_get_constraintdef(pg_constraint.oid) AS definition
+                        FROM pg_constraint
+                        JOIN pg_class ON pg_class.oid = pg_constraint.conrelid
+                        WHERE pg_class.relname = 'receipts'
+                          AND conname IN (
+                              'ck_receipts_period_months_range',
+                              'ck_receipts_total_amount_range'
+                          )
+                        """
                     )
-                ).all()
-            )
+                )
+            ).mappings()
+            constraints: dict[str, str] = {
+                str(row["conname"]): str(row["definition"]) for row in constraint_rows
+            }
             assert set(constraints) == {
                 "ck_receipts_period_months_range",
                 "ck_receipts_total_amount_range",
