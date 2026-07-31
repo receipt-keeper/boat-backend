@@ -10,7 +10,7 @@ from app.modules.promotions.application.commands.create_promotion_redemption.res
 from app.modules.promotions.application.queries.get_current_ocr_credit_promotion.result import (
     GetCurrentOcrCreditPromotionResult,
 )
-from app.modules.promotions.domain.model import PromotionBenefitFeatureKey
+from app.modules.promotions.domain.model import PromotionBenefitFeatureKey, PromotionKind
 
 
 class PromotionState(StrEnum):
@@ -37,6 +37,11 @@ class PromotionListQuery(AppBaseModel):
         default=None,
         description="프로모션 조회 상황. OCR 크레딧 충전 혜택은 recharge를 전달한다.",
         examples=[PromotionQueryContext.RECHARGE],
+    )
+    kind: PromotionKind | None = Field(
+        default=None,
+        description=("충전 프로모션 종류. 생략하면 기존 월간 충전 프로모션을 조회한다."),
+        examples=[PromotionKind.REWARDED_AD],
     )
 
 
@@ -65,6 +70,14 @@ class PromotionRedemptionResponse(AppBaseModel):
     model_config = ConfigDict(frozen=True, populate_by_name=True)
 
     remaining_redemptions: int | None = Field(default=None, alias="remainingRedemptions")
+    max_redemptions_per_user: int | None = Field(
+        default=None,
+        alias="maxRedemptionsPerUser",
+    )
+    remaining_redemptions_for_user: int | None = Field(
+        default=None,
+        alias="remainingRedemptionsForUser",
+    )
 
 
 class PromotionBalanceResponse(AppBaseModel):
@@ -89,8 +102,13 @@ class PromotionResponse(AppBaseModel):
                 {
                     "state": "redeemable",
                     "promotionId": "00000000-0000-0000-0000-000000000201",
+                    "kind": "monthlyAllowance",
                     "benefit": {"featureKey": "ocr", "amount": 5},
-                    "redemption": {"remainingRedemptions": 10},
+                    "redemption": {
+                        "remainingRedemptions": 10,
+                        "maxRedemptionsPerUser": 1,
+                        "remainingRedemptionsForUser": 1,
+                    },
                     "balance": None,
                     "bannerImage": {
                         "imageUrl": ("/api/v1/files/00000000-0000-0000-0000-000000000901/content")
@@ -102,6 +120,7 @@ class PromotionResponse(AppBaseModel):
 
     state: PromotionState
     promotion_id: UUID | None = Field(default=None, alias="promotionId")
+    kind: PromotionKind | None = None
     benefit: PromotionBenefitResponse | None
     redemption: PromotionRedemptionResponse
     balance: PromotionBalanceResponse | None
@@ -112,6 +131,7 @@ class PromotionResponse(AppBaseModel):
         return cls(
             state=PromotionState.UNAVAILABLE,
             promotionId=None,
+            kind=None,
             benefit=None,
             redemption=PromotionRedemptionResponse(),
             balance=None,
@@ -133,12 +153,15 @@ class PromotionResponse(AppBaseModel):
         return cls(
             state=state,
             promotionId=result.promotion_id,
+            kind=result.kind,
             benefit=PromotionBenefitResponse(
                 featureKey=PromotionBenefitFeatureKey.OCR,
                 amount=result.benefit_amount,
             ),
             redemption=PromotionRedemptionResponse(
                 remainingRedemptions=result.remaining_redemptions,
+                maxRedemptionsPerUser=result.max_redemptions_per_user,
+                remainingRedemptionsForUser=result.remaining_redemptions_for_user,
             ),
             balance=None,
             bannerImage=_banner_image_response(banner_image_url),
@@ -151,15 +174,19 @@ class PromotionResponse(AppBaseModel):
         *,
         banner_image_url: str | None,
     ) -> "PromotionResponse":
+        state = _redemption_state(result)
         return cls(
-            state=PromotionState.ALREADY_REDEEMED,
+            state=state,
             promotionId=result.promotion_id,
+            kind=result.kind,
             benefit=PromotionBenefitResponse(
                 featureKey=PromotionBenefitFeatureKey.OCR,
                 amount=result.benefit_amount,
             ),
             redemption=PromotionRedemptionResponse(
                 remainingRedemptions=result.remaining_redemptions,
+                maxRedemptionsPerUser=result.max_redemptions_per_user,
+                remainingRedemptionsForUser=result.remaining_redemptions_for_user,
             ),
             balance=PromotionBalanceResponse(
                 totalGrantedCount=result.credit_balance_after,
@@ -173,3 +200,14 @@ def _banner_image_response(image_url: str | None) -> PromotionBannerImageRespons
     if image_url is None:
         return None
     return PromotionBannerImageResponse(imageUrl=image_url)
+
+
+def _redemption_state(result: CreatePromotionRedemptionResult) -> PromotionState:
+    rewarded_ad_credit_remains = (
+        result.kind == PromotionKind.REWARDED_AD
+        and result.credit_remaining_after is not None
+        and result.credit_remaining_after > 0
+    )
+    if result.remaining_redemptions_for_user == 0 or rewarded_ad_credit_remains:
+        return PromotionState.ALREADY_REDEEMED
+    return PromotionState.REDEEMABLE

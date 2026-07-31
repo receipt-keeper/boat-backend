@@ -1,9 +1,11 @@
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import assert_never
+from uuid import UUID
 
 from app.core.application.event_publisher import EventPublisher
 from app.core.application.unit_of_work import UnitOfWork
+from app.core.domain.exceptions import ErrorDetail, ValidationError
 from app.modules.promotions.application.commands.create_promotion_redemption.command import (
     CreatePromotionRedemptionCommand,
 )
@@ -20,7 +22,7 @@ from app.modules.promotions.application.ports.promotion_repository import (
     PromotionRepository,
 )
 from app.modules.promotions.domain.exceptions import PromotionNotFoundError
-from app.modules.promotions.domain.model import PromotionContext
+from app.modules.promotions.domain.model import PromotionContext, PromotionKind
 
 
 def _utc_now() -> datetime:
@@ -50,7 +52,6 @@ class CreatePromotionRedemptionCommandUseCase:
         self,
         command: CreatePromotionRedemptionCommand,
     ) -> CreatePromotionRedemptionResult:
-        idempotency_key = _idempotency_key(command)
         promotion = await self._promotion_repository.find_promotion_for_update(
             promotion_id=command.promotion_id,
         )
@@ -63,6 +64,10 @@ class CreatePromotionRedemptionCommandUseCase:
                 pass
             case unreachable:
                 assert_never(unreachable)
+        if promotion.kind == PromotionKind.REWARDED_AD:
+            _validate_rewarded_ad_idempotency_key(command.idempotency_key)
+
+        idempotency_key = _idempotency_key(command)
 
         replayed = await self._redemption_executor.replay_if_existing(
             PromotionRedemptionReplay(
@@ -87,3 +92,16 @@ def _idempotency_key(command: CreatePromotionRedemptionCommand) -> str:
     if command.idempotency_key is None:
         return f"promotionRedemption:{command.promotion_id}:{command.user_id}"
     return f"promotionRedemption:{command.promotion_id}:{command.user_id}:{command.idempotency_key}"
+
+
+def _validate_rewarded_ad_idempotency_key(idempotency_key: str | None) -> None:
+    if idempotency_key is None:
+        message = "광고 보상 프로모션 수령에는 Idempotency-Key 헤더가 필요합니다."
+    else:
+        try:
+            UUID(idempotency_key)
+        except ValueError:
+            message = "광고 보상 프로모션의 Idempotency-Key는 UUID 형식이어야 합니다."
+        else:
+            return
+    raise ValidationError([ErrorDetail(field="Idempotency-Key", message=message)])

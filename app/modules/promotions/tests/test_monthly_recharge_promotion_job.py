@@ -14,6 +14,7 @@ from app.modules.promotions.domain.model import (
     Promotion,
     PromotionBenefitFeatureKey,
     PromotionContext,
+    PromotionKind,
 )
 from app.modules.promotions.infrastructure.persistence import orm
 from app.modules.promotions.infrastructure.persistence.repository import (
@@ -47,6 +48,7 @@ async def test_ensure_monthly_recharge_promotion_creates_july_2026_kst_row(
     assert promotion.expires_at == AUGUST_START_UTC
     assert promotion.benefit_amount == 5
     assert promotion.context == PromotionContext.RECHARGE.value
+    assert promotion.kind == PromotionKind.MONTHLY_ALLOWANCE.value
     assert promotion.max_redemptions_per_user == 1
     assert promotion.active is True
     assert promotion.max_redemptions is None
@@ -150,6 +152,7 @@ async def test_duplicate_monthly_recharge_promotion_business_key_is_rejected_at_
                 max_redemptions_per_user=1,
                 benefit_feature_key=PromotionBenefitFeatureKey.OCR.value,
                 context=PromotionContext.RECHARGE.value,
+                kind=PromotionKind.MONTHLY_ALLOWANCE.value,
                 benefit_amount=5,
             )
         )
@@ -158,7 +161,7 @@ async def test_duplicate_monthly_recharge_promotion_business_key_is_rejected_at_
             await session.commit()
         await session.rollback()
 
-    assert "uq_promotions_benefit_context_starts_at" in str(exc_info.value.orig)
+    assert "uq_promotions_benefit_context_kind_starts_at" in str(exc_info.value.orig)
 
 
 def test_monthly_recharge_job_does_not_add_admin_or_public_api() -> None:
@@ -189,6 +192,7 @@ async def _seed_existing_monthly_recharge_promotion(session: AsyncSession) -> No
             max_redemptions_per_user=3,
             benefit_feature_key=PromotionBenefitFeatureKey.OCR.value,
             context=PromotionContext.RECHARGE.value,
+            kind=PromotionKind.MONTHLY_ALLOWANCE.value,
             benefit_amount=1,
         )
     )
@@ -201,6 +205,7 @@ async def _monthly_recharge_promotion(session: AsyncSession) -> orm.Promotion | 
         .where(
             orm.Promotion.benefit_feature_key == PromotionBenefitFeatureKey.OCR.value,
             orm.Promotion.context == PromotionContext.RECHARGE.value,
+            orm.Promotion.kind == PromotionKind.MONTHLY_ALLOWANCE.value,
             orm.Promotion.starts_at == JULY_START_UTC,
         )
         .limit(1)
@@ -215,6 +220,7 @@ async def _monthly_recharge_promotion_count(session: AsyncSession) -> int:
             .where(
                 orm.Promotion.benefit_feature_key == PromotionBenefitFeatureKey.OCR.value,
                 orm.Promotion.context == PromotionContext.RECHARGE.value,
+                orm.Promotion.kind == PromotionKind.MONTHLY_ALLOWANCE.value,
                 orm.Promotion.starts_at == JULY_START_UTC,
             )
         )
@@ -246,11 +252,13 @@ class _BarrierSqlAlchemyPromotionRepository(SqlAlchemyPromotionRepository):
         *,
         benefit_feature_key: PromotionBenefitFeatureKey,
         context: PromotionContext,
+        kind: PromotionKind | None,
         starts_at: datetime,
     ) -> Promotion | None:
         promotion = await super().find_promotion_by_benefit_context_start_for_update(
             benefit_feature_key=benefit_feature_key,
             context=context,
+            kind=kind,
             starts_at=starts_at,
         )
         if promotion is None:

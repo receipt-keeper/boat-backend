@@ -1,3 +1,4 @@
+import asyncio
 from typing import TYPE_CHECKING
 from uuid import UUID
 
@@ -15,7 +16,8 @@ from app.modules.credits.application.commands.grant_credit.use_case import (
     GrantCreditCommandUseCase,
 )
 from app.modules.credits.dependencies import build_credits_event_registry
-from app.modules.credits.domain import CreditAction, CreditAmount, CreditReason
+from app.modules.credits.domain import CreditAction, CreditAmount, CreditReason, UserCredit
+from app.modules.credits.domain.exceptions import CreditBalancePreconditionError
 from app.modules.credits.infrastructure.persistence import orm
 from app.modules.credits.infrastructure.persistence.repository import (
     SqlAlchemyCreditRepository,
@@ -76,6 +78,78 @@ async def test_grant_credit_command_creates_snapshot_and_appends_ledger(
     assert saved_outbox_events[0].event_type == "CreditGranted"
     assert saved_outbox_events[0].payload["user_id"] == str(USER_ID)
     assert saved_outbox_events[0].payload["amount"] == 5
+
+
+async def test_grant_credit_command_revalidates_required_balance_after_concurrent_commit(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with postgres_session_factory() as session:
+        session.add(
+            orm.UserCredit(
+                user_id=USER_ID,
+                feature_key="ocr",
+                total_granted_count=0,
+                used_count=0,
+                remaining_count=0,
+            )
+        )
+        await session.commit()
+
+    lock_requested = asyncio.Event()
+    async with (
+        postgres_session_factory() as concurrent_grant_session,
+        postgres_session_factory() as conditional_grant_session,
+    ):
+        locked_credit = await concurrent_grant_session.scalar(
+            select(orm.UserCredit)
+            .where(
+                orm.UserCredit.user_id == USER_ID,
+                orm.UserCredit.feature_key == "ocr",
+            )
+            .with_for_update()
+        )
+        assert locked_credit is not None
+        locked_credit.total_granted_count = 5
+        locked_credit.remaining_count = 5
+
+        conditional_grant = asyncio.create_task(
+            GrantCreditCommandUseCase(
+                credit_repository=_LockProbeCreditRepository(
+                    conditional_grant_session,
+                    lock_requested=lock_requested,
+                ),
+                unit_of_work=SqlAlchemyUnitOfWork(conditional_grant_session),
+                event_publisher=OutboxEventPublisher(
+                    session=conditional_grant_session,
+                    registry=build_credits_event_registry(),
+                ),
+            ).execute(
+                GrantCreditCommand(
+                    user_id=USER_ID,
+                    amount=CreditAmount(value=2),
+                    reason=CreditReason.EVENT_OCR_ALLOWANCE,
+                    required_remaining_count=0,
+                )
+            )
+        )
+        await lock_requested.wait()
+        assert not conditional_grant.done()
+
+        await concurrent_grant_session.commit()
+
+        with pytest.raises(CreditBalancePreconditionError):
+            await conditional_grant
+
+    async with postgres_session_factory() as session:
+        saved_credit = await session.get(
+            orm.UserCredit,
+            {"user_id": USER_ID, "feature_key": "ocr"},
+        )
+        saved_transactions = tuple(await session.scalars(select(orm.CreditTransaction)))
+
+    assert saved_credit is not None
+    assert saved_credit.remaining_count == 5
+    assert saved_transactions == ()
 
 
 async def test_grant_credit_command_records_source_metadata(
@@ -241,6 +315,21 @@ async def test_credit_transaction_source_guard_rejects_duplicate_source_tuple(
 
         with pytest.raises(IntegrityError):
             await session.commit()
+
+
+class _LockProbeCreditRepository(SqlAlchemyCreditRepository):
+    def __init__(
+        self,
+        session: AsyncSession,
+        *,
+        lock_requested: asyncio.Event,
+    ) -> None:
+        super().__init__(session)
+        self._lock_requested = lock_requested
+
+    async def get_user_credit_for_update(self, *, user_id: UUID) -> UserCredit:
+        self._lock_requested.set()
+        return await super().get_user_credit_for_update(user_id=user_id)
 
 
 def _promotion_redemption_source_type() -> "CreditSourceType":

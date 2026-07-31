@@ -2,15 +2,18 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
-from app.modules.promotions.domain.model import PromotionRedemptionStatus
+from app.modules.promotions.domain.model import PromotionKind, PromotionRedemptionStatus
 
 
 @dataclass(frozen=True, slots=True)
 class GetCurrentOcrCreditPromotionResult:
     promotion_id: UUID
     name: str
+    kind: PromotionKind | None
     benefit_amount: int
     remaining_redemptions: int | None
+    max_redemptions_per_user: int
+    remaining_redemptions_for_user: int
     starts_at: datetime
     expires_at: datetime | None
     already_redeemed: bool

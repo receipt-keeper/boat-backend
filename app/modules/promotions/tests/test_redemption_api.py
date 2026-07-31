@@ -26,7 +26,11 @@ async def test_create_promotion_redemption_returns_balance_and_benefit() -> None
     assert data["state"] == "alreadyRedeemed"
     assert data["promotionId"] == str(PROMOTION_ID)
     assert data["benefit"] == {"featureKey": "ocr", "amount": 3}
-    assert data["redemption"] == {"remainingRedemptions": 7}
+    assert data["redemption"] == {
+        "remainingRedemptions": 7,
+        "maxRedemptionsPerUser": 1,
+        "remainingRedemptionsForUser": 0,
+    }
     assert data["balance"] == {"totalGrantedCount": 8, "remainingCount": 6}
     assert data["bannerImage"] == {"imageUrl": PUBLIC_BANNER_IMAGE_URL}
 
@@ -47,7 +51,11 @@ async def test_create_promotion_code_redemption_uses_static_route() -> None:
     assert response.status_code == 200
     _assert_public_promotion_fields(data)
     assert data["promotionId"] == str(PROMOTION_ID)
-    assert data["redemption"] == {"remainingRedemptions": 7}
+    assert data["redemption"] == {
+        "remainingRedemptions": 7,
+        "maxRedemptionsPerUser": 1,
+        "remainingRedemptionsForUser": 0,
+    }
     assert data["bannerImage"] == {"imageUrl": PUBLIC_BANNER_IMAGE_URL}
 
 
@@ -94,7 +102,11 @@ async def test_repeat_redemption_returns_already_redeemed_with_unchanged_balance
     data = response.json()["data"]
     assert response.status_code == 200
     assert data["state"] == "alreadyRedeemed"
-    assert data["redemption"] == {"remainingRedemptions": 7}
+    assert data["redemption"] == {
+        "remainingRedemptions": 7,
+        "maxRedemptionsPerUser": 1,
+        "remainingRedemptionsForUser": 0,
+    }
     assert data["balance"] == {"totalGrantedCount": 8, "remainingCount": 6}
 
 
@@ -181,6 +193,7 @@ def _assert_public_promotion_fields(data: dict[str, object]) -> None:
     assert set(data) == {
         "state",
         "promotionId",
+        "kind",
         "benefit",
         "redemption",
         "balance",

@@ -21,6 +21,11 @@ class PromotionContext(StrEnum):
     SIGNUP = "signup"
 
 
+class PromotionKind(StrEnum):
+    MONTHLY_ALLOWANCE = "monthlyAllowance"
+    REWARDED_AD = "rewardedAd"
+
+
 class PromotionRedemptionStatus(StrEnum):
     GRANTED = "granted"
     REJECTED = "rejected"
@@ -48,6 +53,7 @@ class Promotion(AggregateRoot[UUID]):
     max_redemptions_per_user: int
     benefit_feature_key: PromotionBenefitFeatureKey
     context: PromotionContext | None
+    kind: PromotionKind | None
     benefit_amount: PromotionBenefitAmount
 
     @classmethod
@@ -64,6 +70,7 @@ class Promotion(AggregateRoot[UUID]):
         max_redemptions_per_user: int,
         benefit_feature_key: PromotionBenefitFeatureKey,
         context: PromotionContext | None = None,
+        kind: PromotionKind | None = None,
         benefit_amount: int | PromotionBenefitAmount,
     ) -> "Promotion":
         return cls(
@@ -77,6 +84,7 @@ class Promotion(AggregateRoot[UUID]):
             max_redemptions_per_user=max_redemptions_per_user,
             benefit_feature_key=benefit_feature_key,
             context=context,
+            kind=kind,
             benefit_amount=_benefit_amount_for(benefit_amount),
         )
 

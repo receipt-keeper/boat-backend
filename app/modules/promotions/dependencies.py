@@ -25,6 +25,7 @@ from app.modules.credits.dependencies import (
     get_deferred_grant_credit_command_use_case,
 )
 from app.modules.credits.domain import CreditAmount, CreditReason, CreditSourceType
+from app.modules.credits.domain.exceptions import CreditBalancePreconditionError
 from app.modules.promotions.application.commands.create_promotion_code_redemption.use_case import (
     CreatePromotionCodeRedemptionCommandUseCase,
 )
@@ -38,6 +39,7 @@ from app.modules.promotions.application.ports.credit_grant import (
     PromotionCreditBalance,
     PromotionCreditGrant,
     PromotionCreditGrantPort,
+    PromotionCreditGrantRejectedError,
     PromotionCreditGrantResult,
 )
 from app.modules.promotions.application.ports.promotion_repository import PromotionRepository
@@ -91,16 +93,20 @@ class CreditsPromotionCreditGrantPort(PromotionCreditGrantPort):
         *,
         grant: PromotionCreditGrant,
     ) -> PromotionCreditGrantResult:
-        grant_result = await self._grant_credit_command_use_case.execute(
-            GrantCreditCommand(
-                user_id=grant.user_id,
-                amount=CreditAmount(value=grant.amount),
-                reason=CreditReason.EVENT_OCR_ALLOWANCE,
-                source_type=CreditSourceType.PROMOTION_REDEMPTION,
-                source_id=grant.redemption_id,
-                idempotency_key=grant.idempotency_key,
+        try:
+            grant_result = await self._grant_credit_command_use_case.execute(
+                GrantCreditCommand(
+                    user_id=grant.user_id,
+                    amount=CreditAmount(value=grant.amount),
+                    reason=CreditReason.EVENT_OCR_ALLOWANCE,
+                    source_type=CreditSourceType.PROMOTION_REDEMPTION,
+                    source_id=grant.redemption_id,
+                    idempotency_key=grant.idempotency_key,
+                    required_remaining_count=grant.required_remaining_count,
+                )
             )
-        )
+        except CreditBalancePreconditionError as exc:
+            raise PromotionCreditGrantRejectedError from exc
         return PromotionCreditGrantResult(
             credit_balance_after=grant_result.total_granted_count,
             credit_remaining_after=grant_result.remaining_count,
