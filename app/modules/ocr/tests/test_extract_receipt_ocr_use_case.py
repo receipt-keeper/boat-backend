@@ -15,6 +15,7 @@ from app.modules.ocr.application.commands.extract_receipt_ocr.use_case import (
 from app.modules.ocr.application.ports.receipt_ocr_client import (
     ExtractedReceiptOcrFields,
     ReceiptOcrImage,
+    ReceiptTransactionEvidence,
 )
 from app.modules.ocr.domain.exceptions import ReceiptImageUnreadableError, UnsupportedReceiptError
 from tests.support.unit_of_work import FakeUnitOfWork
@@ -44,6 +45,12 @@ class ReadableReceiptOcrClient:
             category="주방 가전",
             sub_category="냉장고",
             expires_on=date(2028, 7, 1),
+            transaction_evidence=ReceiptTransactionEvidence(
+                merchant=True,
+                purchased_item=True,
+                total_paid=True,
+                payment_proof=True,
+            ),
             receipt_file_indexes=(0,),
         )
 
@@ -112,6 +119,51 @@ class ProductMentionWithoutReceiptOcrClient:
         )
 
 
+class IncompleteTransactionEvidenceOcrClient:
+    async def extract(self, *, images: tuple[ReceiptOcrImage, ...]) -> ExtractedReceiptOcrFields:
+        return ExtractedReceiptOcrFields(
+            item_name="MacBook Pro 16",
+            brand_name="Apple",
+            serial_number=None,
+            payment_location="Apple Store",
+            payment_date=date(2025, 3, 13),
+            total_amount=3000000,
+            period_months=12,
+            category="IT 기기",
+            sub_category="노트북",
+            transaction_evidence=ReceiptTransactionEvidence(
+                merchant=True,
+                purchased_item=True,
+                total_paid=True,
+                payment_proof=False,
+            ),
+            receipt_file_indexes=(0,),
+        )
+
+
+class DowngradedReceiptWithSupplementaryDocumentOcrClient:
+    async def extract(self, *, images: tuple[ReceiptOcrImage, ...]) -> ExtractedReceiptOcrFields:
+        return ExtractedReceiptOcrFields(
+            item_name="MacBook Pro 16",
+            brand_name="Apple",
+            serial_number=None,
+            payment_location="Apple Store",
+            payment_date=date(2025, 3, 13),
+            total_amount=3000000,
+            period_months=12,
+            category="IT 기기",
+            sub_category="노트북",
+            transaction_evidence=ReceiptTransactionEvidence(
+                merchant=True,
+                purchased_item=True,
+                total_paid=True,
+                payment_proof=False,
+            ),
+            receipt_file_indexes=(0,),
+            unreadable_file_indexes=(2,),
+        )
+
+
 @dataclass(slots=True)
 class InvalidExpirationReceiptOcrClient:
     async def extract(self, *, images: tuple[ReceiptOcrImage, ...]) -> ExtractedReceiptOcrFields:
@@ -126,6 +178,12 @@ class InvalidExpirationReceiptOcrClient:
             category="IT 기기",
             sub_category="핸드폰",
             expires_on=date(2025, 7, 1),
+            transaction_evidence=ReceiptTransactionEvidence(
+                merchant=True,
+                purchased_item=True,
+                total_paid=True,
+                payment_proof=True,
+            ),
             receipt_file_indexes=(0,),
         )
 
@@ -144,6 +202,12 @@ class MissingPurchaseDateWithPastExpirationReceiptOcrClient:
             category="IT 기기",
             sub_category="핸드폰",
             expires_on=date(2025, 7, 1),
+            transaction_evidence=ReceiptTransactionEvidence(
+                merchant=True,
+                purchased_item=True,
+                total_paid=True,
+                payment_proof=True,
+            ),
             receipt_file_indexes=(0,),
         )
 
@@ -325,6 +389,62 @@ async def test_extract_receipt_ocr_use_case_rejects_product_mention_without_rece
 
     assert error.value.file_indexes == (0,)
     assert len(reserve_credit_use_case.commands) == 1
+    assert finalize_credit_use_case.commands == []
+    assert unit_of_work.rollback_count == 1
+
+
+async def test_extract_receipt_ocr_use_case_rejects_receipt_without_payment_proof() -> None:
+    reserve_credit_use_case = FakeUseCreditCommandUseCase(commands=[])
+    finalize_credit_use_case = FakeUseCreditCommandUseCase(commands=[])
+    unit_of_work = FakeUnitOfWork()
+    use_case = ExtractReceiptOcrCommandUseCase(
+        ocr_client=IncompleteTransactionEvidenceOcrClient(),
+        reserve_credit_command_use_case=reserve_credit_use_case,
+        finalize_credit_usage_command_use_case=finalize_credit_use_case,
+        unit_of_work=unit_of_work,
+    )
+
+    with pytest.raises(UnsupportedReceiptError) as error:
+        await use_case.execute(
+            ExtractReceiptOcrCommand(
+                user_id=USER_ID,
+                images=(ReceiptOcrImage(0, b"unpaid-order", "image/png"),),
+            )
+        )
+
+    assert error.value.file_indexes == (0,)
+    assert finalize_credit_use_case.commands == []
+    assert unit_of_work.rollback_count == 1
+
+
+async def test_extract_receipt_ocr_use_case_reclassifies_all_readable_images_after_downgrade() -> (
+    None
+):
+    reserve_credit_use_case = FakeUseCreditCommandUseCase(commands=[])
+    finalize_credit_use_case = FakeUseCreditCommandUseCase(commands=[])
+    unit_of_work = FakeUnitOfWork()
+    use_case = ExtractReceiptOcrCommandUseCase(
+        ocr_client=DowngradedReceiptWithSupplementaryDocumentOcrClient(),
+        reserve_credit_command_use_case=reserve_credit_use_case,
+        finalize_credit_usage_command_use_case=finalize_credit_use_case,
+        unit_of_work=unit_of_work,
+    )
+
+    with pytest.raises(UnsupportedReceiptError) as error:
+        await use_case.execute(
+            ExtractReceiptOcrCommand(
+                user_id=USER_ID,
+                images=(
+                    ReceiptOcrImage(0, b"unpaid-order", "image/png"),
+                    ReceiptOcrImage(1, b"warranty", "image/png"),
+                    ReceiptOcrImage(2, b"blurred", "image/png"),
+                ),
+            )
+        )
+
+    assert error.value.unsupported_file_indexes == (0, 1)
+    assert error.value.unreadable_file_indexes == (2,)
+    assert error.value.file_indexes == (0, 1, 2)
     assert finalize_credit_use_case.commands == []
     assert unit_of_work.rollback_count == 1
 

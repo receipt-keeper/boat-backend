@@ -20,7 +20,10 @@ from app.core.security.principal import AuthenticatedPrincipal
 from app.main import create_app
 from app.modules.auth.api.security import authenticate_current_principal
 from app.modules.credits.infrastructure.persistence import orm as credit_orm
-from app.modules.ocr.application.ports.receipt_ocr_client import ReceiptOcrImage
+from app.modules.ocr.application.ports.receipt_ocr_client import (
+    ReceiptOcrImage,
+    ReceiptTransactionEvidence,
+)
 from app.modules.ocr.dependencies import get_receipt_ocr_client
 from app.modules.receipts.domain.value_objects import ReceiptCategory
 from app.modules.receipts.infrastructure.persistence import orm as receipt_orm
@@ -45,6 +48,7 @@ class _ExtractedReceiptOcrFields:
     category: str | None
     sub_category: str | None
     expires_on: date | None = None
+    transaction_evidence: ReceiptTransactionEvidence | None = None
     receipt_file_indexes: tuple[int, ...] = ()
     unreadable_file_indexes: tuple[int, ...] = ()
     unsupported_file_indexes: tuple[int, ...] = ()
@@ -101,6 +105,12 @@ class CategoryReceiptOcrClient:
             category="주방 가전",
             sub_category="냉장고",
             expires_on=date(2028, 12, 31),
+            transaction_evidence=ReceiptTransactionEvidence(
+                merchant=True,
+                purchased_item=True,
+                total_paid=True,
+                payment_proof=True,
+            ),
             receipt_file_indexes=(0,),
         )
 

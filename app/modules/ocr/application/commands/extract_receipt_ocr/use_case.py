@@ -8,7 +8,10 @@ from app.modules.credits.domain import CreditAmount, CreditReason
 from app.modules.ocr.application.commands.extract_receipt_ocr.command import (
     ExtractReceiptOcrCommand,
 )
-from app.modules.ocr.application.ports.receipt_ocr_client import ReceiptOcrClientPort
+from app.modules.ocr.application.ports.receipt_ocr_client import (
+    ExtractedReceiptOcrFields,
+    ReceiptOcrClientPort,
+)
 from app.modules.ocr.domain.exceptions import (
     ReceiptImageUnreadableError,
     ReceiptOcrProviderUnavailableError,
@@ -48,6 +51,10 @@ class ExtractReceiptOcrCommandUseCase:
         await self._reserve_credit_command_use_case.execute(use_credit_command)
         try:
             extracted = await self._ocr_client.extract(images=command.images)
+            extracted = _enforce_supported_receipt_policy(
+                extracted=extracted,
+                request_file_indexes=tuple(image.file_index for image in command.images),
+            )
             if extracted.unsupported_file_indexes:
                 raise UnsupportedReceiptError(
                     file_indexes=extracted.unsupported_file_indexes,
@@ -129,6 +136,48 @@ class ExtractReceiptOcrCommandUseCase:
                 started_at=started_at,
             )
             raise
+
+
+def _enforce_supported_receipt_policy(
+    *,
+    extracted: ExtractedReceiptOcrFields,
+    request_file_indexes: tuple[int, ...],
+) -> ExtractedReceiptOcrFields:
+    if not extracted.receipt_file_indexes:
+        return extracted
+
+    evidence = extracted.transaction_evidence
+    has_required_evidence = (
+        evidence is not None
+        and evidence.merchant
+        and evidence.purchased_item
+        and evidence.total_paid
+        and evidence.payment_proof
+    )
+    has_required_fields = (
+        bool((extracted.item_name or "").strip()) and extracted.total_amount is not None
+    )
+    if has_required_evidence and has_required_fields:
+        return extracted
+
+    unreadable_indexes = set(extracted.unreadable_file_indexes)
+    unsupported_indexes = set(request_file_indexes) - unreadable_indexes
+    return ExtractedReceiptOcrFields(
+        item_name=extracted.item_name,
+        brand_name=extracted.brand_name,
+        serial_number=extracted.serial_number,
+        payment_location=extracted.payment_location,
+        payment_date=extracted.payment_date,
+        total_amount=extracted.total_amount,
+        period_months=extracted.period_months,
+        expires_on=extracted.expires_on,
+        category=extracted.category,
+        sub_category=extracted.sub_category,
+        transaction_evidence=extracted.transaction_evidence,
+        receipt_file_indexes=(),
+        unreadable_file_indexes=extracted.unreadable_file_indexes,
+        unsupported_file_indexes=tuple(sorted(unsupported_indexes)),
+    )
 
 
 def _log_ocr_failure(
