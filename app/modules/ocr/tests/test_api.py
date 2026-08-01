@@ -12,6 +12,7 @@ from app.modules.ocr.api.router import router as ocr_router
 from app.modules.ocr.application.ports.receipt_ocr_client import (
     ExtractedReceiptOcrFields,
     ReceiptOcrImage,
+    ReceiptTransactionEvidence,
 )
 from app.modules.ocr.dependencies import get_receipt_ocr_client
 from app.modules.ocr.domain.exceptions import ReceiptOcrProviderUnavailableError
@@ -54,6 +55,12 @@ class PartiallyUnreadableReceiptOcrClient:
             period_months=12,
             category="주방 가전",
             sub_category="냉장고",
+            transaction_evidence=ReceiptTransactionEvidence(
+                merchant=True,
+                purchased_item=True,
+                total_paid=True,
+                payment_proof=True,
+            ),
             unreadable_file_indexes=(1,),
             receipt_file_indexes=(0,),
         )
@@ -75,6 +82,12 @@ class PartiallyUnsupportedReceiptOcrClient:
             period_months=12,
             category="주방 가전",
             sub_category="냉장고",
+            transaction_evidence=ReceiptTransactionEvidence(
+                merchant=True,
+                purchased_item=True,
+                total_paid=True,
+                payment_proof=True,
+            ),
             unsupported_file_indexes=(1,),
             receipt_file_indexes=(0,),
         )
@@ -107,6 +120,12 @@ class MixedFailureReceiptOcrClient:
             period_months=12,
             category="주방 가전",
             sub_category="냉장고",
+            transaction_evidence=ReceiptTransactionEvidence(
+                merchant=True,
+                purchased_item=True,
+                total_paid=True,
+                payment_proof=True,
+            ),
             unreadable_file_indexes=(2,),
             unsupported_file_indexes=(1,),
             receipt_file_indexes=(0,),
@@ -130,6 +149,12 @@ class ZeroTotalAmountReceiptOcrClient:
             period_months=12,
             category=None,
             sub_category=None,
+            transaction_evidence=ReceiptTransactionEvidence(
+                merchant=True,
+                purchased_item=True,
+                total_paid=True,
+                payment_proof=True,
+            ),
             receipt_file_indexes=(0,),
         )
 

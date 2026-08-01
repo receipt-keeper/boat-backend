@@ -7,6 +7,7 @@ from app.modules.ocr.infrastructure.receipt_ocr_client import (
     OcrReceiptCategory,
     ReceiptOcrClient,
     ReceiptOcrStructuredOutput,
+    ReceiptTransactionEvidenceOutput,
     _build_openrouter_multimodal_content,
 )
 from app.modules.receipts.domain.value_objects import ReceiptCategory
@@ -91,12 +92,20 @@ def test_multimodal_prompt_separates_unsupported_receipts_from_unknown_devices()
     assert "At least one image must be an actual purchase receipt" in prompt
     assert "app launch or onboarding screens" in prompt
     assert "electronic-product text appears" in prompt
+    assert "multiple independent transaction signals" in prompt
+    assert "explicit proof that payment" in prompt
+    assert "invoice without explicit completed-payment proof" in prompt
     assert "restaurants or food" in prompt
     assert 'category "other_device"' in prompt
     assert "advertisements" in schema["unsupported_file_indexes"]["description"]
     assert (
         "actual paper or digital purchase receipt" in schema["receipt_file_indexes"]["description"]
     )
+    evidence_schema = ReceiptOcrStructuredOutput.model_json_schema()["$defs"][
+        "ReceiptTransactionEvidenceOutput"
+    ]["properties"]
+    assert "final total paid amount" in evidence_schema["total_paid"]["description"]
+    assert "Explicit proof that payment" in evidence_schema["payment_proof"]["description"]
 
 
 def test_structured_output_keeps_unsupported_file_indexes() -> None:
@@ -112,15 +121,74 @@ def test_structured_output_keeps_unsupported_file_indexes() -> None:
 def test_structured_output_keeps_supported_receipt_file_indexes() -> None:
     structured_output = ReceiptOcrStructuredOutput(
         item_name="중소기업 전기히터 HBT-220",
+        payment_location="전자제품 판매점",
+        total_amount=129000,
         category=OcrReceiptCategory.OTHER_DEVICE,
         sub_category="기타",
+        transaction_evidence=ReceiptTransactionEvidenceOutput(
+            merchant=True,
+            purchased_item=True,
+            total_paid=True,
+            payment_proof=True,
+        ),
         receipt_file_indexes=[1, 0, 1],
     )
 
     extracted = structured_output.to_extracted_fields(image_count=2)
 
     assert extracted.receipt_file_indexes == (0, 1)
+    assert extracted.unsupported_file_indexes == ()
     assert extracted.item_name == "중소기업 전기히터 HBT-220"
+
+
+@pytest.mark.parametrize(
+    "missing_evidence",
+    ["merchant", "purchased_item", "total_paid", "payment_proof"],
+)
+def test_structured_output_preserves_provider_evidence_for_application_policy(
+    missing_evidence: str,
+) -> None:
+    evidence = {
+        "merchant": True,
+        "purchased_item": True,
+        "total_paid": True,
+        "payment_proof": True,
+    }
+    evidence[missing_evidence] = False
+    structured_output = ReceiptOcrStructuredOutput(
+        item_name="일반 문서에 적힌 노트북",
+        payment_location="일반 문서 작성 회사",
+        total_amount=1000000,
+        transaction_evidence=ReceiptTransactionEvidenceOutput(**evidence),
+        receipt_file_indexes=[0],
+    )
+
+    extracted = structured_output.to_extracted_fields(image_count=1)
+
+    assert extracted.receipt_file_indexes == (0,)
+    assert extracted.unsupported_file_indexes == ()
+    assert extracted.transaction_evidence is not None
+    assert not getattr(extracted.transaction_evidence, missing_evidence)
+
+
+def test_structured_output_combines_transaction_evidence_across_receipt_images() -> None:
+    structured_output = ReceiptOcrStructuredOutput(
+        item_name="노트북",
+        payment_location="전자제품 판매점",
+        total_amount=1000000,
+        transaction_evidence=ReceiptTransactionEvidenceOutput(
+            merchant=True,
+            purchased_item=True,
+            total_paid=True,
+            payment_proof=True,
+        ),
+        receipt_file_indexes=[0, 1],
+    )
+
+    extracted = structured_output.to_extracted_fields(image_count=2)
+
+    assert extracted.receipt_file_indexes == (0, 1)
+    assert extracted.unsupported_file_indexes == ()
 
 
 def test_multimodal_prompt_extracts_explicit_serial_number_from_any_image() -> None:

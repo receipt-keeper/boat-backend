@@ -11,6 +11,14 @@ class ReceiptOcrImage:
 
 
 @dataclass(frozen=True, slots=True)
+class ReceiptTransactionEvidence:
+    merchant: bool
+    purchased_item: bool
+    total_paid: bool
+    payment_proof: bool
+
+
+@dataclass(frozen=True, slots=True)
 class ExtractedReceiptOcrFields:
     item_name: str | None
     brand_name: str | None
@@ -22,6 +30,7 @@ class ExtractedReceiptOcrFields:
     category: str | None
     sub_category: str | None
     expires_on: date | None = None
+    transaction_evidence: ReceiptTransactionEvidence | None = None
     receipt_file_indexes: tuple[int, ...] = ()
     unreadable_file_indexes: tuple[int, ...] = ()
     unsupported_file_indexes: tuple[int, ...] = ()
