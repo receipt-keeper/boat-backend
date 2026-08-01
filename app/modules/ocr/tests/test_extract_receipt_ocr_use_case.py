@@ -71,6 +71,28 @@ class UnreadableReceiptOcrClient:
         )
 
 
+class BlankItemNameSupportedReceiptOcrClient:
+    async def extract(self, *, images: tuple[ReceiptOcrImage, ...]) -> ExtractedReceiptOcrFields:
+        return ExtractedReceiptOcrFields(
+            item_name="   ",
+            brand_name=None,
+            serial_number=None,
+            payment_location="전자랜드",
+            payment_date=date(2026, 7, 1),
+            total_amount=129000,
+            period_months=12,
+            category="주방 가전",
+            sub_category="냉장고",
+            transaction_evidence=ReceiptTransactionEvidence(
+                merchant=True,
+                purchased_item=True,
+                total_paid=True,
+                payment_proof=True,
+            ),
+            receipt_file_indexes=(0,),
+        )
+
+
 class UnsupportedReceiptOcrClient:
     async def extract(self, *, images: tuple[ReceiptOcrImage, ...]) -> ExtractedReceiptOcrFields:
         return ExtractedReceiptOcrFields(
@@ -292,6 +314,30 @@ async def test_extract_receipt_ocr_use_case_does_not_consume_credit_when_unreada
             reason=CreditReason.OCR_USAGE,
         )
     ]
+    assert finalize_credit_use_case.commands == []
+    assert unit_of_work.rollback_count == 1
+
+
+async def test_extract_receipt_ocr_use_case_keeps_blank_item_name_as_unreadable() -> None:
+    reserve_credit_use_case = FakeUseCreditCommandUseCase(commands=[])
+    finalize_credit_use_case = FakeUseCreditCommandUseCase(commands=[])
+    unit_of_work = FakeUnitOfWork()
+    use_case = ExtractReceiptOcrCommandUseCase(
+        ocr_client=BlankItemNameSupportedReceiptOcrClient(),
+        reserve_credit_command_use_case=reserve_credit_use_case,
+        finalize_credit_usage_command_use_case=finalize_credit_use_case,
+        unit_of_work=unit_of_work,
+    )
+
+    with pytest.raises(ReceiptImageUnreadableError) as error:
+        await use_case.execute(
+            ExtractReceiptOcrCommand(
+                user_id=USER_ID,
+                images=(ReceiptOcrImage(0, b"receipt", "image/png"),),
+            )
+        )
+
+    assert error.value.file_indexes == (0,)
     assert finalize_credit_use_case.commands == []
     assert unit_of_work.rollback_count == 1
 
