@@ -154,9 +154,7 @@ def _enforce_supported_receipt_policy(
         and evidence.total_paid
         and evidence.payment_proof
     )
-    has_required_fields = (
-        bool((extracted.item_name or "").strip()) and extracted.total_amount is not None
-    )
+    has_required_fields = extracted.total_amount is not None
     if has_required_evidence and has_required_fields:
         return extracted
 
